@@ -23,12 +23,16 @@ from dataclasses import dataclass, field, asdict, is_dataclass
 
 from .topology import Topology
 from ..config import OUTPUT_FILE
-from ..optimizer.advisor import suggest_optimal_resources
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
 from ..utils.validation import validate_machines, backup_machines
 
 logger = get_logger(__name__)
+
+# Lazy imports to avoid circular dependency with optimizer.advisor
+def _get_suggest_optimal_resources():
+    from ..optimizer.advisor import suggest_optimal_resources
+    return suggest_optimal_resources
 
 # Lazy import to avoid circular dependency
 def _get_current_backend():

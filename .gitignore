@@ -1,6 +1,5 @@
 ```
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Coverage reports
+.coverage
+coverage.xml
 ```
