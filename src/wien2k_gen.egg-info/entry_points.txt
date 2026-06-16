@@ -1,0 +1,4 @@
+[console_scripts]
+wien2k_gen = wien2k_gen.cli:main
+wien2k_sbatch = wien2k_gen.cli_sbatch:run_sbatch_cli
+wien2k_wizard = wien2k_gen.wizard:run_wizard

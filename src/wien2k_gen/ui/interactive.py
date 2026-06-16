@@ -27,8 +27,7 @@ from textual.widgets import (
     TabbedContent, TabPane, Collapsible, Rule
 )
 from textual.reactive import reactive
-from textual.work import work
-from textual import on
+from textual import work, on
 
 # Project imports (aligned with refactored architecture)
 from ..core.topology import Topology

@@ -31,7 +31,15 @@ from dataclasses import dataclass, field, asdict
 from contextlib import asynccontextmanager
 
 from ..core.topology import Topology
-from ..core.builder import build_auto
+# Lazy import to avoid circular dependency with core.builder
+_build_auto = None
+def _get_build_auto():
+    global _build_auto
+    if _build_auto is None:
+        from ..core.builder import build_auto as _ba
+        _build_auto = _ba
+    return _build_auto
+
 from ..core.hardware import (
     get_physical_cores,
     get_total_mem_kb,
@@ -344,7 +352,7 @@ class AutoProfiler:
 
         # Build configuration atomically
         try:
-            build_auto(self.topo, backup=False, suggestion=config, dry_run=False)
+            _get_build_auto()(self.topo, backup=False, suggestion=config, dry_run=False)
         except Exception as e:
             logger.warning(f"Config build failed for {config_sig}: {e}")
             return ProfileResult(

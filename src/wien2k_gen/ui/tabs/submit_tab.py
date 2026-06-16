@@ -31,21 +31,20 @@ from textual.widgets import (
 )
 from textual.reactive import reactive
 from textual.message import Message
-from textual import on
-from textual.work import work
+from textual import on, work
 
 # Project imports (aligned with refactored architecture)
-from ..core.scheduler import detect as detect_topology
-from ..submit.slurm import (
+from ...core.scheduler import detect as detect_topology
+from ...submit.slurm import (
     submit_slurm_job,
     generate_sbatch_script,
     SlurmJobSpec,
     SlurmDirectives,
 )
-from ..utils.validation import backup_machines
-from ..exceptions import Wien2kGenError, format_error_for_ui
-from ..logging_config import get_logger
-from .widgets import ValidatedInput
+from ...utils.validation import backup_machines
+from ...exceptions import Wien2kGenError, format_error_for_ui
+from ...logging_config import get_logger
+from ..widgets import ValidatedInput
 
 logger = get_logger(__name__)
 

@@ -10,8 +10,6 @@ and analysis/worker modules. Designed for modular, type-safe integration with th
 from .interactive import Wien2kGenApp, launch_app
 from .rich_ui import (
     print_banner,
-    print_config_summary,
-    print_error_report,
     launch_cli_mode,
     CLIWorkflowRunner,
 )
@@ -60,8 +58,6 @@ __all__ = [
     "launch_cli_mode",
     "CLIWorkflowRunner",
     "print_banner",
-    "print_config_summary",
-    "print_error_report",
     # Widgets
     "StatusIndicator",
     "LogPanel",

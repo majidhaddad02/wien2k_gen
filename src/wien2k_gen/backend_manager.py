@@ -217,6 +217,11 @@ def get_backend(code: Optional[Union[BackendCode, str]] = None) -> Backend:
     return BackendManager.instance().get_backend(code)
 
 
+def get_current_backend() -> Backend:
+    """Convenience function to get the currently active backend instance."""
+    return BackendManager.instance().get_backend()
+
+
 def get_backend_class(code: Optional[Union[BackendCode, str]] = None) -> Type[Backend]:
     """Convenience function to get the backend class."""
     return BackendManager.instance().get_backend_class(code)

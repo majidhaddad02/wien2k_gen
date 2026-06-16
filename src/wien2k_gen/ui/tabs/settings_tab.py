@@ -24,19 +24,19 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Collapsible, Container, ScrollableContainer
+from textual.containers import Horizontal, Vertical, Grid, Container, ScrollableContainer
 from textual.widgets import (
-    Button, Input, Label, Static, Select, Switch, Checkbox, Rule, DataTable
+    Button, Input, Label, Static, Select, Switch, Checkbox, Rule, DataTable, Collapsible
 )
 from textual.reactive import reactive
 from textual.message import Message
 
 # Project imports
-from ..backend_manager import get_current_backend, list_backends, set_backend
-from ..core.hardware import get_scratch_filesystem_type
-from ..utils.atomic_write import atomic_write
-from ..logging_config import get_logger
-from .widgets import ValidatedInput, ValidationMessage, LogPanel
+from ...backend_manager import get_current_backend, list_backends, set_backend
+from ...core.hardware import get_scratch_filesystem_type
+from ...utils.atomic_write import atomic_write
+from ...logging_config import get_logger
+from ..widgets import ValidatedInput, ValidationMessage, LogPanel
 
 # FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)

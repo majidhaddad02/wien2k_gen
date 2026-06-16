@@ -33,9 +33,9 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.events import Mount
 
-from ..utils.atomic_write import atomic_write
-from ..logging_config import get_logger
-from .widgets import ValidatedInput
+from ...utils.atomic_write import atomic_write
+from ...logging_config import get_logger
+from ..widgets import ValidatedInput
 
 logger = get_logger(__name__)
 

@@ -23,19 +23,19 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Collapsible, Container
-from textual.widgets import Button, Input, Label, Static, Checkbox, Select, Rule, Switch
+from textual.containers import Horizontal, Vertical, Grid, Container
+from textual.widgets import Button, Input, Label, Static, Checkbox, Select, Rule, Switch, Collapsible
 from textual.reactive import reactive
 from textual.message import Message
 from textual import on
 
 # Project imports
-from ..core.topology import Topology
-from ..core.scheduler import detect as detect_topology
-from ..core.hardware import get_physical_cores, get_job_memory_limit_mb, get_total_mem_kb
-from ..optimizer.advisor import suggest_optimal_resources
-from ..logging_config import get_logger
-from .widgets import (
+from ...core.topology import Topology
+from ...core.scheduler import detect as detect_topology
+from ...core.hardware import get_physical_cores, get_job_memory_limit_mb, get_total_mem_kb
+from ...optimizer.advisor import suggest_optimal_resources
+from ...logging_config import get_logger
+from ..widgets import (
     StatusIndicator,
     LogPanel,
     ResourceSummaryTable,

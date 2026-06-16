@@ -33,8 +33,8 @@ from rich.text import Text
 from rich.console import Console
 from rich.markdown import Markdown
 
-from ..utils.atomic_write import atomic_write
-from ..logging_config import get_logger
+from ...utils.atomic_write import atomic_write
+from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 

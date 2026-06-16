@@ -116,9 +116,21 @@ def __getattr__(name: str) -> Any:
     if name == "ResourceSuggestion":
         from .types import ResourceSuggestion
         return ResourceSuggestion
-    if name == "ProblemSize":
-        from .types import ProblemSize
-        return ProblemSize
+    if name == "TopologyData":
+        from .types import TopologyData
+        return TopologyData
+    if name == "BackendCode":
+        from .types import BackendCode
+        return BackendCode
+    if name == "ExecutionMode":
+        from .types import ExecutionMode
+        return ExecutionMode
+    if name == "JobStatus":
+        from .types import JobStatus
+        return JobStatus
+    if name == "OptimizationTarget":
+        from .types import OptimizationTarget
+        return OptimizationTarget
 
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
@@ -134,7 +146,8 @@ def __dir__() -> List[str]:
         "setup_scratch", "cleanup_scratch", "write_parallel_options",
         "run_wizard", "run_sbatch_wizard", "launch_tui",
         "get_config", "load_config",
-        "PipelineResult", "ResourceSuggestion", "ProblemSize",
+        "PipelineResult", "ResourceSuggestion", "TopologyData",
+        "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
         "__version__"
     ]
 
@@ -161,5 +174,6 @@ __all__ = [
     # Config
     "get_config", "load_config",
     # Types
-    "PipelineResult", "ResourceSuggestion", "ProblemSize",
+    "PipelineResult", "ResourceSuggestion", "TopologyData",
+    "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
 ]

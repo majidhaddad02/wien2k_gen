@@ -23,13 +23,17 @@ from dataclasses import dataclass, field, asdict, is_dataclass
 
 from .topology import Topology
 from ..config import OUTPUT_FILE
-from ..backend_manager import get_current_backend
 from ..optimizer.advisor import suggest_optimal_resources
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
 from ..utils.validation import validate_machines, backup_machines
 
 logger = get_logger(__name__)
+
+# Lazy import to avoid circular dependency
+def _get_current_backend():
+    from ..backend_manager import get_current_backend
+    return get_current_backend()
 
 # =============================================================================
 # Fallback Type Definitions (if centralized types.py is unavailable)
@@ -230,7 +234,7 @@ def build_auto(
     Returns:
         BuildResult dataclass on success/failure, or config string in dry-run mode.
     """
-    backend = get_current_backend()
+    backend = _get_current_backend()
     logger.info(f"Starting configuration build for backend: {backend.__class__.__name__}")
 
     # 1. Normalize & Resolve Suggestion
