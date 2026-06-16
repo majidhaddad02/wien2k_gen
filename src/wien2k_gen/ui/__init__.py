@@ -58,8 +58,6 @@ __all__ = [
     "launch_cli_mode",
     "CLIWorkflowRunner",
     "print_banner",
-    "print_config_summary",
-    "print_error_report",
     # Widgets
     "StatusIndicator",
     "LogPanel",
