@@ -24,11 +24,14 @@ import threading
 import json
 import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, Union, List, TYPE_CHECKING
 
-# Project imports
-from .config import get_config, AppConfig
-from .exceptions import Wien2kGenError, is_wien2k_error
+# Avoid circular import: only import types at type-checking time
+if TYPE_CHECKING:
+    from .config import AppConfig
+    from .exceptions import Wien2kGenError
+
+# Runtime imports will be done lazily inside functions that need them
 
 # =============================================================================
 # Constants & Formatters
@@ -66,6 +69,9 @@ class StructuredFormatter(logging.Formatter):
     If the log record contains an exception with metadata, it is included in the message.
     """
     def format(self, record: logging.LogRecord) -> str:
+        # Lazy import to avoid circular dependency
+        from .exceptions import is_wien2k_error
+        
         # Call base formatter
         msg = super().format(record)
         
@@ -85,6 +91,9 @@ class JsonFormatter(logging.Formatter):
     Formatter that outputs JSON-structured logs for aggregation systems.
     """
     def format(self, record: logging.LogRecord) -> str:
+        # Lazy import to avoid circular dependency
+        from .exceptions import is_wien2k_error
+        
         log_obj = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
@@ -208,7 +217,7 @@ class LogManager:
 # Public API
 # =============================================================================
 def setup_logging(
-    config: Optional[AppConfig] = None,
+    config: Optional["AppConfig"] = None,
     verbose: int = 0,
     quiet: bool = False
 ) -> logging.Logger:
@@ -220,6 +229,8 @@ def setup_logging(
         verbose: Number of -v flags (0=INFO, 1=DEBUG).
         quiet: Suppress console output.
     """
+    # Lazy import to avoid circular dependency
+    from .config import get_config
     cfg = config or get_config()
 
     # Determine Level

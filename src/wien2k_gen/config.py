@@ -26,10 +26,13 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Union, List, TypedDict
 from dataclasses import dataclass, field, asdict, is_dataclass
 
-from .logging_config import get_logger
 from .exceptions import ConfigurationError
 
-# FIXED: Use __name__ instead of undefined 'name'
+# Lazy import for logger to avoid circular dependency
+def get_logger(name: str):
+    from .logging_config import get_logger as _get_logger
+    return _get_logger(name)
+
 logger = get_logger(__name__)
 
 # =============================================================================
@@ -43,6 +46,7 @@ DEFAULT_MAX_CORES = os.cpu_count() or 16
 DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_BACKEND = "wien2k"
 CONFIG_VERSION = "1.2.0"
+OUTPUT_FILE = ".machines"  # Default output filename for WIEN2k configuration
 
 # =============================================================================
 # Configuration Schema (Dataclass)

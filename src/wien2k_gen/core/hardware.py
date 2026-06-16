@@ -641,3 +641,9 @@ def get_hardware_profile() -> HardwareProfile:
     profile["validation_warnings"] = warnings
 
     return profile
+
+
+def get_numa_node_count() -> int:
+    """Return the number of NUMA nodes detected on the system."""
+    topology = get_numa_topology_detailed()
+    return len(topology)
