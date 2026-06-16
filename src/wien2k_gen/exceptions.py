@@ -26,10 +26,11 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
 
-from .logging_config import get_logger
+# Avoid circular import: use TYPE_CHECKING and lazy import for get_logger
+from typing import TYPE_CHECKING
 
-# FIXED: Use __name__ instead of undefined 'name'
-logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from .logging_config import get_logger
 
 
 # =============================================================================
@@ -340,6 +341,10 @@ def log_exception_structured(exc: Exception, level: int = logging.ERROR) -> None
     """
     Log exception with structured JSON context for centralized log aggregation.
     """
+    # Lazy import to avoid circular dependency
+    from .logging_config import get_logger
+    logger = get_logger(__name__)
+    
     if is_wien2k_error(exc):
         logger.log(level, "Structured error: %s", exc.to_dict())
     else:
