@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Collapsible, Container
-from textual.widgets import Button, Input, Label, Static, Checkbox, Select, Rule, Switch
+from textual.containers import Horizontal, Vertical, Grid, Container
+from textual.widgets import Button, Input, Label, Static, Checkbox, Select, Rule, Switch, Collapsible
 from textual.reactive import reactive
 from textual.message import Message
 from textual import on

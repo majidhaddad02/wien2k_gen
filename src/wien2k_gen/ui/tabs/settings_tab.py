@@ -24,9 +24,9 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union, Tuple
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Collapsible, Container, ScrollableContainer
+from textual.containers import Horizontal, Vertical, Grid, Container, ScrollableContainer
 from textual.widgets import (
-    Button, Input, Label, Static, Select, Switch, Checkbox, Rule, DataTable
+    Button, Input, Label, Static, Select, Switch, Checkbox, Rule, DataTable, Collapsible
 )
 from textual.reactive import reactive
 from textual.message import Message
