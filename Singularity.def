@@ -1,0 +1,29 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%labels
+    Maintainer HPC-Workflow-Team
+    Version 9.8.0
+    Description WIEN2k Parallel Config & Job Dispatcher
+
+%environment
+    export OMP_NUM_THREADS=1
+    export MKL_NUM_THREADS=1
+    export KMP_AFFINITY="granularity=fine,compact,1,0"
+    export PATH="/opt/wien2k_gen/bin:${PATH}"
+    export PYTHONUNBUFFERED=1
+
+%post
+    apt-get update && apt-get install -y --no-install-recommends \
+        build-essential gfortran libopenmpi-dev openmpi-bin rsync numactl
+    pip install --no-cache-dir --upgrade pip
+    pip install --no-cache-dir /src
+    mkdir -p /opt/wien2k_gen/bin
+    # Install CLI wrappers
+    ln -sf $(which wien2k_gen) /opt/wien2k_gen/bin/
+    ln -sf $(which wien2k_sbatch) /opt/wien2k_gen/bin/
+    ln -sf $(which wien2k_wizard) /opt/wien2k_gen/bin/
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+%runscript
+    exec wien2k_gen "$@"

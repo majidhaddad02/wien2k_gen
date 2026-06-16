@@ -1,0 +1,18 @@
+// tests/fixtures/hardware_avx512_ib.json
+{
+  "cpu_arch": "x86_64",
+  "physical_cores": 64,
+  "logical_cores": 128,
+  "sockets": 2,
+  "cores_per_socket": 32,
+  "memory_gb": 256.0,
+  "memory_bandwidth_gb_s": 200.0,
+  "peak_fp64_gflops": 800.0,
+  "numa_nodes": 2,
+  "vector_isa": "avx512",
+  "interconnect_type": "infiniband",
+  "interconnect_provider": "mlx",
+  "scratch_fs": "tmpfs",
+  "elpa_available": true,
+  "mkl_available": true
+}

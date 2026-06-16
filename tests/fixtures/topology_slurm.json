@@ -1,0 +1,10 @@
+// tests/fixtures/topology_slurm.json
+{
+  "nodes": ["cn001", "cn002"],
+  "cores_per_node": [32, 32],
+  "total_cores": 64,
+  "env_type": "slurm",
+  "scheduler_hints": {"mpi_launcher": "srun", "numa_aware": true},
+  "heterogeneous": false,
+  "memory_per_node": [128000, 128000]
+}

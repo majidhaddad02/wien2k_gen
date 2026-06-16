@@ -1,0 +1,185 @@
+# ==============================================================================
+# pyproject.toml – Modern PEP 621 Configuration for Wien2kGen
+# Aligned with src/ layout, CI/CD best practices, and HPC deployment standards
+# ==============================================================================
+
+[build-system]
+requires = ["setuptools>=68.0", "setuptools-scm[toml]>=8.0"]
+build-backend = "setuptools.build_meta"
+
+# ==============================================================================
+# Project Metadata & Dependencies
+# ==============================================================================
+[project]
+name = "wien2k_gen"
+version = "9.8.0"
+description = "Production-grade WIEN2k parallel configuration & HPC job dispatcher"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "HPC Workflow Team", email = "dev@wien2k-gen.org"}
+]
+maintainers = [
+    {name = "HPC Workflow Team", email = "dev@wien2k-gen.org"}
+]
+keywords = [
+    "wien2k", "dft", "hpc", "slurm", "parallel-computing", 
+    "quantum-chemistry", "mpi", "openmp", "job-scheduler"
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X"
+]
+
+# Core dependencies (pinned for HPC stability)
+dependencies = [
+    "rich>=13.0",
+    "textual>=0.40",
+    "pyyaml>=6.0",
+    "typing-extensions>=4.5",
+    "numpy>=1.24",
+    "psutil>=5.9",
+    "filelock>=3.12",
+    "packaging>=23.0"
+]
+
+# ==============================================================================
+# Optional Dependencies
+# ==============================================================================
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "pytest-xdist>=3.3",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1.0",
+    "mypy>=1.5",
+    "pre-commit>=3.4",
+    "pip-audit>=2.5"
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme",
+    "myst-parser",
+    "sphinx-autodoc-typehints"
+]
+
+# ==============================================================================
+# CLI Entry Points
+# ==============================================================================
+[project.scripts]
+wien2k_gen = "wien2k_gen.cli:main"
+wien2k_sbatch = "wien2k_gen.cli_sbatch:run_sbatch_cli"
+wien2k_wizard = "wien2k_gen.wizard:run_wizard"
+
+# ==============================================================================
+# PyPI & Project URLs
+# ==============================================================================
+[project.urls]
+Homepage = "https://github.com/wien2k/wien2k-gen"
+Documentation = "https://wien2k-gen.readthedocs.io"
+Repository = "https://github.com/wien2k/wien2k-gen"
+Issues = "https://github.com/wien2k/wien2k-gen/issues"
+Changelog = "https://github.com/wien2k/wien2k-gen/releases"
+
+# ==============================================================================
+# Setuptools Configuration
+# ==============================================================================
+[tool.setuptools]
+include-package-data = true
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["wien2k_gen*"]
+exclude = ["tests*", "docs*", "examples*", "build*", "dist*"]
+
+# ==============================================================================
+# Testing & Coverage (Pytest)
+# ==============================================================================
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--tb=short",
+    "--cov=wien2k_gen",
+    "--cov-report=term-missing",
+    "--cov-report=xml:coverage.xml",
+    "--numprocesses=auto"
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests requiring external tools/schedulers",
+    "hardware: marks tests simulating real cluster behavior"
+]
+asyncio_mode = "auto"
+
+# ==============================================================================
+# Linting & Formatting (Ruff)
+# ==============================================================================
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+src = ["src"]
+fix = true
+unsafe-fixes = false
+show-fixes = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "C90", "PT"]
+ignore = ["E501", "B028", "PT019"]
+extend-select = ["I001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# ==============================================================================
+# Static Type Checking (Mypy)
+# ==============================================================================
+[tool.mypy]
+python_version = "3.9"
+mypy_path = "src"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["tests/", "docs/", "build/", "dist/"]
+show_error_codes = true
+
+# ==============================================================================
+# Coverage Reporting
+# ==============================================================================
+[tool.coverage.run]
+source = ["wien2k_gen"]
+branch = true
+parallel = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:"
+]
+show_missing = true
+fail_under = 80

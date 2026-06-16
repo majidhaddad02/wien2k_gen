@@ -1,0 +1,13 @@
+# ==============================================================================
+# Default parallel_options for WIEN2k (wien2k_gen v9.8.0)
+# Auto-generated safe defaults for modern HPC clusters.
+# ==============================================================================
+
+export USE_REMOTE="0"      # Disable SSH/rsh; use srun/mpirun
+export MPI_REMOTE="0"      # Disable legacy MPI remote spawning
+export TASKSET="no"        # Let MPI/OpenMP manage CPU affinity natively
+export DELAY="0.1"         # Prevent metadata storms on shared filesystems
+export SLEEPY="1"          # Reduce CPU spin-wait during I/O sync
+export OMP_GLOBAL="1"      # Default: MPI-only (override in UI if hybrid)
+export KPAR="0"            # Auto-detect k-point parallelism
+# export WIEN_MPIRUN="srun --hint=nomultithread --cpu-bind=core"

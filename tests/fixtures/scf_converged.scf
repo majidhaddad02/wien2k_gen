@@ -1,0 +1,8 @@
+// tests/fixtures/scf_converged.scf
+:ENE  : TOTAL ENERGY    =      -12345.67890123
+:DIS  : CHARGE CONVERGENCE = 0.00000005
+:CPU  : TOTAL CPU TIME  FOR SCF IS   142.5
+:REAL : TOTAL WALL TIME FOR SCF IS    24.3
+lapw0 : cpu time : 12.1
+lapw1 : cpu time : 89.4
+lapw2 : cpu time : 31.2
