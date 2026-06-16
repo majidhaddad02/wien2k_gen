@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-Developer: Majid Haddad (majid.haddad@reserved) - Email intentionally left blank
-Supervisor: Dr. Saed Jalali Asadabadi
+Developer: Majid Haddad (majidhaddad02@gmail.com) - Email intentionally left blank
+Supervisor: Dr. Saeed Jalali Asadabadi
 Institution: University of Isfahan, Iran
 Note: This project is under active testing. No warranty or guarantee is provided.
