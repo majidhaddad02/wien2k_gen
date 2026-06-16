@@ -30,7 +30,7 @@ from textual.binding import Binding
 from textual.message import Message
 from rich.console import Console
 
-from ..logging_config import get_logger
+from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -126,7 +126,7 @@ class HelpDialog(ModalScreen):
             yield Input(placeholder="🔍 Search documentation (Ctrl+F)", id="search_bar")
             
             with ScrollableContainer(id="help_content"):
-                yield Markdown(id="markdown_doc", id="md_content")
+                yield Markdown(id="md_content")
                 
             with Container(classes="help-footer"):
                 yield Button("Quick Start", id="btn_qs", variant="default")
