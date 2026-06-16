@@ -33,9 +33,13 @@ except ImportError:
 
 from ..core.topology import Topology
 from ..core.hardware import get_job_memory_limit_mb, get_scratch_filesystem_type
-from ..backend_manager import get_current_backend
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
+
+# Lazy import to avoid circular dependency
+def _get_current_backend():
+    from ..backend_manager import get_current_backend
+    return get_current_backend()
 
 # FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
@@ -206,7 +210,7 @@ def _register_preemption_signals(checkpoint_fn: Optional[Callable] = None) -> No
 
 def _get_current_problem_vector() -> ProblemVector:
     """Extract current problem parameters from the active DFT backend."""
-    backend = get_current_backend()
+    backend = _get_current_backend()
     try:
         params = backend.detect_problem_size()
         return ProblemVector(
@@ -225,7 +229,7 @@ def _get_current_problem_vector() -> ProblemVector:
 
 def _get_dayfile_path() -> Optional[Path]:
     """Locate the active SCF log/dayfile for parsing."""
-    backend = get_current_backend()
+    backend = _get_current_backend()
     if hasattr(backend, 'get_log_filename'):
         try:
             path = Path(backend.get_log_filename())

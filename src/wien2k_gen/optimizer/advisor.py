@@ -35,9 +35,13 @@ from ..core.hardware import (
     get_fma_units_per_core,
     calculate_peak_fp64_gflops,
 )
-from ..backend_manager import get_current_backend
 from ..logging_config import get_logger
-from ..types import ProblemSize as TypedProblemSize
+from ..types import ResourceSuggestion as TypedResourceSuggestion
+
+# Lazy import to avoid circular dependency with types
+def _get_ProblemSize():
+    from ..backends.base import ProblemSize
+    return ProblemSize
 
 # FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
@@ -373,7 +377,7 @@ def suggest_optimal_resources(
     8. Generate warnings and confidence score
     9. Validate against scheduler constraints
     """
-    backend = get_current_backend()
+    backend = _get_current_backend()
     params = backend.detect_problem_size()
     
     # Extract problem parameters safely
