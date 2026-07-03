@@ -8,7 +8,7 @@ _wien2k_gen() {
     local subcmds="generate submit benchmark diagnostics analyze tui"
     local global_opts="--verbose -v --quiet -q --json --config --backend --log-file --version --help"
 
-    # سوییچ بین ساب‌کامندها
+    # Switch between subcommands
     if [[ $cword -eq 1 ]]; then
         COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
         return

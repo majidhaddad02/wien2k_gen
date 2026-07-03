@@ -28,7 +28,6 @@ from ..core.hardware import get_interconnect_info, get_numa_node_count, is_conta
 from ..utils.atomic_write import atomic_write
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

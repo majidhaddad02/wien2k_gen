@@ -55,7 +55,6 @@ from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
 from ..utils.filelock import FileLock
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

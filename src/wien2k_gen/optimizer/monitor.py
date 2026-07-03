@@ -41,7 +41,6 @@ def _get_current_backend():
     from ..backend_manager import get_current_backend
     return get_current_backend()
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

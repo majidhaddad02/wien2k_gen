@@ -33,7 +33,6 @@ from rich.console import Console
 from ..core.topology import Topology
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 

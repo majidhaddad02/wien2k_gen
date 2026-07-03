@@ -13,6 +13,10 @@ From: python:3.11-slim
     export PATH="/opt/wien2k_gen/bin:${PATH}"
     export PYTHONUNBUFFERED=1
 
+%files
+    pyproject.toml /src/pyproject.toml
+    src/ /src/src/
+
 %post
     apt-get update && apt-get install -y --no-install-recommends \
         build-essential gfortran libopenmpi-dev openmpi-bin rsync numactl

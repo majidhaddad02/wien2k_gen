@@ -10,7 +10,7 @@ APP_NAME := wien2k_gen
 SRC_DIR := src
 PKG_DIR := $(SRC_DIR)/$(APP_NAME)
 COMPLETIONS_DIR := completions
-OFFLINE_DIR := packaging_offline
+OFFLINE_DIR := offline_packages
 
 .PHONY: all install dev test lint format clean build \
         install-offline download-offline install-completions \
@@ -58,7 +58,7 @@ format:
 # ==============================================================================
 download-offline: $(VENV)/bin/activate
 	@mkdir -p $(OFFLINE_DIR)
-	@$(VENV)/bin/pip download -r requirements-offline.txt -d $(OFFLINE_DIR)/ \
+	@$(VENV)/bin/pip download -r $(OFFLINE_DIR)/requirements-offline.txt -d $(OFFLINE_DIR)/ \
 		--only-binary=:all: --python-version 3.9 --platform manylinux_2_17_x86_64
 	@echo "💾 Offline packages downloaded to $(OFFLINE_DIR)/"
 

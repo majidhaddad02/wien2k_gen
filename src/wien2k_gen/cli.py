@@ -43,7 +43,6 @@ from .utils.diagnostic import run_diagnostics, export_diagnostics_json
 from .ui.interactive import launch_app
 from .ui.analysis import parse_scf_log, generate_report
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 console = Console()
 

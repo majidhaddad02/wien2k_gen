@@ -26,7 +26,6 @@ from ..core.hardware import get_scratch_filesystem_type, get_total_mem_kb
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

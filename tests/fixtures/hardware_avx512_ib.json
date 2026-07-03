@@ -1,4 +1,3 @@
-// tests/fixtures/hardware_avx512_ib.json
 {
   "cpu_arch": "x86_64",
   "physical_cores": 64,

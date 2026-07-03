@@ -43,7 +43,6 @@ def _get_ProblemSize():
     from ..backends.base import ProblemSize
     return ProblemSize
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

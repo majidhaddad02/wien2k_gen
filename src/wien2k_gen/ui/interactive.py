@@ -44,7 +44,6 @@ from .widgets import LogPanel, ResourceSummaryTable
 from .tabs import ResourcesTab, SettingsTab, SubmitTab
 from .dialogs import HelpDialog, ProfileDialog, ReportDialog
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 

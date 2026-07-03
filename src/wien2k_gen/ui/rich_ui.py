@@ -46,7 +46,6 @@ from ..submit.slurm import SubmissionResult
 from ..utils.diagnostic import DiagnosticReport
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 

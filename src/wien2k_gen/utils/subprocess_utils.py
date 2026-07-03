@@ -23,7 +23,6 @@ from typing import List, Union, Optional, Dict, Any, Callable, Tuple
 
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 # =============================================================================

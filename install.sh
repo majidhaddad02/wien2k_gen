@@ -9,7 +9,7 @@ set -euo pipefail
 # Configuration
 APP_NAME="wien2k_gen"
 APP_VERSION="9.8.0"
-OFFLINE_DIR="packaging_offline"
+OFFLINE_DIR="offline_packages"
 BINARIES=("wien2k_gen" "wien2k_sbatch" "wien2k_wizard")
 
 # Colors & Logging

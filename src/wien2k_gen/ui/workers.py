@@ -41,7 +41,6 @@ from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
 from ..utils.diagnostic import run_diagnostics
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 

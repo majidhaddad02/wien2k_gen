@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 # Structured Return Types for Type Safety & Static Analysis
 # =============================================================================
 
-class NUMANode(TypedDict):
+class HardwareNUMANode(TypedDict):
     node_id: int
     cpus: str
     cpu_ids: List[int]
@@ -57,7 +57,7 @@ class HardwareProfile(TypedDict):
     sockets: int
     cores_per_socket: int
     threads_per_core: int
-    numa_nodes: List[NUMANode]
+    numa_nodes: List[HardwareNUMANode]
     cache_topology: List[CacheLevel]
     memory_total_gb: float
     memory_limit_gb: Optional[float]
@@ -372,7 +372,7 @@ def get_job_memory_limit_mb() -> Optional[int]:
 # =============================================================================
 
 @lru_cache(maxsize=None)
-def get_numa_topology_detailed() -> List[NUMANode]:
+def get_numa_topology_detailed() -> List[HardwareNUMANode]:
     """Build detailed NUMA topology from sysfs."""
     nodes = []
     try:
@@ -390,7 +390,7 @@ def get_numa_topology_detailed() -> List[NUMANode]:
             if not node_path.exists():
                 continue
                 
-            node_data: NUMANode = {
+            node_data: HardwareNUMANode = {
                 "node_id": nid, "cpus": "", "cpu_ids": [], "mem_kb": 0,
                 "cores": 0, "distance": {}
             }
@@ -424,7 +424,7 @@ def get_numa_topology_detailed() -> List[NUMANode]:
         
     if not nodes:
         phys = get_physical_cores()
-        nodes = [NUMANode(
+        nodes = [HardwareNUMANode(
             node_id=0, cpus=f"0-{phys-1}", cpu_ids=list(range(phys)),
             mem_kb=get_total_mem_kb(), cores=phys, distance={0: 10}
         )]

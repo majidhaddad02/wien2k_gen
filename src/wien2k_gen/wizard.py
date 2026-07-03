@@ -41,7 +41,6 @@ from .optimizer.advisor import suggest_optimal_resources
 from .backend_manager import list_backends, set_backend, get_backend
 from .exceptions import Wien2kGenError, ConfigurationError
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 console = Console()
 

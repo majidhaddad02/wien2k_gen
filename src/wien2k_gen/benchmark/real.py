@@ -38,7 +38,6 @@ from ..utils.scratch import setup_scratch, cleanup_scratch, ScratchConfig
 from ..analysis import parse_scf_log, SCFParseResult
 from ..logging_config import get_logger
 
-# FIXED: Use __name__ instead of undefined 'name'
 logger = get_logger(__name__)
 
 
