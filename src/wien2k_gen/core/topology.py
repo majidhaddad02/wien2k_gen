@@ -16,6 +16,10 @@ Key Improvements Applied:
 
 import json
 import logging
+import math
+import os
+import re
+from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional, Union, Any, Tuple
 from dataclasses import dataclass, field, asdict
@@ -31,6 +35,16 @@ class TopologyValidationError(Exception):
     or contains impossible resource allocations.
     """
     pass
+
+
+class TopologyType(Enum):
+    """Network topology types commonly found in HPC clusters."""
+    FAT_TREE = "fat_tree"
+    DRAGONFLY = "dragonfly"
+    TORUS = "torus"
+    HYPERCUBE = "hypercube"
+    STAR = "star"
+    UNKNOWN = "unknown"
 
 
 # =============================================================================
@@ -367,6 +381,162 @@ class Topology:
             cmd_parts.append(binding)
         cmd_parts.extend(["-n", str(total_ranks), "--"])
         return " ".join(cmd_parts)
+
+    def detect_topology_type(self) -> TopologyType:
+        """
+        Detect which network topology the cluster uses.
+
+        For SLURM: inspects scontrol topology data or infers from node naming.
+        For known HPC systems: checks environment variables
+        (SLURM_TOPOLOGY_ADDR, SLURM_TOPOLOGY_ADDR_PATTERN).
+        Infers from interconnect type: InfiniBand → fat-tree, OmniPath → dragonfly.
+        """
+        slurm_topo_addr = os.environ.get("SLURM_TOPOLOGY_ADDR", "")
+        slurm_topo_pattern = os.environ.get("SLURM_TOPOLOGY_ADDR_PATTERN", "")
+
+        if slurm_topo_addr or slurm_topo_pattern:
+            combined = (slurm_topo_addr + slurm_topo_pattern).lower()
+            if "switch" in combined or "leaf" in combined or "tree" in combined:
+                return TopologyType.FAT_TREE
+            if "group" in combined or "dragonfly" in combined:
+                return TopologyType.DRAGONFLY
+            if "torus" in combined:
+                return TopologyType.TORUS
+            if "hypercube" in combined:
+                return TopologyType.HYPERCUBE
+            if "star" in combined:
+                return TopologyType.STAR
+
+        if self.network_topology:
+            net_type = str(self.network_topology.get("type", "")).lower()
+            interconn = str(self.network_topology.get("interconnect", "")).lower()
+            if "infiniband" in net_type or "infiniband" in interconn or "ib" == net_type:
+                return TopologyType.FAT_TREE
+            if "omnipath" in net_type or "omnipath" in interconn or "opa" == net_type:
+                return TopologyType.DRAGONFLY
+            if "ethernet" in net_type or "tcp" in interconn:
+                return TopologyType.STAR
+
+        for spec in self.node_specs.values():
+            net = (spec.network_type or "").lower()
+            if "infiniband" in net or "ib" == net:
+                return TopologyType.FAT_TREE
+            if "omnipath" in net or "opa" == net:
+                return TopologyType.DRAGONFLY
+
+        if self.nodes:
+            name_groups: Dict[str, List[str]] = {}
+            for node in self.nodes:
+                prefix = re.sub(r"\d+$", "", node) if "re" in dir() else node.rsplit("-", 1)[0]
+                name_groups.setdefault(prefix, []).append(node)
+
+        node_naming = " ".join(self.nodes).lower()
+        if any(kw in node_naming for kw in ["switch", "leaf", "spine"]):
+            return TopologyType.FAT_TREE
+        if any(kw in node_naming for kw in ["group", "dragon"]):
+            return TopologyType.DRAGONFLY
+
+        return TopologyType.UNKNOWN
+
+    def get_optimal_placement(
+        self, nranks: int, mode: str = "kpoint"
+    ) -> List[Tuple[str, int]]:
+        """
+        Compute optimal node placement based on detected network topology
+        and the number of MPI ranks.
+
+        - Fat-tree: group ranks densely on adjacent leaf switches to
+          minimize inter-switch traffic.
+        - Dragonfly: spread ranks across groups to utilize adaptive routing.
+        - Torus: nearest-neighbor placement along the grid.
+        - Star/Unknown: round-robin distribution.
+
+        Returns list of (node_name, cores_assigned) tuples.
+        """
+        topo_type = self.detect_topology_type()
+        placement: List[Tuple[str, int]] = []
+
+        if not self.nodes or nranks <= 0:
+            return placement
+
+        total_cores_available = sum(self.cores_per_node)
+
+        if topo_type == TopologyType.FAT_TREE:
+            ranks_remaining = nranks
+            for node, cores in zip(self.nodes, self.cores_per_node):
+                if ranks_remaining <= 0:
+                    break
+                assign = min(cores, ranks_remaining)
+                placement.append((node, assign))
+                ranks_remaining -= assign
+
+        elif topo_type == TopologyType.DRAGONFLY:
+            ranks_per_node = max(1, nranks // len(self.nodes))
+            extra = nranks % len(self.nodes)
+            for i, (node, cores) in enumerate(zip(self.nodes, self.cores_per_node)):
+                assign = min(cores, ranks_per_node + (1 if i < extra else 0))
+                if assign > 0:
+                    placement.append((node, assign))
+
+        elif topo_type == TopologyType.TORUS:
+            dim_size = max(1, int(math.isqrt(nranks)))
+            dim_size = max(1, min(dim_size, len(self.nodes)))
+            for i in range(min(nranks, len(self.nodes))):
+                node_idx = i % len(self.nodes)
+                assign = min(self.cores_per_node[node_idx], max(1, nranks // len(self.nodes)))
+                if i < nranks % len(self.nodes):
+                    assign = min(self.cores_per_node[node_idx], assign + 1)
+                placement.append((self.nodes[node_idx], assign))
+
+        else:
+            ranks_per_node = max(1, nranks // len(self.nodes))
+            extra = nranks % len(self.nodes)
+            for i, (node, cores) in enumerate(zip(self.nodes, self.cores_per_node)):
+                assign = min(cores, ranks_per_node + (1 if i < extra else 0))
+                if assign > 0:
+                    placement.append((node, assign))
+
+        return placement
+
+    def get_mpi_binding_hints(self) -> Dict[str, str]:
+        """
+        Return MPI binding hints appropriate for the detected network topology.
+
+        Returns a dictionary with keys suitable for OpenMPI, Intel MPI,
+        and SLURM srun:
+        - openmpi: arguments for mpirun
+        - intel_mpi: environment variables for Intel MPI
+        - srun: arguments for srun
+
+        Fat-tree:  --map-by ppr:N:node --bind-to core
+        Dragonfly: --map-by ppr:N:node:SPAN --bind-to socket
+        Torus:     --map-by ppr:N:node:PE=n --bind-to core
+        Star/Unknown: round-robin defaults
+        """
+        topo_type = self.detect_topology_type()
+        hints: Dict[str, str] = {}
+
+        if topo_type == TopologyType.FAT_TREE:
+            hints["openmpi"] = "--map-by ppr:N:node --bind-to core"
+            hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=core"
+            hints["srun"] = "--cpu-bind=cores --distribution=block:block"
+
+        elif topo_type == TopologyType.DRAGONFLY:
+            hints["openmpi"] = "--map-by ppr:N:node:SPAN --bind-to socket"
+            hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=socket"
+            hints["srun"] = "--cpu-bind=sockets --distribution=arbitrary"
+
+        elif topo_type == TopologyType.TORUS:
+            hints["openmpi"] = "--map-by ppr:N:node:PE=n --bind-to core"
+            hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=core:compact"
+            hints["srun"] = "--cpu-bind=cores --distribution=cyclic"
+
+        else:
+            hints["openmpi"] = "--map-by ppr:N:node --bind-to core"
+            hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=auto"
+            hints["srun"] = "--cpu-bind=cores --distribution=cyclic"
+
+        return hints
 
     # =============================================================================
     # Serialization & I/O Methods

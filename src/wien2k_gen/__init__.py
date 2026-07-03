@@ -132,6 +132,17 @@ def __getattr__(name: str) -> Any:
         from .types import OptimizationTarget
         return OptimizationTarget
 
+    # History & Bayesian optimization
+    if name == "ExecutionHistory":
+        from .optimizer.history import ExecutionHistory
+        return ExecutionHistory
+    if name == "BayesianOptimizer":
+        from .optimizer.bayesian import BayesianOptimizer
+        return BayesianOptimizer
+    if name == "suggest_from_history":
+        from .optimizer.history import suggest_from_history
+        return suggest_from_history
+
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
@@ -148,6 +159,7 @@ def __dir__() -> List[str]:
         "get_config", "load_config",
         "PipelineResult", "ResourceSuggestion", "TopologyData",
         "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
+        "ExecutionHistory", "BayesianOptimizer", "suggest_from_history",
         "__version__"
     ]
 
@@ -176,4 +188,6 @@ __all__ = [
     # Types
     "PipelineResult", "ResourceSuggestion", "TopologyData",
     "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
+    # History & Bayesian
+    "ExecutionHistory", "BayesianOptimizer", "suggest_from_history",
 ]

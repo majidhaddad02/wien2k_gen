@@ -4,6 +4,8 @@ Submodules:
 • advisor: Scientific resource recommendation with Roofline modeling
 • monitor: Self-healing SCF execution monitor with adaptive reconfiguration
 • profiler: Statistical performance profiling with async execution
+• history: SQLite-based execution history store for learning from past runs
+• bayesian: Bayesian optimization for parallel execution parameter tuning
 """
 
 from .advisor import (
@@ -12,6 +14,10 @@ from .advisor import (
     OptimizationTarget,
     ResourceSuggestion,
     estimate_memory_footprint_gb,
+    roofline_crossover_analysis,
+    estimate_arithmetic_intensity,
+    get_optimization_report,
+    BACKEND_OPERATIONAL_INTENSITY,
 )
 from .monitor import (
     start_monitoring,
@@ -21,6 +27,10 @@ from .monitor import (
     get_monitor_status,
     MonitorEvent,
     ProblemVector,
+    ConvergenceAnalysis,
+    detect_charge_sloshing,
+    analyze_broyden_mixing,
+    analyze_convergence_history,
 )
 from .profiler import (
     profile_and_select,
@@ -28,6 +38,16 @@ from .profiler import (
     AutoProfiler,
     ProfileResult,
     ProfilingReport,
+)
+from .history import (
+    ExecutionRecord,
+    ExecutionHistory,
+    suggest_from_history,
+    compute_efficiency,
+)
+from .bayesian import (
+    BayesianOptimizer,
+    compute_expected_improvement,
 )
 
 # Explicit public API declaration.
@@ -39,6 +59,10 @@ __all__ = [
     "OptimizationTarget",
     "ResourceSuggestion",
     "estimate_memory_footprint_gb",
+    "roofline_crossover_analysis",
+    "estimate_arithmetic_intensity",
+    "get_optimization_report",
+    "BACKEND_OPERATIONAL_INTENSITY",
     # Monitor
     "start_monitoring",
     "stop_monitoring",
@@ -47,10 +71,22 @@ __all__ = [
     "get_monitor_status",
     "MonitorEvent",
     "ProblemVector",
+    "ConvergenceAnalysis",
+    "detect_charge_sloshing",
+    "analyze_broyden_mixing",
+    "analyze_convergence_history",
     # Profiler
     "profile_and_select",
     "profile_and_select_async",
     "AutoProfiler",
     "ProfileResult",
     "ProfilingReport",
+    # History
+    "ExecutionRecord",
+    "ExecutionHistory",
+    "suggest_from_history",
+    "compute_efficiency",
+    # Bayesian
+    "BayesianOptimizer",
+    "compute_expected_improvement",
 ]

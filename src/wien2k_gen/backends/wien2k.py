@@ -20,6 +20,7 @@ Key Improvements Applied:
 import os
 import re
 import json
+import math
 import shutil
 import signal
 import datetime
@@ -459,6 +460,207 @@ class Wien2kBackend(Backend):
         result["complexity"] = result["atoms"] / 50.0
         return result
 
+    def estimate_kpoint_density(self, rkmax: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Estimate optimal k-point density using the empirical WIEN2k heuristic:
+        kpoints_per_atom ≈ 125 / (volume_per_atom)
+        where volume_per_atom = unit_cell_volume / natoms.
+
+        Reads lattice parameters from case.struct to compute unit cell volume.
+        Falls back to a heuristic based on atom count if struct cannot be parsed.
+        """
+        result: Dict[str, Any] = {
+            "nkpt_est": 0,
+            "kpt_per_atom": 0.0,
+            "volume": 0.0,
+            "formula_units": 1,
+            "recommendation": "",
+        }
+
+        natoms = 1
+        atom_types: Dict[str, int] = {}
+        volume = 0.0
+        parsed_struct = False
+
+        struct_files = list(Path(".").glob("*.struct"))
+        if struct_files:
+            try:
+                content = struct_files[0].read_text(encoding="utf-8", errors="replace")
+                lines = content.splitlines()
+
+                for line in lines:
+                    m = re.search(r"NUMBER OF ATOMS\s*=\s*(\d+)", line, re.IGNORECASE)
+                    if m:
+                        natoms = int(m.group(1))
+                        break
+
+                if natoms == 1:
+                    atom_lines = [
+                        l for l in lines
+                        if re.match(r"^\s*ATOM\s*[-\d]+:", l, re.IGNORECASE)
+                    ]
+                    if atom_lines:
+                        natoms = len(atom_lines)
+
+                for line in lines:
+                    m_type = re.match(r"^\s*ATOM\s*[-\d]+:\s*.*TOT\s*=\s*(\w+)", line, re.IGNORECASE)
+                    if m_type:
+                        elem = m_type.group(1)
+                        atom_types[elem] = atom_types.get(elem, 0) + 1
+
+                lattice_vectors: List[List[float]] = []
+                lattice_match = re.match(
+                    r"^\s*LATTYP\s*=\s*(\S+)",
+                    "",
+                )
+                lattice_section = False
+                a_vector: Optional[List[float]] = None
+                b_vector: Optional[List[float]] = None
+                c_vector: Optional[List[float]] = None
+                angstrom_mode = False
+
+                for line in lines:
+                    if not angstrom_mode and "ANG" in line.upper() and "LATT" not in line.upper():
+                        angstrom_mode = True
+                    if re.match(r"^\s*[A-Za-z]+\s+VALUE", line, re.IGNORECASE):
+                        angstrom_mode = True
+
+                lat_param_lines = []
+                for line in lines:
+                    clean = re.sub(r"#.*", "", line).strip()
+                    if not clean:
+                        continue
+                    parts = clean.split()
+                    if len(parts) == 3 or len(parts) == 4:
+                        try:
+                            nums = [float(p) for p in parts[:3]]
+                            has_enough = sum(1 for n in nums if n != 0.0) >= 1
+                            if has_enough and all(-200 <= n <= 200 for n in nums):
+                                lat_param_lines.append(nums)
+                        except (ValueError, TypeError):
+                            continue
+
+                if len(lat_param_lines) >= 3:
+                    a_vector = lat_param_lines[0]
+                    b_vector = lat_param_lines[1]
+                    c_vector = lat_param_lines[2]
+                    lattice_vectors = [a_vector, b_vector, c_vector]
+                elif len(lat_param_lines) >= 1:
+                    tok_idx = 0
+                    for line in lines:
+                        clean = re.sub(r"#.*", "", line).strip()
+                        parts = clean.split()
+                        if len(parts) >= 6:
+                            try:
+                                nums = [float(p) for p in parts]
+                                a_vector = nums[:3]
+                                b_vector = nums[3:6]
+                                c_vector = [nums[6], nums[7], nums[8]] if len(nums) >= 9 else [1.0, 0.0, 0.0]
+                                lattice_vectors = [a_vector, b_vector, c_vector]
+                                break
+                            except (ValueError, TypeError):
+                                continue
+
+                if lat_param_lines and not lattice_vectors:
+                    full = []
+                    for row in lat_param_lines:
+                        full.extend(row)
+                    full = full + [0.0] * (9 - len(full))
+                    a_vector = full[0:3]
+                    b_vector = full[3:6]
+                    c_vector = full[6:9]
+                    if any(v != 0.0 for v in a_vector) and any(v != 0.0 for v in b_vector) and any(v != 0.0 for v in c_vector):
+                        lattice_vectors = [a_vector, b_vector, c_vector]
+
+                if lattice_vectors and len(lattice_vectors) == 3:
+                    a = lattice_vectors[0]
+                    b = lattice_vectors[1]
+                    c = lattice_vectors[2]
+                    cross_bc = [
+                        b[1] * c[2] - b[2] * c[1],
+                        b[2] * c[0] - b[0] * c[2],
+                        b[0] * c[1] - b[1] * c[0],
+                    ]
+                    volume = abs(
+                        a[0] * cross_bc[0] + a[1] * cross_bc[1] + a[2] * cross_bc[2]
+                    )
+                    natoms = max(natoms, 1)
+                    kpt_per_atom = 125.0 / (volume / natoms) if volume > 0 else 0.0
+                    nkpt_est = max(1, int(round(kpt_per_atom * natoms)))
+
+                    result["nkpt_est"] = nkpt_est
+                    result["kpt_per_atom"] = kpt_per_atom
+                    result["volume"] = volume
+                    result["formula_units"] = natoms
+                    result["recommendation"] = (
+                        f"Estimated {nkpt_est} k-points for {natoms} atoms "
+                        f"(vol={volume:.1f} Å³, density={kpt_per_atom:.3f} kpt/atom)"
+                    )
+                    parsed_struct = True
+            except Exception as e:
+                logger.warning(f"Failed to parse struct for k-point density: {e}")
+
+        if not parsed_struct:
+            params = self._detect_problem_size()
+            natoms = max(params.get("atoms", 10), 1)
+            base = 8 if natoms <= 4 else (16 if natoms <= 16 else (32 if natoms <= 50 else 64))
+            nkpt_est = max(1, base)
+            result["nkpt_est"] = nkpt_est
+            result["kpt_per_atom"] = nkpt_est / natoms
+            result["volume"] = 0.0
+            result["formula_units"] = natoms
+            result["recommendation"] = (
+                f"Heuristic estimate: {nkpt_est} k-points for {natoms} atoms "
+                f"(struct file could not be parsed)"
+            )
+
+        return result
+
+    def auto_rkmax(
+        self, available_cores: int, available_memory_gb: float
+    ) -> float:
+        """
+        Compute the maximum feasible RKMAX based on available memory and cores.
+
+        Uses the scaling law:
+            memory ∝ (nmat / natoms) * RKMAX² * nkpt
+
+        The recommended RKMAX is clamped to the realistic WIEN2k range [5.0, 10.0].
+        Formula:
+            rkmax_auto = 7.0 * min(1.0, sqrt(available_memory_gb / estimated_memory_at_rkmax7))
+        where estimated_memory_at_rkmax7 is derived from the existing footprint estimator.
+        """
+        params = self._detect_problem_size()
+        natoms = max(params.get("atoms", 10), 1)
+        nmat = params.get("nmat", 0)
+        nkpt = params.get("kpoints", 1)
+
+        density = self.estimate_kpoint_density()
+        if nkpt <= 0:
+            nkpt = max(1, density.get("nkpt_est", 1))
+
+        if nmat <= 0:
+            nmat = natoms * 100
+
+        nmat_per_atom = max(1.0, float(nmat) / float(natoms))
+        estimated_memory_at_rkmax7 = (nmat_per_atom * 49.0 * float(nkpt) * 8.0) / (1024.0 ** 3)
+
+        if estimated_memory_at_rkmax7 <= 0:
+            return 7.0
+
+        ratio = math.sqrt(available_memory_gb / estimated_memory_at_rkmax7)
+        ratio = min(1.0, max(0.4, ratio))
+        rkmax_auto = 7.0 * ratio
+
+        rkmax_auto = max(5.0, min(10.0, rkmax_auto))
+
+        logger.info(
+            f"auto_rkmax: memory={available_memory_gb:.1f} GB, "
+            f"est_at_rkmax7={estimated_memory_at_rkmax7:.2f} GB, "
+            f"recommended rkmax={rkmax_auto:.2f}"
+        )
+        return round(rkmax_auto, 2)
+
     def _build_machines_lines(self, topo: Topology, suggestion: Dict[str, Any]) -> List[str]:
         """
         Build .machines file content with optimal parallel distribution.
@@ -737,3 +939,27 @@ trap _checkpoint_handler TERM USR1
         # Atomic write with executable permissions
         atomic_write(script_path, content, mode=0o755)
         logger.info(f"Written {script_path} ({len(content)} bytes)")
+
+
+def auto_detect_optimal_rkmax(
+    available_cores: Optional[int] = None,
+    available_memory_gb: Optional[float] = None,
+) -> float:
+    """
+    Standalone convenience function that wraps Wien2kBackend to
+    auto-detect the optimal RKMAX for the current WIEN2k case.
+
+    Detects problem size from input files, estimates available system
+    resources if not provided, and returns the recommended RKMAX value.
+    """
+    from ..core.hardware import get_physical_cores, get_total_mem_kb
+
+    if available_cores is None:
+        available_cores = get_physical_cores()
+
+    if available_memory_gb is None:
+        mem_kb = get_total_mem_kb()
+        available_memory_gb = mem_kb / (1024.0 * 1024.0)
+
+    backend = Wien2kBackend()
+    return backend.auto_rkmax(available_cores, available_memory_gb)

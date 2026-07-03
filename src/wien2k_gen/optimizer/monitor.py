@@ -57,6 +57,8 @@ class MonitorEvent(Enum):
     ERROR_DETECTED = "error_detected"
     CYCLE_COMPLETED = "cycle_completed"
     PREEMPTION_SIGNAL = "preemption_signal"
+    CHARGE_SLOSHING = "charge_sloshing"
+    BROYDEN_STUCK = "broyden_stuck"
 
 
 @dataclass
@@ -165,6 +167,19 @@ class MonitorState:
             self.preemption_handled = True
 
 
+@dataclass
+class ConvergenceAnalysis:
+    """
+    Structured analysis of SCF convergence history from case.scf or dayfile.
+    Provides convergence type classification, mixing recommendations, and raw history.
+    """
+    convergence_type: str = "unknown"  # "monotonic", "oscillatory", "stalled", "divergent"
+    mixing_recommendation: str = ""
+    estimated_cycles_to_converge: int = -1
+    charge_distance_history: List[float] = field(default_factory=list)
+    energy_history: List[float] = field(default_factory=list)
+
+
 # =============================================================================
 # Global State & Signal Handling
 # =============================================================================
@@ -249,26 +264,28 @@ def _parse_dayfile_events(dayfile_path: Path) -> List[MonitorEvent]:
     """
     Parse SCF dayfile content to detect convergence behavior, errors, or cycle completion.
     Uses regex-based extraction for robust matching across WIEN2k versions.
+    Also invokes charge-sloshing and Broyden-mixing detectors.
     """
     events: List[MonitorEvent] = []
     if not dayfile_path.exists():
         return events
-        
+
     try:
-        content = dayfile_path.read_text(encoding="utf-8", errors="replace").lower()
-        
+        raw_content = dayfile_path.read_text(encoding="utf-8", errors="replace")
+        content = raw_content.lower()
+
         # Convergence stall detection (repeated identical charge/energy values)
         if re.search(r"charge convergence.*?:.*?0\.0000", content):
             events.append(MonitorEvent.CONVERGENCE_STALL)
-            
+
         # Cycle completion marker
         if re.search(r"cycle\s+\d+|end of scf cycle", content):
             events.append(MonitorEvent.CYCLE_COMPLETED)
-            
+
         # Critical error patterns (FIXED: Removed trailing spaces from regex strings)
         error_patterns = [
             r"qtl-b",
-            r"lapw[0-9]?\s*(crashed|error|fail)", 
+            r"lapw[0-9]?\s*(crashed|error|fail)",
             r"not converged",
             r"segmentation fault",
             r"abort"
@@ -277,11 +294,280 @@ def _parse_dayfile_events(dayfile_path: Path) -> List[MonitorEvent]:
             if re.search(pat, content):
                 events.append(MonitorEvent.ERROR_DETECTED)
                 break  # Report first critical error only
-                
+
+        # Charge sloshing detection
+        sloshing_result = detect_charge_sloshing(raw_content)
+        if sloshing_result.get("sloshing_detected"):
+            events.append(MonitorEvent.CHARGE_SLOSHING)
+            logger.debug(
+                f"Charge sloshing detected (severity={sloshing_result.get('severity', 0)}). "
+                f"Recommendation: {sloshing_result.get('recommendation', '')}"
+            )
+
+        # Broyden mixing analysis
+        broyden_result = analyze_broyden_mixing(raw_content, str(dayfile_path))
+        if broyden_result.get("stuck"):
+            events.append(MonitorEvent.BROYDEN_STUCK)
+            logger.debug(
+                f"Broyden mixing stuck (plateau={broyden_result.get('iteration_plateau_length', 0)}). "
+                f"Recommendation: {broyden_result.get('recommendation', '')}"
+            )
+
     except Exception as e:
         logger.debug(f"Dayfile parsing failed for {dayfile_path}: {e}")
-        
+
     return events
+
+
+def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict:
+    """
+    Detect charge sloshing—oscillatory convergence behavior where charge distance
+    alternates (high/low) across SCF cycles instead of decaying monotonically.
+
+    Uses the Durbin-Watson statistic on consecutive charge-distance deltas to
+    identify negative autocorrelation, the hallmark signature of sloshing.
+
+    Args:
+        dayfile_content: Raw or lowercased text content from the dayfile/SCF log.
+        tolerance: Sensitivity threshold for DW-based detection (lower = more sensitive).
+
+    Returns:
+        dict with keys:
+            sloshing_detected: bool
+            severity: float (0.0 – 1.0, based on oscillation amplitude)
+            cycles_affected: List[int] of cycle indices exhibiting sloshing
+            recommendation: str with actionable mixing advice
+    """
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    matches = cd_pattern.findall(dayfile_content)
+    if len(matches) < 5:
+        return {
+            "sloshing_detected": False,
+            "severity": 0.0,
+            "cycles_affected": [],
+            "recommendation": ""
+        }
+
+    values = [float(m) for m in matches]
+    n = len(values)
+    diffs = [values[i] - values[i - 1] for i in range(1, n)]
+
+    numerator = sum(d * d for d in diffs)
+    denominator = sum((v - sum(values) / n) ** 2 for v in values)
+    if denominator < 1e-30:
+        dw_stat = 2.0
+    else:
+        dw_stat = numerator / denominator if denominator > 0 else 2.0
+
+    sloshing_detected = dw_stat > (2.5 + tolerance)
+
+    slope = values[-1] - values[0]
+    if sloshing_detected and slope > 0:
+        sloshing_detected = False
+
+    mean_val = sum(values) / n if n > 0 else 0
+    rel_range = (max(values) - min(values)) / mean_val if mean_val > 1e-12 else 0
+    severity_raw = min(1.0, (dw_stat - 2.5) / 1.5)
+    severity = round(0.8 * severity_raw + 0.2 * min(1.0, rel_range), 4)
+
+    cycles_affected: List[int] = []
+    if sloshing_detected:
+        osc_threshold = (max(diffs) - min(diffs)) * 0.3 if diffs else 0
+        for i in range(2, n):
+            if diffs[i - 1] * diffs[i - 2] < 0 and abs(diffs[i - 1]) > osc_threshold * 0.1:
+                cycles_affected.append(i + 1)
+
+    return {
+        "sloshing_detected": sloshing_detected,
+        "severity": severity,
+        "cycles_affected": cycles_affected,
+        "recommendation": (
+            "Charge sloshing detected—reduce mixing beta by 50%, "
+            "increase number of PRATT iterations, or try MSR1a mixing"
+            if sloshing_detected
+            else ""
+        )
+    }
+
+
+def analyze_broyden_mixing(dayfile_content: str, log_path: str) -> dict:
+    """
+    Analyze Broyden mixing behavior and detect stagnation.
+
+    Checks whether Broyden mixing is active, examines charge-distance
+    progression across iterations, and identifies plateauing that signals
+    a stuck Broyden history.
+
+    Args:
+        dayfile_content: Text content from the dayfile/SCF log.
+        log_path: Path to the log file (reserved for extended diagnostics).
+
+    Returns:
+        dict with keys:
+            broyden_active: bool
+            stuck: bool
+            convergence_rate: float (log-average reduction per cycle)
+            iteration_plateau_length: int
+            recommendation: str
+    """
+    broyden_active = bool(
+        re.search(r'\bbroy', dayfile_content, re.IGNORECASE)
+    )
+
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    matches = cd_pattern.findall(dayfile_content)
+    values = [float(m) for m in matches]
+
+    n = len(values)
+    convergence_rate = 0.0
+    if n >= 3:
+        ratios = []
+        for i in range(1, n):
+            if values[i - 1] > 1e-12:
+                ratios.append(math.log(values[i] / values[i - 1]))
+        if ratios:
+            convergence_rate = round(math.exp(sum(ratios) / len(ratios)), 6)
+
+    plateau_length = 0
+    stuck = False
+    if n >= 4:
+        rel_tol = 0.02
+        run = 1
+        max_run = 1
+        for i in range(1, n):
+            ref = max(values[i - 1], 1e-12)
+            if abs(values[i] - values[i - 1]) / ref < rel_tol:
+                run += 1
+                max_run = max(max_run, run)
+            else:
+                run = 1
+        plateau_length = max_run
+        stuck = plateau_length >= 3 and any(v > 1e-6 for v in values[-plateau_length:])
+
+    recommendation = ""
+    if broyden_active and stuck:
+        recommendation = (
+            "Broyden mixing stuck—reset Broyden history, "
+            "increase mixing parameter, or fall back to PRATT mixing"
+        )
+
+    return {
+        "broyden_active": broyden_active,
+        "stuck": stuck,
+        "convergence_rate": convergence_rate,
+        "iteration_plateau_length": plateau_length,
+        "recommendation": recommendation
+    }
+
+
+def analyze_convergence_history(dayfile_content: str) -> ConvergenceAnalysis:
+    """
+    Read full convergence history from SCF log content and classify the
+    convergence trajectory, providing mixing recommendations and cycle estimates.
+
+    Args:
+        dayfile_content: Text content from the dayfile/SCF log.
+
+    Returns:
+        ConvergenceAnalysis dataclass with classification, history vectors, and advice.
+    """
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    en_pattern = re.compile(
+        r'(?:(?:total|:)?\s*energy)\s*[=:]\s*([\-]?[\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+
+    charge_distances = [float(m) for m in cd_pattern.findall(dayfile_content)]
+    energies = [float(m) for m in en_pattern.findall(dayfile_content)]
+
+    n = len(charge_distances)
+    if n < 3:
+        return ConvergenceAnalysis(
+            convergence_type="unknown",
+            mixing_recommendation="Insufficient data for convergence classification",
+            estimated_cycles_to_converge=-1,
+            charge_distance_history=charge_distances,
+            energy_history=energies
+        )
+
+    slope = charge_distances[-1] - charge_distances[0]
+    ratios = []
+    for i in range(1, n):
+        if charge_distances[i - 1] > 1e-12:
+            ratios.append(charge_distances[i] / charge_distances[i - 1])
+
+    avg_ratio = sum(ratios) / len(ratios) if ratios else 1.0
+
+    diffs = [charge_distances[i] - charge_distances[i - 1] for i in range(1, n)]
+    sign_changes = sum(1 for i in range(1, len(diffs)) if diffs[i] * diffs[i - 1] < 0)
+    oscillation_ratio = sign_changes / max(1, len(diffs) - 1) if len(diffs) > 1 else 0.0
+
+    rel_plateau = 0
+    if n >= 4:
+        rel_tol = 0.02
+        run = 1
+        for i in range(1, n):
+            ref = max(charge_distances[i - 1], 1e-12)
+            if abs(charge_distances[i] - charge_distances[i - 1]) / ref < rel_tol:
+                run += 1
+                rel_plateau = max(rel_plateau, run)
+            else:
+                run = 1
+
+    if avg_ratio > 1.01 and slope > 0:
+        convergence_type = "divergent"
+        recommendation = (
+            "Divergent SCF—reduce mixing beta, enable PRATT mixing, "
+            "or add more k-points to stabilise charge density"
+        )
+        est_cycles = -1
+    elif rel_plateau >= 3 and charge_distances[-1] > 1e-5:
+        convergence_type = "stalled"
+        recommendation = (
+            "SCF stalled—increase mixing iterations, "
+            "enable Broyden mixing, or shake the density with a small displacement"
+        )
+        est_cycles = -1
+    elif oscillation_ratio >= 0.4 and avg_ratio < 1.0:
+        convergence_type = "oscillatory"
+        recommendation = (
+            "Oscillatory convergence (charge sloshing)—reduce mixing beta, "
+            "increase PRATT iterations, or switch to MSR1a mixing"
+        )
+        est = 0
+        if avg_ratio > 0 and avg_ratio < 1.0:
+            est = int(math.log(1e-6 / max(charge_distances[-1], 1e-12))
+                     / math.log(avg_ratio)) + 1
+        est_cycles = max(0, est)
+    elif avg_ratio < 1.0 and oscillation_ratio < 0.4:
+        convergence_type = "monotonic"
+        recommendation = "Convergence progressing monotonically—current settings are suitable"
+        est = 0
+        if avg_ratio > 0 and avg_ratio < 1.0:
+            est = int(math.log(1e-6 / max(charge_distances[-1], 1e-12))
+                     / math.log(avg_ratio)) + 1
+        est_cycles = max(0, est)
+    else:
+        convergence_type = "unknown"
+        recommendation = "Unclear convergence pattern—monitor further"
+        est_cycles = -1
+
+    return ConvergenceAnalysis(
+        convergence_type=convergence_type,
+        mixing_recommendation=recommendation,
+        estimated_cycles_to_converge=est_cycles,
+        charge_distance_history=charge_distances,
+        energy_history=energies
+    )
 
 
 def _estimate_rebuild_benefit(topo: Topology, current_params: Dict[str, Any]) -> Dict[str, Any]:
@@ -382,6 +668,14 @@ def monitor_and_rebuild(
             if MonitorEvent.CONVERGENCE_STALL in events:
                 should_rebuild = True
                 rebuild_reason.append("Convergence stall detected")
+
+            if MonitorEvent.CHARGE_SLOSHING in events:
+                should_rebuild = True
+                rebuild_reason.append("Charge sloshing detected")
+
+            if MonitorEvent.BROYDEN_STUCK in events:
+                should_rebuild = True
+                rebuild_reason.append("Broyden mixing stuck")
 
             # Cooldown enforcement
             if should_rebuild and _monitor_state.is_rebuild_cooldown(min_rebuild_interval):

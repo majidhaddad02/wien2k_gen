@@ -1,0 +1,57 @@
+cff-version: 1.2.0
+title: WIEN2k Generator
+message: >-
+  If you use this software in your research, please cite it using the
+  following metadata.
+type: software
+authors:
+  - given-names: Majid
+    family-names: Haddad
+    email: majidhaddad02@gmail.com
+    orcid: null
+  - given-names: Saed
+    family-names: Jalali Asadabadi
+    affiliation: University of Isfahan
+version: 9.8.0
+date-released: '2025-07-03'
+url: 'https://github.com/majidhaddad02/wien2k_gen'
+repository-code: 'https://github.com/majidhaddad02/wien2k_gen'
+license: MIT
+keywords:
+  - wien2k
+  - DFT
+  - HPC
+  - parallel-computing
+  - SLURM
+  - materials-science
+  - quantum-chemistry
+abstract: >-
+  Production-grade parallel configuration file generator and HPC job dispatcher
+  for WIEN2k, VASP, Quantum ESPRESSO, and CP2K density functional theory codes.
+  Features automatic hardware topology detection, NUMA-aware resource allocation,
+  Roofline model optimization, SCF convergence monitoring, and interactive TUI.
+references:
+  - type: software
+    title: WIEN2k
+    authors:
+      - given-names: Peter
+        family-names: Blaha
+    url: 'https://www.wien2k.at/'
+  - type: article
+    title: "WIEN2k: An APW+lo Program for Calculating the Properties of Solids"
+    authors:
+      - given-names: Peter
+        family-names: Blaha
+      - given-names: Karlheinz
+        family-names: Schwarz
+      - given-names: Georg K. H.
+        family-names: Madsen
+      - given-names: Dieter
+        family-names: Kvasnicka
+      - given-names: Joachim
+        family-names: Luitz
+    journal: The Journal of Chemical Physics
+    year: 2020
+    volume: 152
+    issue: 7
+    doi: 10.1063/1.5143061
