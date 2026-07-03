@@ -55,3 +55,50 @@ references:
     volume: 152
     issue: 7
     doi: 10.1063/1.5143061
+  - type: article
+    title: "Roofline: An Insightful Visual Performance Model for Multicore Architectures"
+    authors:
+      - given-names: Samuel
+        family-names: Williams
+      - given-names: Andrew
+        family-names: Waterman
+      - given-names: David
+        family-names: Patterson
+    journal: Communications of the ACM
+    year: 2009
+    volume: 52
+    issue: 4
+    doi: 10.1145/1498765.1498785
+  - type: article
+    title: "The ELPA library: scalable parallel eigenvalue solutions for electronic structure theory and computational science"
+    authors:
+      - given-names: Andreas
+        family-names: Marek
+      - given-names: et al.
+    journal: Journal of Physics: Condensed Matter
+    year: 2014
+    volume: 26
+    issue: 21
+    doi: 10.1088/0953-8984/26/21/213201
+  - type: article
+    title: "Parallel solution of partial symmetric eigenvalue problems"
+    authors:
+      - given-names: Thomas
+        family-names: Auckenthaler
+    journal: Parallel Computing
+    year: 2011
+  - type: article
+    title: "ReFrame: Enabling Continuous Testing of HPC Systems"
+    authors:
+      - given-names: Vasileios
+        family-names: Karakasis
+    journal: Communications in Computer and Information Science (HUST Workshop)
+    year: 2020
+    volume: 1190
+    doi: 10.1007/978-3-030-44728-1_3
+  - type: software
+    title: likwid
+    authors:
+      - given-names: Jan
+        family-names: Treibig
+    url: 'https://github.com/RRZE-HPC/likwid'

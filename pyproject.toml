@@ -26,7 +26,9 @@ maintainers = [
 ]
 keywords = [
     "wien2k", "dft", "hpc", "slurm", "parallel-computing", 
-    "quantum-chemistry", "mpi", "openmp", "job-scheduler"
+    "quantum-chemistry", "mpi", "openmp", "job-scheduler",
+    "performance-modeling", "roofline", "bayesian-optimization",
+    "energy-efficiency", "elpa", "gpu-computing", "reframe"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -76,6 +78,21 @@ docs = [
     "sphinx-rtd-theme",
     "myst-parser",
     "sphinx-autodoc-typehints"
+]
+hpc = [
+    "gpytorch>=1.10",
+    "scikit-optimize>=0.9",
+    "botorch>=0.9",
+]
+reframe = [
+    "reframe-hpc>=4.6",
+]
+gpu = [
+    "cupy-cuda12x; sys_platform == 'linux'",
+    "numcodecs>=0.12",
+]
+energy = [
+    "pyRAPL>=0.2",
 ]
 
 # ==============================================================================

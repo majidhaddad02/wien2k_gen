@@ -87,15 +87,14 @@ class NUMANode:
 class GPUInfo:
     """
     GPU specifications for accelerated computing or mixed-precision workloads.
-    Currently used for future-proofing; can be extended for CUDA-aware MPI tuning.
+    Captures device identity, memory capacity, PCIe topology, and NUMA affinity.
     """
-    device_id: str
-    gpu_type: str  # 'nvidia', 'amd', 'intel'
-    model_name: str
-    memory_gb: float
-    compute_capability: Optional[str] = None
-    pci_bus_id: Optional[str] = None
-    cuda_cores: Optional[int] = None
+    name: str
+    memory_mb: int
+    compute_capability: str
+    uuid: str = ""
+    pci_bus: str = ""
+    numa_affinity: int = -1
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -125,6 +124,7 @@ class NodeSpec:
     cpu_arch: str = "unknown"
     cpu_microarch: str = "unknown"
     gpu_info: List[GPUInfo] = field(default_factory=list)
+    gpus_available: int = 0
 
     def __post_init__(self):
         """Auto-calculate derived topology fields if not explicitly provided."""
@@ -184,6 +184,7 @@ class Topology:
     network_topology: Optional[Dict[str, Any]] = None
     heterogeneous: bool = False
     scheduler_hints: Dict[str, Any] = field(default_factory=dict)
+    gpu_topology: Optional['GPUTopology'] = None
 
     def __post_init__(self):
         """Normalize inputs, auto-complete missing fields, and validate consistency."""
@@ -602,3 +603,250 @@ class Topology:
             lines.append("  ✓ NUMA-aware binding enabled")
             
         return "\n".join(lines)
+
+
+# =============================================================================
+# GPU Topology Detection
+# =============================================================================
+
+@dataclass
+class GPUTopology:
+    """
+    Comprehensive GPU topology for a node or cluster.
+
+    Captures all GPUs, per-node count, multi-GPU status, and NVLink availability
+    for optimized GPU-aware DFT execution planning.
+    """
+    gpus: List[GPUInfo] = field(default_factory=list)
+    gpu_per_node: int = 0
+    multi_gpu: bool = False
+    nvlink_available: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize GPUTopology to JSON-compatible dictionary."""
+        data = asdict(self)
+        data['gpus'] = [g.to_dict() for g in self.gpus]
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GPUTopology':
+        """Reconstruct GPUTopology from dictionary data."""
+        if 'gpus' in data:
+            data['gpus'] = [GPUInfo.from_dict(g) for g in data['gpus']]
+        return cls(**data)
+
+
+def detect_gpu_topology() -> GPUTopology:
+    """
+    Detect GPU topology including device list, count, and NVLink availability.
+
+    Uses nvidia-smi for NVIDIA GPUs and rocm-smi for AMD GPUs.
+    Falls back to sysfs PCI topology inspection when vendor tools are unavailable.
+
+    Returns:
+        GPUTopology instance with populated GPU list and topology metadata.
+    """
+    gpus: List[GPUInfo] = []
+
+    nvidia_gpus = _detect_nvidia_gpus_topology()
+    if nvidia_gpus:
+        gpus = nvidia_gpus
+    else:
+        amd_gpus = _detect_amd_gpus_topology()
+        if amd_gpus:
+            gpus = amd_gpus
+        else:
+            gpus = _detect_sysfs_gpus_topology()
+
+    gpu_per_node = len(gpus)
+    multi_gpu = gpu_per_node > 1
+
+    nvlink_available = False
+    if gpus and nvidia_gpus:
+        nvlink_available = _detect_nvlink()
+
+    return GPUTopology(
+        gpus=gpus,
+        gpu_per_node=gpu_per_node,
+        multi_gpu=multi_gpu,
+        nvlink_available=nvlink_available,
+    )
+
+
+def _detect_nvidia_gpus_topology() -> List[GPUInfo]:
+    """Detect NVIDIA GPUs using nvidia-smi with topology fields."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,compute_cap,uuid,pci.bus_id,index",
+                "--format=csv,noheader",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode != 0:
+            return []
+
+        gpus = []
+        for line_num, line in enumerate(result.stdout.strip().split("\n")):
+            if not line.strip():
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 4:
+                continue
+
+            name = parts[0]
+            memory_str = parts[1].replace("MiB", "").strip()
+            memory_mb = int(memory_str) if memory_str.isdigit() else 0
+            compute_cap = parts[2] if len(parts) > 2 else ""
+            uuid = parts[3] if len(parts) > 3 else ""
+            pci_bus = parts[4] if len(parts) > 4 else ""
+
+            numa_affinity = -1
+            try:
+                numa_path = Path(
+                    f"/sys/class/drm/card{line_num}/device/numa_node"
+                )
+                if numa_path.exists():
+                    numa_affinity = int(numa_path.read_text().strip())
+            except Exception:
+                pass
+
+            gpus.append(GPUInfo(
+                name=name,
+                memory_mb=memory_mb,
+                compute_capability=compute_cap,
+                uuid=uuid,
+                pci_bus=pci_bus,
+                numa_affinity=numa_affinity,
+            ))
+
+        return gpus
+    except Exception:
+        logger.debug("nvidia-smi GPU topology detection failed")
+        return []
+
+
+def _detect_amd_gpus_topology() -> List[GPUInfo]:
+    """Detect AMD GPUs using rocm-smi."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["rocm-smi", "--showproductname", "--showmeminfo", "vram", "--csv"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode != 0:
+            return []
+
+        gpus = []
+        for line_num, line in enumerate(result.stdout.strip().split("\n")):
+            if not line.strip() or line.startswith("GPU"):
+                continue
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) < 2:
+                continue
+
+            name = parts[1] if len(parts) > 1 else f"AMD GPU {line_num}"
+            memory_mb = 0
+            for part in parts:
+                match_vram = re.search(r"(\d+)\s*MB", part, re.IGNORECASE)
+                if match_vram:
+                    memory_mb = int(match_vram.group(1))
+                    break
+
+            numa_affinity = -1
+            try:
+                numa_path = Path(
+                    f"/sys/class/drm/card{line_num}/device/numa_node"
+                )
+                if numa_path.exists():
+                    numa_affinity = int(numa_path.read_text().strip())
+            except Exception:
+                pass
+
+            gpus.append(GPUInfo(
+                name=name,
+                memory_mb=memory_mb,
+                compute_capability="",
+                uuid=f"amd-{line_num}",
+                pci_bus="",
+                numa_affinity=numa_affinity,
+            ))
+
+        return gpus
+    except Exception:
+        logger.debug("rocm-smi GPU topology detection failed")
+        return []
+
+
+def _detect_sysfs_gpus_topology() -> List[GPUInfo]:
+    """Detect GPUs via sysfs PCI device enumeration as fallback."""
+    gpus = []
+    drm_path = Path("/sys/class/drm")
+    if not drm_path.exists():
+        return gpus
+
+    for card in sorted(drm_path.glob("card*")):
+        if not card.is_dir():
+            continue
+        vendor_path = card / "device" / "vendor"
+        if not vendor_path.exists():
+            continue
+        try:
+            vendor = vendor_path.read_text().strip()
+            if vendor not in ("0x10de", "0x1002"):
+                continue
+        except Exception:
+            continue
+
+        try:
+            device_path = card / "device" / "device"
+            device_id = device_path.read_text().strip() if device_path.exists() else ""
+        except Exception:
+            device_id = ""
+
+        numa_affinity = -1
+        try:
+            numa_path = card / "device" / "numa_node"
+            if numa_path.exists():
+                numa_affinity = int(numa_path.read_text().strip())
+        except Exception:
+            pass
+
+        idx = len(gpus)
+        gpus.append(GPUInfo(
+            name=f"GPU-{device_id}" if device_id else f"GPU-sysfs-{idx}",
+            memory_mb=0,
+            compute_capability="",
+            uuid=f"sysfs-card{idx}",
+            pci_bus="",
+            numa_affinity=numa_affinity,
+        ))
+
+    return gpus
+
+
+def _detect_nvlink() -> bool:
+    """Detect NVLink availability via nvidia-smi nvlink topology."""
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["nvidia-smi", "nvlink", "--capabilities"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode == 0:
+            output = result.stdout.lower()
+            return "active" in output or "enabled" in output
+    except Exception:
+        pass
+    return False

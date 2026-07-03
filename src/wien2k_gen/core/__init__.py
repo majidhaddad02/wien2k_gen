@@ -14,7 +14,9 @@ from .topology import (
     TopologyValidationError,
     NUMANode,
     NodeSpec,
-    GPUInfo
+    GPUInfo,
+    GPUTopology,
+    detect_gpu_topology,
 )
 from .hardware import (
     get_physical_cores,
@@ -63,6 +65,26 @@ from .pipeline import (
 )
 
 # =============================================================================
+# Performance Counters & Energy
+# =============================================================================
+from .perf_counters import (
+    get_real_roofline_data,
+    measure_memory_bandwidth,
+    measure_peak_flops,
+    measure_cache_bandwidth,
+    PerfCounterCache,
+    HAS_PERF_COUNTERS,
+)
+from .energy import (
+    EnergyMeasurement,
+    measure_energy_section,
+    get_rapl_energy_uj,
+    estimate_energy_per_scf_cycle,
+    get_power_cap,
+    HAS_RAPL,
+)
+
+# =============================================================================
 # Explicit Public API Declaration
 # =============================================================================
 __all__ = [
@@ -72,6 +94,8 @@ __all__ = [
     "NUMANode",
     "NodeSpec",
     "GPUInfo",
+    "GPUTopology",
+    "detect_gpu_topology",
     "get_physical_cores",
     "get_logical_cores",
     "is_hyperthreading_active",
@@ -105,4 +129,18 @@ __all__ = [
     "detect_wien2k_version",
     "get_total_ram_gb",
     "get_numa_node_count",
+    
+    # Performance Counters & Energy
+    "get_real_roofline_data",
+    "measure_memory_bandwidth",
+    "measure_peak_flops",
+    "measure_cache_bandwidth",
+    "PerfCounterCache",
+    "HAS_PERF_COUNTERS",
+    "EnergyMeasurement",
+    "measure_energy_section",
+    "get_rapl_energy_uj",
+    "estimate_energy_per_scf_cycle",
+    "get_power_cap",
+    "HAS_RAPL",
 ]

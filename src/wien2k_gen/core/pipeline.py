@@ -79,7 +79,6 @@ from .hardware import (
 )
 # Import build_auto from builder module to ensure correct single-source-of-truth logic
 from .builder import build_auto
-from ..optimizer.advisor import suggest_optimal_resources
 from ..utils.validation import validate_machines
 from ..utils.export import export_config
 from ..logging_config import get_logger
@@ -243,7 +242,8 @@ def run_pipeline(
             else:
                 raise TypeError("Invalid user_suggestion type.")
         else:
-            raw_suggestion = suggest_optimal_resources(topo, prob_size)
+            from ..optimizer.advisor import suggest_optimal_resources as _advisor
+            raw_suggestion = _advisor(topo, prob_size)
             if isinstance(raw_suggestion, dict):
                 sug_obj = ResourceSuggestion(**raw_suggestion)
             elif isinstance(raw_suggestion, ResourceSuggestion):

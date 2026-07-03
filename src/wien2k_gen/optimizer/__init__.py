@@ -47,6 +47,7 @@ from .history import (
 )
 from .bayesian import (
     BayesianOptimizer,
+    MultiFidelityBayesianOptimizer,
     compute_expected_improvement,
 )
 
@@ -88,5 +89,6 @@ __all__ = [
     "compute_efficiency",
     # Bayesian
     "BayesianOptimizer",
+    "MultiFidelityBayesianOptimizer",
     "compute_expected_improvement",
 ]

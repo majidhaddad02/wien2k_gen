@@ -38,6 +38,37 @@ from ..core.hardware import (
 from ..logging_config import get_logger
 from ..types import ResourceSuggestion as TypedResourceSuggestion
 
+# Lazy import to avoid circular dependency with core
+
+def _get_perf_counters():
+    """Lazily import performance counter functions to avoid circular import."""
+    try:
+        from ..core.perf_counters import (
+            get_real_roofline_data, measure_memory_bandwidth,
+            measure_peak_flops, HAS_PERF_COUNTERS,
+        )
+        return {
+            "get_real_roofline_data": get_real_roofline_data,
+            "measure_memory_bandwidth": measure_memory_bandwidth,
+            "measure_peak_flops": measure_peak_flops,
+            "HAS_PERF_COUNTERS": HAS_PERF_COUNTERS,
+        }
+    except ImportError:
+        return {
+            "get_real_roofline_data": None,
+            "measure_memory_bandwidth": None,
+            "measure_peak_flops": None,
+            "HAS_PERF_COUNTERS": False,
+        }
+
+def _get_energy():
+    """Lazily import energy measurement utilities to avoid circular import."""
+    try:
+        from ..core.energy import estimate_energy_per_scf_cycle, HAS_RAPL
+        return {"estimate_energy_per_scf_cycle": estimate_energy_per_scf_cycle, "HAS_RAPL": HAS_RAPL}
+    except ImportError:
+        return {"estimate_energy_per_scf_cycle": None, "HAS_RAPL": False}
+
 # Lazy import to avoid circular dependency with types
 def _get_ProblemSize():
     from ..backends.base import ProblemSize
@@ -539,9 +570,31 @@ def suggest_optimal_resources(
     is_hybrid = params.get("is_hybrid", False)
 
     # Hardware profile with dynamic peak FLOPS & FMA units
+    # Attempt to use measured values from hardware counters (likwid/perf/RAPL)
+    measured_roofline = None
+    perf = _get_perf_counters()
+    if perf["HAS_PERF_COUNTERS"] and perf["get_real_roofline_data"] is not None:
+        try:
+            measured_roofline = perf["get_real_roofline_data"]()
+        except Exception:
+            measured_roofline = None
+
+    mem_bw_gb_s = get_memory_bandwidth_gb_s()
+    peak_gflops = calculate_peak_fp64_gflops()
+    fma_units = get_fma_units_per_core()
+    cpu_arch = get_cpu_architecture()
+
+    if measured_roofline:
+        mem_bw_gb_s = measured_roofline.get("sustained_bw_gb_s", mem_bw_gb_s)
+        peak_gflops = measured_roofline.get("peak_flops_gflops", peak_gflops)
+        logger.info(
+            f"Using measured roofline data: {measured_roofline.get('tool_used', 'unknown')}, "
+            f"BW={mem_bw_gb_s:.1f} GB/s, FLOPS={peak_gflops:.0f} GFLOPS"
+        )
+
     hw_profile: HardwareProfile = {
-        "mem_bw_gb_s": get_memory_bandwidth_gb_s(),
-        "arch": get_cpu_architecture(),
+        "mem_bw_gb_s": mem_bw_gb_s,
+        "arch": cpu_arch,
         "numa_nodes": get_numa_node_count(),
         "elpa": check_elpa_available(),
         "mkl": check_mkl_available(),
@@ -549,8 +602,8 @@ def suggest_optimal_resources(
         "mem_per_core_mb": (get_total_mem_kb() / 1024.0) / max(1, get_physical_cores()),
         "ht_active": is_hyperthreading_active(),
         "scratch_fs": get_scratch_filesystem_type(),
-        "peak_fp64_gflops": calculate_peak_fp64_gflops(),
-        "fma_units": get_fma_units_per_core(),
+        "peak_fp64_gflops": peak_gflops,
+        "fma_units": fma_units,
         "base_freq_mhz": get_cpu_frequency_info().get("base", 2000.0),
     }
 
