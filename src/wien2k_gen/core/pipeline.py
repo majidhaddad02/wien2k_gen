@@ -82,8 +82,15 @@ from .builder import build_auto
 from ..optimizer.advisor import suggest_optimal_resources
 from ..utils.validation import validate_machines
 from ..utils.export import export_config
-from ..backend_manager import get_current_backend
 from ..logging_config import get_logger
+
+_get_current_backend_fn = None
+def _get_current_backend():
+    global _get_current_backend_fn
+    if _get_current_backend_fn is None:
+        from ..backend_manager import get_current_backend as _gcb
+        _get_current_backend_fn = _gcb
+    return _get_current_backend_fn()
 
 logger = get_logger(__name__)
 
@@ -209,7 +216,7 @@ def run_pipeline(
     warnings_list: List[str] = []
 
     try:
-        backend = get_current_backend()
+        backend = _get_current_backend()
         
         # Step 1: Problem Detection
         logger.info(f"[{op_id}] Detecting problem size from backend inputs...")

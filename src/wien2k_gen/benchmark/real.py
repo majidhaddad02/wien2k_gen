@@ -35,7 +35,7 @@ from ..core.topology import Topology
 from ..core.pipeline import run_pipeline
 from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives, SubmissionResult
 from ..utils.scratch import setup_scratch, cleanup_scratch, ScratchConfig
-from ..analysis import parse_scf_log, SCFParseResult
+from ..ui.analysis import parse_scf_log, SCFParseResult
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)

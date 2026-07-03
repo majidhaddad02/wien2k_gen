@@ -31,6 +31,7 @@ from dataclasses import dataclass, field, asdict
 from contextlib import asynccontextmanager
 
 from ..core.topology import Topology
+
 # Lazy import to avoid circular dependency with core.builder
 _build_auto = None
 def _get_build_auto():
@@ -39,6 +40,15 @@ def _get_build_auto():
         from ..core.builder import build_auto as _ba
         _build_auto = _ba
     return _build_auto
+
+# Lazy import to avoid circular dependency with backend_manager
+_get_current_backend_fn = None
+def _get_current_backend():
+    global _get_current_backend_fn
+    if _get_current_backend_fn is None:
+        from ..backend_manager import get_current_backend as _gcb
+        _get_current_backend_fn = _gcb
+    return _get_current_backend_fn()
 
 from ..core.hardware import (
     get_physical_cores,
@@ -50,7 +60,6 @@ from ..core.hardware import (
     calculate_peak_fp64_gflops,
     get_interconnect_info,
 )
-from ..backend_manager import get_current_backend
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
 from ..utils.filelock import FileLock
@@ -340,7 +349,7 @@ class AutoProfiler:
         Run short calculation multiple times for statistical reliability.
         Includes memory monitoring, OOM prevention, and outlier filtering.
         """
-        backend = get_current_backend()
+        backend = _get_current_backend()
         params = backend.detect_problem_size()
         nmat = params.get("nmat", 0)
         mem_limit_mb = _get_memory_limit_mb()
@@ -543,7 +552,7 @@ class AutoProfiler:
             total_time_sec=time.monotonic() - start_session,
             candidates_tested=len(results),
             hardware_signature=f"{self.topo.total_cores}_{get_cpu_architecture()}",
-            problem_signature=str(get_current_backend().detect_problem_size().get('nmat', 0)),
+            problem_signature=str(_get_current_backend().detect_problem_size().get('nmat', 0)),
             interconnect_type=ic_info.get("type", "unknown"),
             recommendations=recommendations
         )
@@ -562,7 +571,7 @@ async def profile_and_select_async(
     Async orchestrator: generate candidates, profile, cache, return best.
     """
     from .advisor import suggest_optimal_resources
-    backend = get_current_backend()
+    backend = _get_current_backend()
     cache_key = compute_profile_cache_key(backend, topo)
     cache_path = Path(".wien2k_profile_cache.json")
 
