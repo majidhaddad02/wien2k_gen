@@ -18,17 +18,18 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
 authors = [
-    {name = "HPC Workflow Team", email = "dev@wien2k-gen.org"}
+    {name = "Majid Haddad", email = "majidhaddad02@gmail.com"},
+    {name = "Dr. Saed Jalali Asadabadi", email = "sjalali@sci.ui.ac.ir"},
 ]
 maintainers = [
-    {name = "HPC Workflow Team", email = "dev@wien2k-gen.org"}
+    {name = "Majid Haddad", email = "majidhaddad02@gmail.com"},
 ]
 keywords = [
     "wien2k", "dft", "hpc", "slurm", "parallel-computing", 
     "quantum-chemistry", "mpi", "openmp", "job-scheduler"
 ]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
@@ -89,11 +90,11 @@ wien2k_wizard = "wien2k_gen.wizard:run_wizard"
 # PyPI & Project URLs
 # ==============================================================================
 [project.urls]
-Homepage = "https://github.com/wien2k/wien2k-gen"
-Documentation = "https://wien2k-gen.readthedocs.io"
-Repository = "https://github.com/wien2k/wien2k-gen"
-Issues = "https://github.com/wien2k/wien2k-gen/issues"
-Changelog = "https://github.com/wien2k/wien2k-gen/releases"
+Homepage = "https://github.com/majidhaddad02/wien2k_gen"
+Documentation = "https://github.com/majidhaddad02/wien2k_gen"
+Repository = "https://github.com/majidhaddad02/wien2k_gen"
+Issues = "https://github.com/majidhaddad02/wien2k_gen/issues"
+Changelog = "https://github.com/majidhaddad02/wien2k_gen/releases"
 
 # ==============================================================================
 # Setuptools Configuration

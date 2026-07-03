@@ -101,6 +101,9 @@ def _load_cached_detection() -> Optional[Dict[str, Any]]:
             if data.get("env_hash") != _compute_env_hash():
                 logger.debug("Cache invalid due to environment hash mismatch")
                 return None
+            # Strip non-Topology keys for backward compat with older cache format
+            data.pop("timestamp", None)
+            data.pop("env_hash", None)
             return data
     except (json.JSONDecodeError, OSError, IOError) as e:
         logger.debug(f"Cache load failed or lock unavailable: {e}")
@@ -449,20 +452,21 @@ def detect(
         "cores_per_node": valid_cores,
         "env_type": detected_env["env_type"],
         "total_cores": sum(valid_cores),
-        "scheduler": detected_env["scheduler"],
-        "network": detected_env["hints"]["network"],
-        "mpi_launcher": detected_env["hints"]["mpi_launcher"],
-        "cpu_bind": detected_env["hints"]["cpu_bind"],
-        "hint": detected_env["hints"]["hint"],
-        "numa_aware": detected_env["hints"]["numa_aware"],
-        "warnings": []
+        "scheduler_hints": {
+            "scheduler": detected_env.get("scheduler", "none"),
+            "network": detected_env.get("hints", {}).get("network", "eth"),
+            "mpi_launcher": detected_env.get("hints", {}).get("mpi_launcher", "mpirun"),
+            "cpu_bind": detected_env.get("hints", {}).get("cpu_bind", "none"),
+            "hint": detected_env.get("hints", {}).get("hint", "nomultithread"),
+            "numa_aware": detected_env.get("hints", {}).get("numa_aware", False),
+        },
     }
     
     _save_cached_detection(cache_payload)
 
     logger.info(
         f"Topology resolved: {len(valid_nodes)} nodes, "
-        f"{sum(valid_cores)} cores total, launcher={cache_payload['mpi_launcher']}"
+        f"{sum(valid_cores)} cores total, launcher={cache_payload['scheduler_hints']['mpi_launcher']}"
     )
     
     return Topology(**cache_payload)
