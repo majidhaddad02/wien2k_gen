@@ -122,6 +122,8 @@ class FileLock:
                 # fcntl unavailable or not supported on this filesystem
                 if e.errno not in (errno.EACCES, errno.EAGAIN, errno.ENOLCK):
                     logger.debug(f"fcntl failed, trying fallback: {e}")
+            except LockAcquisitionError:
+                logger.debug("fcntl lock acquisition failed, trying fallback")
                     
             # 2. Fallback: Atomic directory + PID file
             try:

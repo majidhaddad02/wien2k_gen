@@ -126,6 +126,11 @@ class TopologyData:
     heterogeneous: bool = False
     memory_per_node: List[int] = field(default_factory=list)
 
+    def __post_init__(self):
+        if not self.heterogeneous and self.cores_per_node:
+            is_het = len(set(self.cores_per_node)) > 1
+            object.__setattr__(self, "heterogeneous", is_het)
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 

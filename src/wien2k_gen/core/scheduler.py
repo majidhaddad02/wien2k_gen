@@ -104,7 +104,8 @@ def _load_cached_detection() -> Optional[Dict[str, Any]]:
             # Strip non-Topology keys for backward compat with older cache format
             data.pop("timestamp", None)
             data.pop("env_hash", None)
-            return data
+            result = data.get("payload", data)
+            return result
     except (json.JSONDecodeError, OSError, IOError) as e:
         logger.debug(f"Cache load failed or lock unavailable: {e}")
         return None

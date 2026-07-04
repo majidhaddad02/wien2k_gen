@@ -106,6 +106,11 @@ class ConfigManager:
                 cls._instance._initialized = True
             return cls._instance
 
+    @classmethod
+    def instance(cls) -> "ConfigManager":
+        """Explicit singleton accessor for compatibility."""
+        return cls()
+
     def load(
         self,
         env_override: Optional[Dict[str, Any]] = None,
@@ -248,7 +253,19 @@ class ConfigManager:
             errors.append("max_cores must be > 0")
         if cfg.timeout_sec <= 0:
             errors.append("timeout_sec must be > 0")
-        # Note: LogLevel/Backend enum validation delegated to types.py to avoid circular imports
+
+        # Enum validation for log_level
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if cfg.log_level.upper() not in valid_levels:
+            errors.append(f"Invalid log_level: {cfg.log_level}. Use one of: {sorted(valid_levels)}")
+
+        # Enum validation for backend
+        from .types import BackendCode
+        try:
+            BackendCode(cfg.backend.lower())
+        except ValueError:
+            valid_backends = [b.value for b in BackendCode]
+            errors.append(f"Unsupported backend: {cfg.backend}. Use one of: {valid_backends}")
             
         return errors
 

@@ -59,8 +59,9 @@ class TestConfigManagerLifecycle:
 
     @patch("wien2k_gen.config.os.access", return_value=False)
     def test_scratch_permission_error(self, mock_access, temp_config_dir):
-        with patch.dict(os.environ, {"SCRATCH": str(temp_config_dir / "readonly")}):
-            # Simulate non-writable scratch
+        readonly = temp_config_dir / "readonly"
+        readonly.mkdir(parents=True, exist_ok=True)
+        with patch.dict(os.environ, {"SCRATCH": str(readonly)}):
             cfg = load_config()
             errors = validate_config()
             assert any("not writable" in e.lower() for e in errors)
