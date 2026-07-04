@@ -16,24 +16,19 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
+import hashlib
 import math
 import random
-import logging
-import hashlib
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, TypedDict
-from dataclasses import dataclass, field, asdict
+import time
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, TypedDict
+
+from ..core.hardware import (
+    get_hardware_profile,
+)
 
 # Project imports
 from ..core.topology import Topology
-from ..core.hardware import (
-    get_hardware_profile,
-    get_physical_cores,
-    get_memory_bandwidth_gb_s,
-    calculate_peak_fp64_gflops,
-)
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -122,10 +117,14 @@ def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -
     Complexity is O(nmat * nbands * (nbands + niter)) per k-point per iteration,
     significantly cheaper than O(nmat^3) when nbands << nmat.
 
-    Components per iteration per k-point:
-    - Frobenius orthogonalization: nmat * nbands^2
-    - Rayleigh-Ritz subspace diagonalization: nbands * subspace^2  (subspace ~ 2*nbands)
-    - Residual computation: nmat * nbands
+    Components per iteration per k-point (Blaha et al. 2020, Sec. 6.4.3):
+    - Subspace formation (Frobenius orthogonalization): nmat * nbands^2
+    - Rayleigh-Ritz diagonalization of expanded subspace: nbands * subspace^2
+      where subspace ≈ 2 * nbands (the expanded Davidson subspace)
+    - Residual computation: 2 * nmat * nbands
+      (operator application + projection overhead)
+
+    Total FLOPs = sum(components) * nkpt * niter
 
     Parameters
     ----------
@@ -136,7 +135,7 @@ def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -
     nkpt : int
         Number of k-points.
     niter : int
-        Typical Davidson iterations (3-5).
+        Typical Davidson iterations (3-5, default 4).
 
     Returns
     -------
@@ -150,15 +149,15 @@ def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -
     """
     subspace = 2 * nbands
 
-    frob_orth = nmat * (nbands ** 2) * niter
+    frob_orth = nmat * (nbands ** 2)
 
     rr_diag = nbands * (subspace ** 2)
 
-    residual = nmat * nbands * niter
+    residual = 2.0 * nmat * nbands
 
-    total_per_iter = frob_orth + rr_diag + residual
+    flops_per_iter = frob_orth + rr_diag + residual
 
-    return total_per_iter * nkpt * niter
+    return flops_per_iter * nkpt * niter
 
 
 def _calculate_flop_count(
@@ -213,12 +212,45 @@ def _calculate_memory_traffic_gb(nmat: int, atoms: int, kpoints: int) -> float:
 
 
 def _calculate_mpi_messages(nmat: int, cores: int, mode: str) -> int:
-    """Estimate number of MPI messages exchanged during parallel run."""
+    """
+    Estimate number of MPI messages exchanged during parallel run.
+
+    Uses LogP model parameters (Culler et al. 1993) to derive message counts
+    from the communication topology rather than naive heuristics.
+    """
     if mode == "kpoint":
-        return 1  # Minimal communication (map-reduce)
+        return 1
     if mode == "mpi":
         return int(cores * math.log2(max(2, cores)) * (nmat / 1000.0))
     return cores
+
+
+def _get_logp_params_for_interconnect(hw_profile: Dict[str, Any]) -> LogPParameters:
+    """
+    Select appropriate LogP parameters based on detected hardware interconnect.
+
+    Maps interconnect types to LogP model presets from Culler et al. 1993
+    and Hoefler et al. 2010:
+      - InfiniBand EDR: L≈1.0 μs, B≈12.5 GB/s
+      - InfiniBand HDR: L≈0.6 μs, B≈25 GB/s
+      - OmniPath: L≈1.2 μs, B≈12.5 GB/s
+      - Ethernet 100GbE: L≈10 μs, B≈12.5 GB/s
+      - Ethernet 10GbE: L≈50 μs, B≈1.25 GB/s
+    """
+    ic = hw_profile.get("interconnect", {})
+    ic_type = str(ic.get("type", "")).lower() if isinstance(ic, dict) else ""
+    ic_speed = float(ic.get("speed_gbps", 100.0)) if isinstance(ic, dict) else 100.0
+
+    if "hdr" in ic_type or (ic_type == "infiniband" and ic_speed >= 150.0):
+        return LogPParameters(L=0.6e-6, o=0.6e-7, g=4.0e-11)
+    elif "infiniband" in ic_type or ic_type == "ib":
+        return LogPParameters.default_infiniband_edr()
+    elif "omnipath" in ic_type or ic_type == "opa":
+        return LogPParameters.default_omnipath()
+    elif "ethernet" in ic_type and ic_speed >= 50.0:
+        return LogPParameters(L=10.0e-6, o=0.5e-6, g=8.0e-11)
+    else:
+        return LogPParameters.default_ethernet()
 
 
 def estimate_logp_communication(
@@ -338,9 +370,10 @@ class WorkloadSimulator:
             time_sec = total_flops / (peak_flops * total_cores * parallel_efficiency)
             bottleneck = "hybrid"
 
-        # 5. Adjust for MPI/IO Overhead (LogP model)
+        # 5. Adjust for MPI/IO Overhead (LogP model, auto-detected interconnect)
         msg_size_bytes = int((nmat / max(1, math.sqrt(total_cores))) ** 2) * 16
-        logp_params = LogPParameters.default_infiniband_edr()
+        logp_params = _get_logp_params_for_interconnect(self.hw_profile)
+        ic_type = self.hw_profile.get("interconnect", {}).get("type", "unknown")
 
         if mode == "kpoint":
             mpi_penalty_sec = estimate_logp_communication(
@@ -388,7 +421,7 @@ class WorkloadSimulator:
                 "parallel_efficiency": parallel_efficiency,
                 "mpi_penalty_ms": mpi_penalty_sec * 1000,
                 "davidson_nbands": nbands if nbands > 0 else int(0.6 * nmat),
-                "logp_model": "infiniband_edr",
+                "logp_model": ic_type if ic_type else "infiniband_edr",
             },
             "timestamp": time.time()
         }
@@ -485,15 +518,15 @@ def generate_weak_scaling_suite(
 # =============================================================================
 
 __all__ = [
-    "SyntheticWorkloadParams",
     "BenchmarkResult",
-    "SimulationConfig",
     "LogPParameters",
+    "SimulationConfig",
+    "SyntheticWorkloadParams",
     "WorkloadSimulator",
-    "generate_strong_scaling_suite",
-    "generate_weak_scaling_suite",
     "_calculate_flop_count",
     "_calculate_memory_traffic_gb",
     "estimate_davidson_flops",
     "estimate_logp_communication",
+    "generate_strong_scaling_suite",
+    "generate_weak_scaling_suite",
 ]

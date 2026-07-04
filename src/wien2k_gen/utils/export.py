@@ -4,7 +4,9 @@ Provides robust, format-agnostic data export with atomic file operations,
 schema validation, and graceful fallbacks for complex scientific objects.
 
 Key Features:
-• Multi-format support: JSON, YAML, TOML, CSV, TXT/Markdown
+• Multi-format support: JSON, YAML, TOML, CSV, TXT/Markdown, HDF5
+• HDF5 export for large scientific datasets (band structures, DOS, arrays)
+  with hierarchical group organisation and gzip compression
 • Automatic serialization of dataclasses, TypedDicts, Path objects, sets, and datetime
 • Custom JSON/YAML/TOML encoders with NumPy/Pandas compatibility (if available)
 • Atomic write integration to prevent partial/corrupted exports on shared filesystems
@@ -15,16 +17,15 @@ Key Features:
 All documentation and inline comments are in English per project standards.
 """
 
+import csv
+import json
 import os
 import re
-import json
-import csv
 import time
-import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Callable, TypedDict, Tuple
-from dataclasses import is_dataclass, asdict, fields
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 # Optional dependencies with graceful fallbacks
 try:
@@ -41,8 +42,22 @@ except ImportError:
     tomli_w = None
     _HAS_TOML = False
 
-from ..utils.atomic_write import atomic_write
+try:
+    import h5py
+    _HAS_H5PY = True
+except ImportError:
+    h5py = None
+    _HAS_H5PY = False
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    np = None  # type: ignore
+    _HAS_NUMPY = False
+
 from ..logging_config import get_logger
+from ..utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 
@@ -71,6 +86,8 @@ class ExportConfig(TypedDict, total=False):
     csv_header: bool
     include_metadata: bool
     timestamp_format: str
+    hdf5_compression: str
+    hdf5_compression_level: int
 
 
 # =============================================================================
@@ -151,7 +168,7 @@ def _export_yaml(data: Any, path: Path, config: ExportConfig) -> int:
     if not _HAS_YAML:
         raise ImportError("PyYAML is required for YAML export. Install with: pip install pyyaml")
     sanitized = _sanitize_for_export(data)
-    content = yaml.dump(
+    content = yaml.safe_dump(
         sanitized,
         default_flow_style=False,
         sort_keys=config.get("sort_keys", True),
@@ -226,6 +243,129 @@ def _export_txt(data: Any, path: Path, config: ExportConfig) -> int:
     return len(content.encode("utf-8"))
 
 
+def _export_hdf5(data: Any, path: Path, config: ExportConfig) -> int:
+    """
+    Export structured scientific data to HDF5 format.
+
+    HDF5 is the standard format for large-scale scientific data including
+    band structures, density of states, and multi-dimensional arrays.
+    Provides chunked, compressed storage with hierarchical group organisation.
+
+    Mapping rules:
+    - dict keys -> HDF5 groups
+    - 1D/2D arrays -> HDF5 datasets with gzip compression
+    - scalars -> HDF5 attributes on the root group
+    - lists of dicts -> HDF5 groups with numbered sub-groups
+
+    Reference:
+        h5py docs; The HDF Group, "HDF5 User's Guide", Ch. 4-6.
+    """
+    if not _HAS_H5PY:
+        raise ImportError(
+            "h5py is required for HDF5 export. Install with: pip install h5py"
+        )
+
+    sanitized = _sanitize_for_export(data)
+    compression = config.get("hdf5_compression", "gzip")
+    compression_opts = config.get("hdf5_compression_level", 4)
+
+    with h5py.File(str(path), "w") as f:
+        _write_hdf5_structure(f, sanitized, compression, compression_opts)
+
+    return os.path.getsize(path)
+
+
+def _write_hdf5_structure(
+    group: "h5py.Group",
+    data: Any,
+    compression: str = "gzip",
+    compression_opts: int = 4,
+) -> None:
+    """Recursively write Python data structures to HDF5 groups/datasets."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            safe_key = str(key).replace("/", "_").replace(" ", "_")
+            if isinstance(value, dict):
+                sub = group.create_group(safe_key)
+                _write_hdf5_structure(sub, value, compression, compression_opts)
+            elif isinstance(value, list):
+                if _is_rectangular(value):
+                    try:
+                        arr = _list_to_ndarray(value)
+                        if arr is not None:
+                            group.create_dataset(
+                                safe_key,
+                                data=arr,
+                                compression=compression,
+                                compression_opts=compression_opts,
+                            )
+                            continue
+                    except Exception:
+                        pass
+                sub = group.create_group(safe_key)
+                _write_hdf5_structure(sub, value, compression, compression_opts)
+            elif isinstance(value, (int, float, str, bool)):
+                group.attrs[safe_key] = value
+            elif isinstance(value, (np.ndarray,)):
+                group.create_dataset(
+                    safe_key,
+                    data=value,
+                    compression=compression,
+                    compression_opts=compression_opts,
+                )
+            else:
+                group.attrs[safe_key] = str(value)
+    elif isinstance(data, list):
+        if _is_rectangular(data):
+            try:
+                arr = _list_to_ndarray(data)
+                if arr is not None:
+                    group.create_dataset(
+                        "data",
+                        data=arr,
+                        compression=compression,
+                        compression_opts=compression_opts,
+                    )
+                    return
+            except Exception:
+                pass
+        for i, item in enumerate(data):
+            safe_key = f"item_{i}"
+            if isinstance(item, dict):
+                sub = group.create_group(safe_key)
+                _write_hdf5_structure(sub, item, compression, compression_opts)
+            else:
+                group.attrs[safe_key] = str(item)
+    else:
+        group.attrs["data"] = str(data)
+
+
+def _is_rectangular(data: list) -> bool:
+    """Check if a list of lists is rectangular (all same length)."""
+    if not data or not isinstance(data[0], list):
+        return False
+    lengths = set()
+    for row in data:
+        if isinstance(row, list):
+            lengths.add(len(row))
+            for elem in row:
+                if isinstance(elem, list):
+                    return False
+        else:
+            return False
+    return len(lengths) == 1
+
+
+def _list_to_ndarray(data: list):
+    """Convert a rectangular list to numpy array. Returns None on failure."""
+    try:
+        import numpy as np
+        return np.array(data)
+    except Exception:
+        pass
+    return None
+
+
 # =============================================================================
 # Core Export Orchestrator
 # =============================================================================
@@ -242,8 +382,8 @@ def export_config(
     Args:
         data: Data to export (dict, list, dataclass, or serializable object).
         path: Target file path. Format auto-detected from extension if format_hint is None.
-        format_hint: Explicit format override ('json', 'yaml', 'toml', 'csv', 'txt').
-        config: Optional export configuration (indentation, CSV settings, etc.).
+        format_hint: Explicit format override ('json', 'yaml', 'toml', 'csv', 'txt', 'hdf5').
+        config: Optional export configuration (indentation, CSV settings, HDF5 compression, etc.).
         
     Returns:
         ExportResult with success status, path, size, and diagnostics.
@@ -256,7 +396,7 @@ def export_config(
 
     # 1. Format Detection & Validation
     ext = format_hint.lower().strip() if format_hint else target.suffix.lower().lstrip(".")
-    if not ext or ext not in ("json", "yaml", "yml", "toml", "csv", "txt", "md"):
+    if not ext or ext not in ("json", "yaml", "yml", "toml", "csv", "txt", "md", "hdf5", "h5"):
         ext = "json"
         warnings.append(f"Unknown extension '{target.suffix}'. Defaulting to JSON.")
         target = target.with_suffix(".json")
@@ -264,6 +404,9 @@ def export_config(
     # Normalize YAML extension
     if ext == "yml":
         ext = "yaml"
+    # Normalize HDF5 extension
+    if ext in ("hdf5", "h5"):
+        ext = "hdf5"
         
     # 2. Directory Preparation
     try:
@@ -283,6 +426,8 @@ def export_config(
             size_bytes = _export_toml(data, target, cfg)
         elif ext == "csv":
             size_bytes = _export_csv(data, target, cfg)
+        elif ext == "hdf5":
+            size_bytes = _export_hdf5(data, target, cfg)
         else:  # txt/md
             size_bytes = _export_txt(data, target, cfg)
             
@@ -339,10 +484,10 @@ def export_multiple(
 # =============================================================================
 
 __all__ = [
-    "ExportResult",
     "ExportConfig",
-    "export_config",
-    "export_multiple",
+    "ExportResult",
     "_ScientificEncoder",
     "_sanitize_for_export",
+    "export_config",
+    "export_multiple",
 ]

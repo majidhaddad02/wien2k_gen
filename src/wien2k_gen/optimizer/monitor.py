@@ -11,17 +11,16 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import re
-import time
-import signal
-import threading
 import json
 import math
-from pathlib import Path
-from typing import Optional, Callable, Dict, Any, List, Union
-from dataclasses import dataclass, field, asdict
+import re
+import signal
+import threading
+import time
+from dataclasses import asdict, dataclass, field
 from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 # Robust FileLock fallback
 try:
@@ -32,9 +31,9 @@ except ImportError:
     FileLock = None  # type: ignore
 
 from ..core.topology import Topology
-from ..core.hardware import get_job_memory_limit_mb, get_scratch_filesystem_type
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
+
 
 # Lazy import to avoid circular dependency
 def _get_current_backend():
@@ -59,6 +58,8 @@ class MonitorEvent(Enum):
     PREEMPTION_SIGNAL = "preemption_signal"
     CHARGE_SLOSHING = "charge_sloshing"
     BROYDEN_STUCK = "broyden_stuck"
+    ANDERSON_STUCK = "anderson_stuck"
+    DIIS_DIVERGENCE = "diis_divergence"
 
 
 @dataclass
@@ -207,7 +208,7 @@ def _register_preemption_signals(checkpoint_fn: Optional[Callable] = None) -> No
                 checkpoint_fn()
             except Exception as e:
                 logger.error(f"Checkpoint execution failed during {sig_name}: {e}")
-        logger.info(f"Preemption handled. Exiting monitor loop gracefully.")
+        logger.info("Preemption handled. Exiting monitor loop gracefully.")
         _stop_event.set()
 
     try:
@@ -304,6 +305,17 @@ def _parse_dayfile_events(dayfile_path: Path) -> List[MonitorEvent]:
                 f"Recommendation: {sloshing_result.get('recommendation', '')}"
             )
 
+        # FFT-based frequency-domain sloshing verification (Kresse & Furthmueller 1996)
+        fft_result = detect_charge_sloshing_fft(raw_content)
+        if fft_result.get("sloshing_detected"):
+            if MonitorEvent.CHARGE_SLOSHING not in events:
+                events.append(MonitorEvent.CHARGE_SLOSHING)
+            logger.debug(
+                f"FFT confirms charge sloshing (HF ratio={fft_result.get('hf_power_ratio', 0)}, "
+                f"dominant freq={fft_result.get('dominant_frequency_hz', 0)}). "
+                f"Recommendation: {fft_result.get('recommendation', '')}"
+            )
+
         # Broyden mixing analysis
         broyden_result = analyze_broyden_mixing(raw_content, str(dayfile_path))
         if broyden_result.get("stuck"):
@@ -311,6 +323,24 @@ def _parse_dayfile_events(dayfile_path: Path) -> List[MonitorEvent]:
             logger.debug(
                 f"Broyden mixing stuck (plateau={broyden_result.get('iteration_plateau_length', 0)}). "
                 f"Recommendation: {broyden_result.get('recommendation', '')}"
+            )
+
+        # Anderson mixing analysis (Eyert 1996)
+        anderson_result = analyze_anderson_mixing(raw_content)
+        if anderson_result.get("stuck"):
+            events.append(MonitorEvent.ANDERSON_STUCK)
+            logger.debug(
+                f"Anderson mixing stuck (plateau={anderson_result.get('iteration_plateau_length', 0)}). "
+                f"Recommendation: {anderson_result.get('recommendation', '')}"
+            )
+
+        # DIIS/Pulay mixing analysis (Pulay 1980)
+        diis_result = analyze_diis_mixing(raw_content)
+        if diis_result.get("diverging"):
+            events.append(MonitorEvent.DIIS_DIVERGENCE)
+            logger.debug(
+                f"DIIS mixing diverging (residual={diis_result.get('residual_trend', 0)}). "
+                f"Recommendation: {diis_result.get('recommendation', '')}"
             )
 
     except Exception as e:
@@ -393,6 +423,120 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
     }
 
 
+def detect_charge_sloshing_fft(dayfile_content: str) -> dict:
+    """
+    Detect charge sloshing via frequency-domain (FFT) analysis.
+
+    Per Kresse & Furthmueller 1996 (PRB 54, 11169), charge sloshing manifests
+    as high-frequency oscillations in the charge density residual. While the
+    Durbin-Watson statistic catches alternating patterns, FFT-based analysis
+    identifies the dominant frequency components explicitly.
+
+    This function computes the power spectral density (PSD) of the charge
+    distance time series using the discrete Fourier transform. A strong
+    peak at the Nyquist frequency (period ≈ 2 SCF cycles) is the hallmark
+    of charge sloshing. The normalised high-frequency power ratio quantifies
+    how much of the total spectral energy resides above the median frequency.
+
+    Requires at least 8 SCF cycles for meaningful frequency resolution.
+
+    Returns:
+        dict with keys:
+            sloshing_detected: bool
+            dominant_frequency_hz: float (in cycles per SCF iteration)
+            hf_power_ratio: float (0.0–1.0, ratio of power above median freq)
+            recommendation: str
+    """
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    matches = cd_pattern.findall(dayfile_content)
+    if len(matches) < 8:
+        return {
+            "sloshing_detected": False,
+            "dominant_frequency_hz": 0.0,
+            "hf_power_ratio": 0.0,
+            "recommendation": "Insufficient cycles for FFT analysis (need >= 8)"
+        }
+
+    values = [float(m) for m in matches]
+    n = len(values)
+
+    demeaned = [v - sum(values) / n for v in values]
+    if n % 2 == 1:
+        demeaned = demeaned[:-1]
+        n = len(demeaned)
+
+    try:
+        fft_result = [abs(x) ** 2 for x in _simple_dft(demeaned)]
+    except Exception:
+        return {
+            "sloshing_detected": False,
+            "dominant_frequency_hz": 0.0,
+            "hf_power_ratio": 0.0,
+            "recommendation": "FFT computation failed"
+        }
+
+    pos_spectrum = fft_result[1:n // 2 + 1]
+    if not pos_spectrum or sum(pos_spectrum) < 1e-30:
+        return {
+            "sloshing_detected": False,
+            "dominant_frequency_hz": 0.0,
+            "hf_power_ratio": 0.0,
+            "recommendation": "Flat spectrum: no oscillatory behaviour detected"
+        }
+
+    total_power = sum(pos_spectrum)
+    median_idx = (n // 2) // 2
+    if median_idx < 1:
+        median_idx = 1
+    hf_power = sum(pos_spectrum[median_idx:])
+    hf_ratio = hf_power / total_power if total_power > 0 else 0.0
+
+    max_idx = max(range(len(pos_spectrum)), key=lambda i: pos_spectrum[i])
+    dominant_freq = (max_idx + 1) / n
+
+    sloshing_detected = (
+        hf_ratio > 0.4 and dominant_freq > 0.3
+    )
+
+    recommendation = ""
+    if sloshing_detected:
+        recommendation = (
+            f"FFT confirms charge sloshing (HF ratio={hf_ratio:.2f}, "
+            f"dominant freq={dominant_freq:.3f}/cycle). "
+            f"Per Kresse & Furthmueller 1996: increase Kerker "
+            f"preconditioning, reduce mixing beta, or use PRATT mixing."
+        )
+
+    return {
+        "sloshing_detected": sloshing_detected,
+        "dominant_frequency_hz": round(dominant_freq, 4),
+        "hf_power_ratio": round(hf_ratio, 4),
+        "recommendation": recommendation
+    }
+
+
+def _simple_dft(signal: List[float]) -> List[complex]:
+    """
+    Simple discrete Fourier transform (DFT) for short time series.
+    Uses O(N^2) algorithm suitable for SCF cycle counts (N < 200).
+    For production use with long time series, numpy.fft is preferred.
+    """
+    n = len(signal)
+    result = []
+    for k in range(n):
+        real = 0.0
+        imag = 0.0
+        for t in range(n):
+            angle = 2.0 * math.pi * k * t / n
+            real += signal[t] * math.cos(angle)
+            imag -= signal[t] * math.sin(angle)
+        result.append(complex(real, imag))
+    return result
+
+
 def analyze_broyden_mixing(dayfile_content: str, log_path: str) -> dict:
     """
     Analyze Broyden mixing behavior and detect stagnation.
@@ -454,7 +598,8 @@ def analyze_broyden_mixing(dayfile_content: str, log_path: str) -> dict:
     if broyden_active and stuck:
         recommendation = (
             "Broyden mixing stuck—reset Broyden history, "
-            "increase mixing parameter, or fall back to PRATT mixing"
+            "increase mixing parameter, fall back to PRATT mixing, "
+            "or try Anderson mixing (faster for metallic systems, Eyert 1996)"
         )
 
     return {
@@ -462,6 +607,170 @@ def analyze_broyden_mixing(dayfile_content: str, log_path: str) -> dict:
         "stuck": stuck,
         "convergence_rate": convergence_rate,
         "iteration_plateau_length": plateau_length,
+        "recommendation": recommendation
+    }
+
+
+def analyze_anderson_mixing(dayfile_content: str) -> dict:
+    """
+    Analyze Anderson mixing behavior and detect stagnation.
+
+    Anderson mixing (Eyert 1996, J. Comp. Phys. 124, 271) generalizes Broyden
+    by mixing a linear combination of previous charge densities with coefficients
+    chosen to minimise the residual. For metallic systems, Anderson often
+    converges 2-3x faster than Broyden because it constructs a better
+    approximate inverse Jacobian from the charge density history.
+
+    This detector checks for Anderson-specific signatures:
+    1. ``:MIX`` lines indicating Anderson or extended Anderson mixing
+    2. Charge distance plateauing despite active Anderson iterations
+    3. Recommendations to switch to Broyden (insulators) or PRATT (sloshing)
+
+    Returns:
+        dict with keys:
+            anderson_active: bool
+            stuck: bool
+            convergence_rate: float
+            iteration_plateau_length: int
+            recommendation: str
+    """
+    anderson_active = bool(
+        re.search(r'(?:\banderson\b|:MIX\s*[12])', dayfile_content, re.IGNORECASE)
+    )
+
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    matches = cd_pattern.findall(dayfile_content)
+    values = [float(m) for m in matches]
+    n = len(values)
+
+    convergence_rate = 0.0
+    if n >= 3:
+        ratios = []
+        for i in range(1, n):
+            if values[i - 1] > 1e-12:
+                ratios.append(math.log(values[i] / values[i - 1]))
+        if ratios:
+            convergence_rate = round(math.exp(sum(ratios) / len(ratios)), 6)
+
+    plateau_length = 0
+    stuck = False
+    if n >= 4:
+        rel_tol = 0.01
+        run = 1
+        max_run = 1
+        for i in range(1, n):
+            ref = max(values[i - 1], 1e-12)
+            if abs(values[i] - values[i - 1]) / ref < rel_tol:
+                run += 1
+                max_run = max(max_run, run)
+            else:
+                run = 1
+        plateau_length = max_run
+        stuck = plateau_length >= 4 and any(v > 1e-6 for v in values[-plateau_length:])
+
+    recommendation = ""
+    if anderson_active and stuck:
+        recommendation = (
+            "Anderson mixing stuck—try tightening the mixing parameter, "
+            "increase mixing history depth, or switch to Broyden mixing "
+            "(better Jacobian approximation for insulators)"
+        )
+
+    return {
+        "anderson_active": anderson_active,
+        "stuck": stuck,
+        "convergence_rate": convergence_rate,
+        "iteration_plateau_length": plateau_length,
+        "recommendation": recommendation
+    }
+
+
+def analyze_diis_mixing(dayfile_content: str) -> dict:
+    """
+    Analyze DIIS/Pulay mixing behavior and detect divergence.
+
+    DIIS (Direct Inversion in the Iterative Subspace), also known as Pulay
+    mixing (Pulay 1980, Chem. Phys. Lett. 73, 393), constructs an optimal
+    linear combination of Fock matrices by minimising the error vector norm
+    in a Krylov subspace. For charge-density mixing in DFT (Kresse &
+    Furthmueller 1996, PRB 54, 11169), DIIS converges quadratically near
+    the minimum but can diverge catastrophically if the initial guess is
+    poor or the subspace becomes linearly dependent.
+
+    Detector checks:
+    1. ``:DIIS`` or ``:PULAY`` keywords in the mixing log
+    2. Charge distance INCREASING over recent iterations (divergence)
+    3. Residual norm oscillation without convergence
+
+    Returns:
+        dict with keys:
+            diis_active: bool
+            diverging: bool
+            residual_trend: float (+ = diverging, - = converging)
+            recommendation: str
+    """
+    diis_active = bool(
+        re.search(r'(?:\bdiis\b|\:DIIS|\bpulay\b|:PULAY)', dayfile_content, re.IGNORECASE)
+    )
+
+    cd_pattern = re.compile(
+        r'(?:charge\s*distance|\:dis)\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+    res_pattern = re.compile(
+        r'(?:residual|error)\s*(?:norm)?\s*[=:]\s*([\d]+\.?\d*(?:[eE][+\-]?\d+)?)',
+        re.IGNORECASE
+    )
+
+    values = [float(m) for m in cd_pattern.findall(dayfile_content)]
+    _residuals = [float(m) for m in res_pattern.findall(dayfile_content)]
+    n = len(values)
+
+    residual_trend = 0.0
+    if n >= 5:
+        recent = values[-5:]
+        window_len = len(recent)
+        x_mean = sum(range(window_len)) / window_len
+        y_mean = sum(recent) / window_len
+        num = sum((i - x_mean) * (recent[i] - y_mean) for i in range(window_len))
+        den = sum((i - x_mean) ** 2 for i in range(window_len))
+        if den > 1e-12:
+            residual_trend = num / den / (y_mean + 1e-12)
+
+    diverging = False
+    if n >= 5:
+        recent_vals = values[-5:]
+        max_recent = max(recent_vals)
+        early_vals = values[:min(5, n // 2)]
+        avg_early = sum(early_vals) / len(early_vals) if early_vals else 0
+        if avg_early > 1e-12 and (max_recent / avg_early) > 2.0:
+            diverging = True
+        if n >= 10:
+            last_half_avg = sum(values[n // 2:]) / (n - n // 2)
+            first_half_avg = sum(values[:n // 2]) / (n // 2)
+            if first_half_avg > 1e-12 and last_half_avg / first_half_avg > 1.5:
+                diverging = True
+
+    recommendation = ""
+    if diis_active and diverging:
+        recommendation = (
+            "DIIS/Pulay mixing diverging—reduce mixing history depth "
+            "(NDII=5 or less), increase Kerker preconditioning, "
+            "or fall back to Broyden mixing with smaller beta"
+        )
+    elif diis_active and not diverging and residual_trend > 0.0 and residual_trend < 0.1:
+        recommendation = (
+            "DIIS convergence slow; consider increasing DIIS history "
+            "dimension or switching to Anderson mixing for metallic systems"
+        )
+
+    return {
+        "diis_active": diis_active,
+        "diverging": diverging,
+        "residual_trend": round(residual_trend, 6),
         "recommendation": recommendation
     }
 

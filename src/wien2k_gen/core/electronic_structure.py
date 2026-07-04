@@ -9,23 +9,21 @@ calculations with proper energy unit conversions.
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import re
-import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ..core.constants import RYDBERG_TO_EV, HBAR2_OVER_ME_EV_ANG2
-from ..exceptions import ParsingError, MissingInputError
+from ..core.constants import HBAR2_OVER_ME_EV_ANG2, RYDBERG_TO_EV
+from ..exceptions import MissingInputError
 
 
 def _read_file_lines(filepath: Path) -> List[str]:
     """Read all lines from a file, stripping trailing whitespace."""
     if not filepath.exists():
         raise MissingInputError(f"Required WIEN2k output file not found: {filepath}")
-    with open(filepath, "r") as fh:
+    with open(filepath) as fh:
         return [line.rstrip() for line in fh.readlines()]
 
 
@@ -257,6 +255,11 @@ def compute_direct_band_gap(
     The direct gap is the minimum energy difference between the conduction
     band minimum (CBM) and valence band maximum (VBM) *at the same k-point*.
 
+    For spin-polarized calculations (nspin == 2), both spin channels are
+    consolidated: per-k-point VBM = max(E^up_F, E^dn_F) and CBM = min(E^up_F, E^dn_F),
+    where F is the Fermi level. This is the standard approach for magnetic
+    semiconductor gap calculations (Crowley et al. 2016, Sec. 3.2).
+
     Parameters
     ----------
     band_data : dict
@@ -277,23 +280,23 @@ def compute_direct_band_gap(
     nkpt = band_data["nkpt"]
     nbnd = band_data["nbnd"]
 
-    if nspin == 2:
-        energies = eigenvalues[0]
-    else:
-        energies = eigenvalues[0]
+    nkpt = band_data["nkpt"]
+    nbnd = band_data["nbnd"]
 
     vbm_per_k = np.full(nkpt, -np.inf)
     cbm_per_k = np.full(nkpt, np.inf)
 
     for ik in range(nkpt):
-        for ib in range(nbnd):
-            e = energies[ik, ib]
-            if e <= fermi + 0.01:
-                if e > vbm_per_k[ik]:
-                    vbm_per_k[ik] = e
-            if e > fermi - 0.01:
-                if e < cbm_per_k[ik]:
-                    cbm_per_k[ik] = e
+        for ispin in range(nspin):
+            energies = eigenvalues[ispin]
+            for ib in range(nbnd):
+                e = energies[ik, ib]
+                if e <= fermi + 0.01:
+                    if e > vbm_per_k[ik]:
+                        vbm_per_k[ik] = e
+                if e > fermi - 0.01:
+                    if e < cbm_per_k[ik]:
+                        cbm_per_k[ik] = e
 
     per_k_gaps = cbm_per_k - vbm_per_k
     direct_k_idx = int(np.argmin(per_k_gaps))
@@ -343,23 +346,20 @@ def compute_band_gap(
     nbnd = band_data["nbnd"]
     k_points = band_data.get("k_points", np.zeros((nkpt, 3)))
 
-    if nspin == 2:
-        energies = eigenvalues[0]
-    else:
-        energies = eigenvalues[0]
-
     vbm_per_k = np.full(nkpt, -np.inf)
     cbm_per_k = np.full(nkpt, np.inf)
 
     for ik in range(nkpt):
-        for ib in range(nbnd):
-            e = energies[ik, ib]
-            if e <= fermi + 0.01:
-                if e > vbm_per_k[ik]:
-                    vbm_per_k[ik] = e
-            if e > fermi - 0.01:
-                if e < cbm_per_k[ik]:
-                    cbm_per_k[ik] = e
+        for ispin in range(nspin):
+            energies = eigenvalues[ispin]
+            for ib in range(nbnd):
+                e = energies[ik, ib]
+                if e <= fermi + 0.01:
+                    if e > vbm_per_k[ik]:
+                        vbm_per_k[ik] = e
+                if e > fermi - 0.01:
+                    if e < cbm_per_k[ik]:
+                        cbm_per_k[ik] = e
 
     per_k_gaps = cbm_per_k - vbm_per_k
     direct_k_idx = int(np.argmin(per_k_gaps))
@@ -719,10 +719,10 @@ def _extract_gap_from_output1(case_name: str, path: str) -> Tuple[float, bool, O
 
 
 __all__ = [
-    "parse_band_structure",
-    "parse_dos",
     "compute_band_gap",
     "compute_direct_band_gap",
     "compute_effective_mass",
     "detect_semiconductor",
+    "parse_band_structure",
+    "parse_dos",
 ]

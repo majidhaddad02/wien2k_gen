@@ -11,15 +11,14 @@ Key Features:
 - Mixed-precision recommendations based on Auckenthaler et al. benchmarks
 """
 
-import math
 import os
 import re
 import subprocess
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List
 
-from ..core.topology import Topology, GPUInfo, GPUTopology
+from ..core.topology import GPUInfo, Topology
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -193,7 +192,7 @@ def _get_gpu_numa_affinity(gpu_index: int) -> int:
     """Determine NUMA node affinity for a GPU from sysfs or pci topology."""
     pci_paths = [
         Path(f"/sys/class/drm/card{gpu_index}/device/numa_node"),
-        Path(f"/sys/bus/pci/devices/*/numa_node"),
+        Path("/sys/bus/pci/devices/*/numa_node"),
     ]
 
     for pattern in pci_paths:
@@ -219,6 +218,135 @@ def _get_gpu_numa_affinity(gpu_index: int) -> int:
 
 
 # =============================================================================
+# GPU Interconnect Detection (NVLink / Infinity Fabric)
+# =============================================================================
+
+def detect_nvlink_active() -> bool:
+    """
+    Detect active NVLink connections via nvidia-smi.
+
+    NVLink provides 300-900 GB/s GPU-to-GPU bandwidth (NVIDIA CUDA docs,
+    NVLink Bridge Specification). Without NVLink, GPU communication falls
+    back to PCIe (16-32 GB/s), a 10-50x reduction.
+
+    Returns:
+        True if NVLink is active on any GPU pair.
+    """
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "nvlink", "--capabilities"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode == 0:
+            output = result.stdout.lower()
+            if "active" in output or "enabled" in output:
+                nvlink_count = output.count("active")
+                logger.info(f"NVLink detected: {nvlink_count} active links")
+                return True
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "topo", "-m"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode == 0:
+            output = result.stdout.lower()
+            if "nv" in output and any(t in output for t in ["12", "18", "24"]):
+                logger.info("NVLink detected via topology matrix")
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def detect_infinity_fabric_active() -> bool:
+    """
+    Detect AMD Infinity Fabric links between GPUs.
+
+    Infinity Fabric is AMD's equivalent of NVLink, providing high-bandwidth
+    GPU-to-GPU interconnects (up to 200 GB/s on MI250X). Detection uses
+    rocm-smi or sysfs dxcore topology queries.
+
+    Returns:
+        True if Infinity Fabric links are active.
+    """
+    try:
+        result = subprocess.run(
+            ["rocm-smi", "--showtopology"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode == 0:
+            output = result.stdout.lower()
+            if "xgm" in output or "infinity_fabric" in output:
+                logger.info("Infinity Fabric (xGMI) detected via rocm-smi")
+                return True
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(
+            ["rocm-smi", "--showlinkinfo"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        if result.returncode == 0:
+            output = result.stdout.lower()
+            if "active" in output and "link" in output:
+                logger.info("Infinity Fabric links detected via rocm-smi")
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def get_gpu_interconnect_info() -> Dict[str, Any]:
+    """
+    Detect GPU interconnect type and bandwidth.
+
+    Combines NVLink (NVIDIA) and Infinity Fabric (AMD) detection to provide
+    interconnect metadata for GPU-aware resource allocation decisions.
+
+    Returns:
+        dict with keys: nvlink_active, infinity_fabric_active,
+        interconnect_type, bandwidth_estimate_gb_s.
+    """
+    nvlink = detect_nvlink_active()
+    inf_fabric = detect_infinity_fabric_active()
+
+    if nvlink:
+        ic_type = "nvlink"
+        bandwidth = 600.0  # NVLink 3.0: ~600 GB/s aggregate
+    elif inf_fabric:
+        ic_type = "infinity_fabric"
+        bandwidth = 200.0  # Infinity Fabric: ~200 GB/s (MI250X)
+    else:
+        ic_type = "pcie"
+        bandwidth = 32.0   # PCIe 4.0 x16
+
+    return {
+        "nvlink_active": nvlink,
+        "infinity_fabric_active": inf_fabric,
+        "interconnect_type": ic_type,
+        "bandwidth_estimate_gb_s": bandwidth,
+    }
+
+
+# =============================================================================
 # GPU Usage Recommendations
 # =============================================================================
 
@@ -235,6 +363,8 @@ def get_gpu_recommendation(
     - nmat > 5000 AND GPU memory > nmat^2 * 16 bytes -> use GPU for diagonalization
     - nmat < 2000 -> GPU overhead hurts, stay on CPU
     - Hybrid mode: 1 GPU per MPI rank, round-robin assignment
+    - GPU interconnect (NVLink/Infinity Fabric) enables multi-GPU scaling;
+      PCIe-only GPUs are limited to 2-4 effective devices due to bandwidth
 
     Args:
         topo: Hardware topology with GPU information.
@@ -244,7 +374,7 @@ def get_gpu_recommendation(
 
     Returns:
         Dictionary with keys: use_gpu, gpu_count, cuda_visible, gpu_per_mpi_rank,
-        reason, recommended_library.
+        reason, recommended_library, interconnect_info.
     """
     gpu_topology = topo.gpu_topology
     if gpu_topology is None or not gpu_topology.gpus:
@@ -255,11 +385,13 @@ def get_gpu_recommendation(
             "gpu_per_mpi_rank": 0,
             "reason": "No GPUs detected in topology.",
             "recommended_library": "",
+            "interconnect_info": get_gpu_interconnect_info(),
         }
 
     gpus = gpu_topology.gpus
     gpu_count = len(gpus)
     total_gpu_mem_mb = sum(g.memory_mb for g in gpus)
+    ic_info = get_gpu_interconnect_info()
 
     matrix_mem_bytes = (nmat ** 2) * 16
     matrix_mem_mb = matrix_mem_bytes / (1024 * 1024)
@@ -275,14 +407,33 @@ def get_gpu_recommendation(
                 f"overhead exceeds benefit. Stay on CPU."
             ),
             "recommended_library": "",
+            "interconnect_info": ic_info,
         }
 
+    # NVLink/Infinity Fabric scaling check (NVIDIA CUDA docs, GPU Direct RDMA)
+    has_highspeed = ic_info["nvlink_active"] or ic_info["infinity_fabric_active"]
+    effective_gpu_limit = gpu_count if has_highspeed else min(gpu_count, 4)
+
     if nmat > 5000 and total_gpu_mem_mb > matrix_mem_mb:
-        gpu_per_rank = 1 if mode == "hybrid" else max(1, gpu_count // max(1, topo.total_cores))
-        cuda_visible = ",".join(str(i) for i in range(min(gpu_count, 8)))
+        gpu_per_rank = 1 if mode == "hybrid" else max(1, effective_gpu_limit // max(1, topo.total_cores))
+        cuda_visible = ",".join(str(i) for i in range(min(effective_gpu_limit, 8)))
 
         is_nvidia = any("nvidia" in g.name.lower() or g.compute_capability for g in gpus)
         library = "cuSOLVER" if is_nvidia else "MAGMA"
+
+        ic_note = ""
+        if not has_highspeed and gpu_count > 4:
+            ic_note = (
+                f" Limited to {effective_gpu_limit}/{gpu_count} GPUs: "
+                f"PCIe-only interconnect ({ic_info['bandwidth_estimate_gb_s']:.0f} GB/s). "
+                f"NVLink/Infinity Fabric not detected."
+            )
+        elif has_highspeed:
+            ic_note = (
+                f" {ic_info['interconnect_type']} interconnect "
+                f"({ic_info['bandwidth_estimate_gb_s']:.0f} GB/s) enables "
+                f"full {gpu_count}-GPU scaling."
+            )
 
         return {
             "use_gpu": True,
@@ -291,9 +442,10 @@ def get_gpu_recommendation(
             "gpu_per_mpi_rank": gpu_per_rank,
             "reason": (
                 f"Large matrix (nmat={nmat}, req {matrix_mem_mb:.0f} MB) fits in "
-                f"GPU memory ({total_gpu_mem_mb} MB available). Recommend {library}."
+                f"GPU memory ({total_gpu_mem_mb} MB available). Recommend {library}.{ic_note}"
             ),
             "recommended_library": library,
+            "interconnect_info": ic_info,
         }
 
     return {
@@ -306,6 +458,7 @@ def get_gpu_recommendation(
             f"GPU memory ({total_gpu_mem_mb} MB) or nmat={nmat} < 5000 threshold."
         ),
         "recommended_library": "",
+        "interconnect_info": ic_info,
     }
 
 
@@ -393,11 +546,11 @@ def _generate_vasp_gpu_input(
         kpar = 1
 
     lines = [
-        f"# VASP GPU Configuration",
+        "# VASP GPU Configuration",
         f"NCORE = {ncore}",
         f"KPAR = {kpar}",
         f"# GPU count: {gpu_count}",
-        f"# Ensure VASP is compiled with -DGPU (NVIDIA) or -DOPENACC_GPU (AMD)",
+        "# Ensure VASP is compiled with -DGPU (NVIDIA) or -DOPENACC_GPU (AMD)",
     ]
     return "\n".join(lines)
 

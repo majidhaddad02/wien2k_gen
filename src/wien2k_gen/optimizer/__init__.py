@@ -29,7 +29,10 @@ from .monitor import (
     ProblemVector,
     ConvergenceAnalysis,
     detect_charge_sloshing,
+    detect_charge_sloshing_fft,
     analyze_broyden_mixing,
+    analyze_anderson_mixing,
+    analyze_diis_mixing,
     analyze_convergence_history,
 )
 from .profiler import (
@@ -74,7 +77,10 @@ __all__ = [
     "ProblemVector",
     "ConvergenceAnalysis",
     "detect_charge_sloshing",
+    "detect_charge_sloshing_fft",
     "analyze_broyden_mixing",
+    "analyze_anderson_mixing",
+    "analyze_diis_mixing",
     "analyze_convergence_history",
     # Profiler
     "profile_and_select",

@@ -15,15 +15,12 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import re
 import math
-import json
+import re
 import time
-import logging
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, TypedDict
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from ..core.constants import RYDBERG_TO_EV
 from ..logging_config import get_logger
@@ -309,8 +306,15 @@ def calculate_scaling_metrics(
     overhead_threshold: float = 30.0
 ) -> ScalingMetrics:
     """
-    Compute parallel speedup, efficiency, and overhead.
+    Compute **strong scaling** speedup, efficiency, and overhead.
+
+    Strong scaling: fixed problem size, increasing core count.
+    Ideal speedup = P (linear), ideal efficiency = 100%.
+
     Uses standard HPC scaling formulas with safety guards for division-by-zero.
+
+    For weak scaling analysis (problem size grows with core count),
+    use :func:`calculate_weak_scaling_metrics`.
     """
     if base_time_sec <= 0 or current_time_sec <= 0:
         return {
@@ -350,6 +354,109 @@ def calculate_scaling_metrics(
     }
 
 
+def calculate_weak_scaling_metrics(
+    base_cores: int,
+    base_time_sec: float,
+    base_problem_size: int,
+    scaled_cores: int,
+    scaled_time_sec: float,
+    scaled_problem_size: int,
+) -> ScalingMetrics:
+    """
+    Compute **weak scaling** speedup, efficiency, and overhead.
+
+    Weak scaling (Gustafson's Law): problem size grows proportionally to
+    core count, keeping work per core constant. The ideal efficiency is 100%
+    regardless of scale.
+
+    Per Hager & Wellein 2010 ("Introduction to High Performance Computing
+    for Scientists and Engineers", Ch. 4), the weak scaling efficiency is:
+
+        Speedup = T(P_1, N_1) / T(P, N_P)
+
+    where N_P = N_1 * (P / P_1) and efficiency = speedup.
+
+    Unlike strong scaling (Amdahl's Law), weak scaling isolates communication
+    overhead rather than serial fraction, making it the preferred metric for
+    assessing large-scale HPC applications.
+
+    Parameters
+    ----------
+    base_cores : int
+        Number of cores for the base run.
+    base_time_sec : float
+        Wall time for the base run in seconds.
+    base_problem_size : int
+        Problem size (e.g., atoms, nmat) for the base run.
+    scaled_cores : int
+        Number of cores for the scaled run.
+    scaled_time_sec : float
+        Wall time for the scaled run in seconds.
+    scaled_problem_size : int
+        Problem size for the scaled run.
+
+    Returns
+    -------
+    ScalingMetrics
+        Dictionary with weak scaling metrics.
+    """
+    if base_time_sec <= 0 or scaled_time_sec <= 0:
+        return {
+            "base_cores": base_cores,
+            "base_time_sec": base_time_sec,
+            "current_cores": scaled_cores,
+            "current_time_sec": scaled_time_sec,
+            "speedup": 0.0,
+            "efficiency_percent": 0.0,
+            "parallel_overhead_percent": 100.0,
+            "recommendation": "Invalid timing data."
+        }
+
+    ideal_time = base_time_sec
+    speedup = base_time_sec / scaled_time_sec
+    efficiency = speedup * 100.0
+
+    cores_ratio = scaled_cores / max(1, base_cores)
+    problem_ratio = scaled_problem_size / max(1, base_problem_size)
+    overhead = max(0.0, 100.0 - efficiency)
+
+    if base_problem_size > 0 and scaled_problem_size > 0:
+        work_per_core_base = base_problem_size / max(1, base_cores)
+        work_per_core_scaled = scaled_problem_size / max(1, scaled_cores)
+        load_imbalance = abs(work_per_core_base - work_per_core_scaled) / max(1, max(work_per_core_base, work_per_core_scaled)) * 100.0
+    else:
+        load_imbalance = 0.0
+
+    if load_imbalance > 10.0:
+        rec = (
+            f"Load imbalance of {load_imbalance:.1f}% detected. "
+            f"Problem size does not scale linearly with cores "
+            f"(expected {cores_ratio:.1f}x, got {problem_ratio:.1f}x)."
+        )
+    elif efficiency > 90:
+        rec = "Excellent weak scaling. Communication overhead is minimal."
+    elif efficiency > 70:
+        rec = "Good weak scaling. Minor communication overhead; check MPI collectives."
+    elif efficiency > 50:
+        rec = "Moderate weak scaling. Communication is becoming the bottleneck."
+    else:
+        rec = (
+            "Poor weak scaling. Communication dominates. Reduce MPI ranks, "
+            "improve data locality, or use hybrid MPI+OpenMP."
+        )
+
+    return {
+        "base_cores": base_cores,
+        "base_time_sec": round(base_time_sec, 2),
+        "current_cores": scaled_cores,
+        "current_time_sec": round(scaled_time_sec, 2),
+        "speedup": round(speedup, 2),
+        "efficiency_percent": round(efficiency, 2),
+        "parallel_overhead_percent": round(overhead, 2),
+        "recommendation": rec
+    }
+
+
 def visualize_scaling(
     scaling_data: Dict[int, float],  # {cores: time_sec}
     title: str = "Parallel Scaling Analysis"
@@ -361,8 +468,8 @@ def visualize_scaling(
     if not scaling_data or len(scaling_data) < 2:
         return "[dim]Insufficient data for scaling analysis (requires ≥2 runs).[/]"
 
-    from rich.table import Table
     from rich.console import Console
+    from rich.table import Table
         
     sorted_runs = sorted(scaling_data.items())
     base_cores, base_time = sorted_runs[0]
@@ -437,8 +544,8 @@ def generate_report(
     report.warnings = parsed_scf.get("warnings", [])
 
     # Build Rich Tree for UI consumption
-    from rich.tree import Tree
     from rich.console import Console
+    from rich.tree import Tree
     tree = Tree(f"[bold]{report.code_backend.upper()} Analysis Report[/]")
     conv_node = tree.add(f"Convergence: {'[green]YES[/]' if parsed_scf.get('converged') else '[red]NO[/]'}")
     conv_node.add(f"Cycles: {parsed_scf.get('total_cycles', 0)}")
@@ -472,11 +579,12 @@ def generate_report(
 # =============================================================================
 
 __all__ = [
+    "AnalysisReport",
     "SCFParseResult",
     "ScalingMetrics",
-    "AnalysisReport",
-    "parse_scf_log",
     "calculate_scaling_metrics",
-    "visualize_scaling",
+    "calculate_weak_scaling_metrics",
     "generate_report",
+    "parse_scf_log",
+    "visualize_scaling",
 ]

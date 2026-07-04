@@ -15,14 +15,13 @@ Key Improvements Applied:
 """
 
 import json
-import logging
 import math
 import os
 import re
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import List, Dict, Optional, Union, Any, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from ..logging_config import get_logger
 
@@ -57,6 +56,11 @@ def factorize_blacs_grid(total_ranks: int) -> Tuple[int, int]:
     Uses the algorithm from ScaLAPACK's pdlaset.f: start from sqrt(N), decrement p
     until divisibility, producing an optimal 2D processor grid for ELPA Stage 2.
 
+    For prime total_ranks where no 2D factorization exists, the function returns
+    (1, total_ranks) — a 1D grid — which is known to cause up to 40% efficiency
+    loss in ScaLAPACK/ELPA (Marek et al. 2014). Callers must handle this case
+    by redistributing ranks or selecting a nearby composite count.
+
     Reference:
         ScaLAPACK Users' Guide Chapter 6 (Process Grid);
         Marek et al. 2014 "The ELPA library" (J. Phys.: Condens. Matter 26, 213201).
@@ -71,7 +75,7 @@ def factorize_blacs_grid(total_ranks: int) -> Tuple[int, int]:
     if total_ranks <= 0:
         return (1, 1)
 
-    p = int(math.isqrt(total_ranks))
+    p = math.isqrt(total_ranks)
     while p >= 1:
         if total_ranks % p == 0:
             q = total_ranks // p
@@ -82,7 +86,15 @@ def factorize_blacs_grid(total_ranks: int) -> Tuple[int, int]:
 
 
 def _is_blacs_friendly(n: int) -> bool:
-    """Check if n can be factorized into p x q where both p > 1 and q > 1."""
+    """
+    Check if n can be factorized into p x q where both p > 1 and q > 1.
+
+    Per Marek et al. 2014 (ELPA library), 1D grids (1 x N or N x 1) degrade
+    diagonalization performance by up to 40%. Only 2D grids with p,q >= 2 are
+    considered BLACS-friendly.
+    """
+    if n < 4:
+        return False
     p, q = factorize_blacs_grid(n)
     return p > 1 and q > 1
 
@@ -90,14 +102,23 @@ def _is_blacs_friendly(n: int) -> bool:
 def _nearest_factorizable(target: int) -> int:
     """
     Find the nearest integer to target that is BLACS-friendly (has p, q both > 1).
+
     Searches both sides in expanding window for a non-prime factorization.
+    Minimum BLACS-friendly composite is 4 (2 x 2 grid). For targets below 4,
+    squashes to 4 (the smallest viable 2D ScaLAPACK grid).
+
+    Per Marek et al. 2014, this ensures ELPA Stage 2 operates on a proper
+    2D processor grid, avoiding the 40% performance penalty of 1D grids.
     """
+    if target < 4:
+        return 4
+
     if _is_blacs_friendly(target):
         return target
 
     for delta in range(1, target + 1):
         for candidate in (target - delta, target + delta):
-            if candidate > 1 and _is_blacs_friendly(candidate):
+            if candidate >= 4 and _is_blacs_friendly(candidate):
                 return candidate
         if delta > target * 2:
             break
@@ -114,6 +135,12 @@ def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
     with p, q > 1). After adjustment, rank differences are propagated to the
     largest nodes to maintain total rank count.
 
+    **Post-validation pass**: After primary adjustment, any remaining prime-number
+    per-node counts are forcibly brought to the nearest BLACS-friendly value.
+    Following Marek et al. 2014, 1D BLACS grids (1 x N) degrade ELPA Stage 2
+    performance by up to 40%, so this ensures every node operates on a proper 2D
+    processor grid.
+
     Args:
         per_node_ranks: List of MPI rank counts per NUMA node.
 
@@ -128,14 +155,16 @@ def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
 
     for i in range(len(adjusted)):
         p, q = factorize_blacs_grid(adjusted[i])
-        if p == 1:
-            logger.debug(
-                f"Node {i}: adjusted rank count {adjusted[i]} is prime; "
-                f"BLACS grid will be 1D ({p}x{q}). Consider redistributing."
+        if p == 1 or q <= 1:
+            logger.warning(
+                f"Node {i}: adjusted rank count {adjusted[i]} is prime/1D; "
+                f"BLACS grid will be 1D ({p}x{q}). Attempting redistribution."
             )
 
     diff = original_total - sum(adjusted)
     if diff == 0:
+        # Post-validation: ensure no prime slipped through
+        adjusted = _post_validate_blacs(adjusted)
         return adjusted
 
     sorted_indices = sorted(range(len(adjusted)), key=lambda i: per_node_ranks[i], reverse=True)
@@ -156,14 +185,84 @@ def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
                 diff += 1
             else:
                 idx += 1
-        if idx > len(sorted_indices) * 2:
+        if idx > len(sorted_indices) * 4:
+            logger.warning(
+                f"BLACS propagation stalled: diff={diff}, adjusted={adjusted}. "
+                f"Falling back to post-validation pass."
+            )
             break
+
+    # Post-validation: forcibly fix any remaining prime-number allocations
+    adjusted = _post_validate_blacs(adjusted)
 
     logger.info(
         f"BLACS grid adjustment: {original_total} -> {sum(adjusted)} ranks "
         f"({per_node_ranks} -> {adjusted})"
     )
     return adjusted
+
+
+def _post_validate_blacs(per_node_ranks: List[int]) -> List[int]:
+    """
+    Post-validation pass: ensure every per-node count is BLACS-friendly.
+    For any count that is prime (1D grid only), force it to the nearest
+    BLACS-friendly composite >= 4. This guarantees that ScaLAPACK/ELPA
+    operates on proper 2D processor grids, avoiding the 40% performance
+    penalty documented by Marek et al. 2014.
+
+    When forced adjustments change the total, the delta is distributed
+    across the largest nodes that can absorb it while remaining BLACS-friendly.
+    """
+    result = list(per_node_ranks)
+    forced = False
+
+    for i in range(len(result)):
+        p, q = factorize_blacs_grid(result[i])
+        if p == 1 or q <= 1:
+            old = result[i]
+            result[i] = _nearest_factorizable(result[i])
+            forced = True
+            logger.warning(
+                f"Post-validation: node {i} rank count forcibly changed "
+                f"from {old} (1D grid) to {result[i]} (2D BLACS-friendly)"
+            )
+
+    if not forced:
+        return result
+
+    # Redistribute delta
+    total_before = sum(per_node_ranks)
+    total_after = sum(result)
+    if total_before == total_after:
+        return result
+
+    ranked = sorted(range(len(result)), key=lambda i: per_node_ranks[i], reverse=True)
+    remaining = total_before - total_after
+    attempt = 0
+
+    while remaining != 0 and attempt < len(ranked) * 3:
+        for r_idx in ranked:
+            if remaining > 0:
+                cand = result[r_idx] + 1
+                if _is_blacs_friendly(cand):
+                    result[r_idx] = cand
+                    remaining -= 1
+            elif remaining < 0:
+                cand = result[r_idx] - 1
+                if cand >= 4 and _is_blacs_friendly(cand):
+                    result[r_idx] = cand
+                    remaining += 1
+            if remaining == 0:
+                break
+        attempt += 1
+
+    if remaining != 0:
+        logger.warning(
+            f"Post-validation could not perfectly preserve total: "
+            f"expected {total_before}, got {sum(result)} (delta={remaining})"
+        )
+
+    return result
 
 
 # =============================================================================
@@ -584,18 +683,18 @@ class Topology:
         if self.network_topology:
             net_type = str(self.network_topology.get("type", "")).lower()
             interconn = str(self.network_topology.get("interconnect", "")).lower()
-            if "infiniband" in net_type or "infiniband" in interconn or "ib" == net_type:
+            if "infiniband" in net_type or "infiniband" in interconn or net_type == "ib":
                 return TopologyType.FAT_TREE
-            if "omnipath" in net_type or "omnipath" in interconn or "opa" == net_type:
+            if "omnipath" in net_type or "omnipath" in interconn or net_type == "opa":
                 return TopologyType.DRAGONFLY
             if "ethernet" in net_type or "tcp" in interconn:
                 return TopologyType.STAR
 
         for spec in self.node_specs.values():
             net = (spec.network_type or "").lower()
-            if "infiniband" in net or "ib" == net:
+            if "infiniband" in net or net == "ib":
                 return TopologyType.FAT_TREE
-            if "omnipath" in net or "opa" == net:
+            if "omnipath" in net or net == "opa":
                 return TopologyType.DRAGONFLY
 
         if self.nodes:
@@ -653,7 +752,7 @@ class Topology:
                     placement.append((node, assign))
 
         elif topo_type == TopologyType.TORUS:
-            dim_size = max(1, int(math.isqrt(nranks)))
+            dim_size = max(1, math.isqrt(nranks))
             dim_size = max(1, min(dim_size, len(self.nodes)))
             for i in range(min(nranks, len(self.nodes))):
                 node_idx = i % len(self.nodes)
@@ -743,7 +842,7 @@ class Topology:
     @classmethod
     def from_file(cls, path: Union[str, Path]) -> 'Topology':
         """Load topology from JSON file."""
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             return cls.from_json(f.read())
 
     def to_file(self, path: Union[str, Path]) -> None:
