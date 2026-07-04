@@ -65,6 +65,8 @@ class ScratchConfig:
     ])
     preserve_permissions: bool = True
     cleanup_on_exit: bool = True
+    stripe_count: int = 4
+    stripe_size_mb: int = 1
 
 
 # =============================================================================
@@ -109,6 +111,71 @@ def _is_shared_filesystem(path: Path) -> bool:
     """Heuristic check if path resides on a network/shared filesystem."""
     fstype = _detect_filesystem_type(path)
     return fstype in ("lustre", "gpfs", "nfs", "cifs", "beegfs")
+
+
+def _detect_lustre(path: Path) -> bool:
+    """
+    Detect Lustre filesystem via stat -f -c %T.
+    Outputs "lustre" when the path resides on a Lustre mount.
+    """
+    try:
+        proc = subprocess.run(
+            ["stat", "-f", "-c", "%T", str(path)],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode == 0 and proc.stdout.strip().lower() == "lustre":
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def configure_lustre_striping(
+    path: str,
+    stripe_count: int = 4,
+    stripe_size_mb: int = 1
+) -> bool:
+    """
+    Configure Lustre striping for a directory or file path.
+
+    Runs `lfs setstripe -c {stripe_count} -s {stripe_size_mb}M {path}` before
+    creating scratch directories. Lustre striping distributes MPI-IO operations
+    across multiple object storage targets (OSTs), preventing serialization
+    to a single OST.
+
+    Reference:
+        Lustre 2.x Operations Manual Chapter 7 (File Striping);
+        Lustre MPI-IO Best Practices Guide.
+
+    Args:
+        path: Target path to apply striping to (directory or file).
+        stripe_count: Number of OSTs to stripe across (default 4).
+        stripe_size_mb: Stripe size in MB (default 1MB).
+
+    Returns:
+        True if striping was successfully configured, False otherwise.
+    """
+    try:
+        if not shutil.which("lfs"):
+            logger.debug("lfs command not found; skipping Lustre striping")
+            return False
+
+        proc = subprocess.run(
+            ["lfs", "setstripe", "-c", str(stripe_count), "-s", f"{stripe_size_mb}M", path],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0:
+            logger.debug(
+                f"Lustre striping configured: {path} -> "
+                f"stripe_count={stripe_count}, stripe_size={stripe_size_mb}M"
+            )
+            return True
+        else:
+            logger.debug(f"lfs setstripe failed: {proc.stderr.strip()}")
+            return False
+    except Exception as e:
+        logger.debug(f"Lustre striping exception: {e}")
+        return False
 
 
 # =============================================================================
@@ -306,6 +373,14 @@ def setup_scratch(
     result["filesystem_type"] = _detect_filesystem_type(scratch_dir)
     result["free_space_gb"] = _check_free_space_gb(scratch_dir)
 
+    # Lustre striping for parallel MPI-IO distribution
+    if _detect_lustre(scratch_dir):
+        configure_lustre_striping(
+            str(scratch_dir),
+            stripe_count=cfg.stripe_count,
+            stripe_size_mb=cfg.stripe_size_mb,
+        )
+
     # 3. Collect & stage files
     files_to_stage = _collect_staging_files(wd, cfg.file_patterns, cfg.exclude_patterns)
     if not files_to_stage:
@@ -398,6 +473,8 @@ __all__ = [
     "ScratchConfig",
     "setup_scratch",
     "cleanup_scratch",
+    "configure_lustre_striping",
+    "_detect_lustre",
     "_detect_filesystem_type",
     "_check_free_space_gb",
     "_collect_staging_files",

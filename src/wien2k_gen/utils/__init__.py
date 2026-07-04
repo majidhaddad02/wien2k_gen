@@ -76,6 +76,7 @@ from .scratch import (
     ScratchConfig,
     setup_scratch,
     cleanup_scratch,
+    configure_lustre_striping,
 )
 
 # =============================================================================
@@ -139,6 +140,7 @@ __all__ = [
     "ScratchConfig",
     "setup_scratch",
     "cleanup_scratch",
+    "configure_lustre_striping",
     # subprocess_utils
     "ProcessResult",
     "run_command",

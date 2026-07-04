@@ -71,6 +71,8 @@ class PBSJobSpec:
     preemption_grace_sec: int = 60
     dry_run: bool = False
     validate_constraints: bool = True
+    stripe_count: int = 4
+    stripe_size_mb: int = 1
 
 
 # =============================================================================
@@ -305,6 +307,12 @@ class PBSSubmitProvider(SubmitProvider):
             'export JOB_SCRATCH="$SCRATCH_BASE"',
             'export TMPDIR="$SCRATCH_BASE"',
             'echo "[pbs_submit] Scratch allocated at $SCRATCH_BASE on $(hostname)"',
+            '',
+            '# Lustre striping for parallel MPI-IO (case.vector writes)',
+            'if command -v lfs &> /dev/null && [ "$(stat -f -c %T "$SCRATCH_BASE" 2>/dev/null)" = "lustre" ]; then',
+            '    echo "[pbs_submit] Lustre detected: configuring striping on $SCRATCH_BASE"',
+            '    lfs setstripe -c ${PBS_NCPUS:-4} -s 1M "$SCRATCH_BASE" 2>/dev/null || true',
+            'fi',
             '',
             '# Multi-node scratch sync',
             'if [ -n "$PBS_NODEFILE" ] && [ "$(sort -u "$PBS_NODEFILE" | wc -l)" -gt 1 ]; then',

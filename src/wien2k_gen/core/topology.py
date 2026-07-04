@@ -48,6 +48,125 @@ class TopologyType(Enum):
 
 
 # =============================================================================
+# BLACS Grid Factorization for ScaLAPACK/ELPA
+# =============================================================================
+
+def factorize_blacs_grid(total_ranks: int) -> Tuple[int, int]:
+    """
+    Find the best p x q factorization of total_ranks with minimal |p - q| difference.
+    Uses the algorithm from ScaLAPACK's pdlaset.f: start from sqrt(N), decrement p
+    until divisibility, producing an optimal 2D processor grid for ELPA Stage 2.
+
+    Reference:
+        ScaLAPACK Users' Guide Chapter 6 (Process Grid);
+        Marek et al. 2014 "The ELPA library" (J. Phys.: Condens. Matter 26, 213201).
+
+    Args:
+        total_ranks: Total number of MPI ranks participating in the diagonalization.
+
+    Returns:
+        Tuple[p, q] where p <= q and p * q == total_ranks, minimizing |p - q|.
+        For prime total_ranks, returns (1, total_ranks), which is a 1D grid.
+    """
+    if total_ranks <= 0:
+        return (1, 1)
+
+    p = int(math.isqrt(total_ranks))
+    while p >= 1:
+        if total_ranks % p == 0:
+            q = total_ranks // p
+            return (p, q) if p <= q else (q, p)
+        p -= 1
+
+    return (1, total_ranks)
+
+
+def _is_blacs_friendly(n: int) -> bool:
+    """Check if n can be factorized into p x q where both p > 1 and q > 1."""
+    p, q = factorize_blacs_grid(n)
+    return p > 1 and q > 1
+
+
+def _nearest_factorizable(target: int) -> int:
+    """
+    Find the nearest integer to target that is BLACS-friendly (has p, q both > 1).
+    Searches both sides in expanding window for a non-prime factorization.
+    """
+    if _is_blacs_friendly(target):
+        return target
+
+    for delta in range(1, target + 1):
+        for candidate in (target - delta, target + delta):
+            if candidate > 1 and _is_blacs_friendly(candidate):
+                return candidate
+        if delta > target * 2:
+            break
+
+    return target
+
+
+def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
+    """
+    Adjust per-node rank allocation to BLACS-friendly counts while preserving
+    the total as closely as possible.
+
+    Each node's rank count is nudged to the nearest factorizable number (p x q
+    with p, q > 1). After adjustment, rank differences are propagated to the
+    largest nodes to maintain total rank count.
+
+    Args:
+        per_node_ranks: List of MPI rank counts per NUMA node.
+
+    Returns:
+        Adjusted list with each count being BLACS-friendly for optimal 2D grids.
+    """
+    if not per_node_ranks:
+        return []
+
+    original_total = sum(per_node_ranks)
+    adjusted = [_nearest_factorizable(r) for r in per_node_ranks]
+
+    for i in range(len(adjusted)):
+        p, q = factorize_blacs_grid(adjusted[i])
+        if p == 1:
+            logger.debug(
+                f"Node {i}: adjusted rank count {adjusted[i]} is prime; "
+                f"BLACS grid will be 1D ({p}x{q}). Consider redistributing."
+            )
+
+    diff = original_total - sum(adjusted)
+    if diff == 0:
+        return adjusted
+
+    sorted_indices = sorted(range(len(adjusted)), key=lambda i: per_node_ranks[i], reverse=True)
+    idx = 0
+    while diff != 0:
+        node_idx = sorted_indices[idx % len(sorted_indices)]
+        if diff > 0:
+            candidate = adjusted[node_idx] + 1
+            if _is_blacs_friendly(candidate):
+                adjusted[node_idx] = candidate
+                diff -= 1
+            else:
+                idx += 1
+        else:
+            candidate = adjusted[node_idx] - 1
+            if candidate >= 2 and _is_blacs_friendly(candidate):
+                adjusted[node_idx] = candidate
+                diff += 1
+            else:
+                idx += 1
+        if idx > len(sorted_indices) * 2:
+            break
+
+    logger.info(
+        f"BLACS grid adjustment: {original_total} -> {sum(adjusted)} ranks "
+        f"({per_node_ranks} -> {adjusted})"
+    )
+    return adjusted
+
+
+# =============================================================================
 # Fine-Grained Hardware Representation Classes
 # =============================================================================
 
@@ -290,6 +409,60 @@ class Topology:
             if core_id in numa.core_ids:
                 return numa.node_id
         return None
+
+    def split_load_balanced(
+        self, total_ranks: int, threads_per_rank: int = 1
+    ) -> List[int]:
+        """
+        Distribute MPI ranks across NUMA nodes using greedy water-filling,
+        then adjust per-node counts to BLACS-friendly numbers for optimal
+        ScaLAPACK/ELPA 2D processor grids.
+
+        The greedy allocation fills nodes with largest remaining capacity first,
+        minimizing communication imbalance. After allocation, each per-node count
+        is adjusted via adjust_for_blacs_grid() to ensure p x q matrices are
+        well-formed (both p > 1 and q > 1 typically).
+
+        Args:
+            total_ranks: Total number of MPI processes to distribute.
+            threads_per_rank: OpenMP threads per MPI rank (affects slot capacity).
+
+        Returns:
+            List[int] with per-node rank counts, each BLACS-friendly.
+        """
+        if not self.cores_per_node or total_ranks <= 0:
+            return []
+
+        num_nodes = len(self.cores_per_node)
+        max_ranks_per_node = [max(1, cores // threads_per_rank) for cores in self.cores_per_node]
+
+        per_node = [0] * num_nodes
+        remaining = total_ranks
+
+        sorted_indices = sorted(range(num_nodes), key=lambda i: max_ranks_per_node[i], reverse=True)
+
+        for idx in sorted_indices:
+            cap = max_ranks_per_node[idx]
+            assign = min(cap, remaining)
+            per_node[idx] = assign
+            remaining -= assign
+            if remaining <= 0:
+                break
+
+        idx = 0
+        while remaining > 0:
+            node_idx = sorted_indices[idx % num_nodes]
+            per_node[node_idx] += 1
+            remaining -= 1
+            idx += 1
+
+        per_node = adjust_for_blacs_grid(per_node)
+
+        logger.info(
+            f"Load-balanced distribution (BLACS-aware): {per_node} "
+            f"= {sum(per_node)} ranks across {num_nodes} nodes"
+        )
+        return per_node
 
     def get_optimal_mpi_distribution(
         self, total_ranks: int, threads_per_rank: int = 1, parallelization_mode: str = "cyclic"

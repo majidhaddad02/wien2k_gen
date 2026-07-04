@@ -89,6 +89,8 @@ class SlurmJobSpec:
     checkpoint_fn_name: str = "checkpoint_save"
     dry_run: bool = False
     validate_constraints: bool = True
+    stripe_count: int = 4
+    stripe_size_mb: int = 1
 
 
 # =============================================================================
@@ -283,6 +285,12 @@ export TMPDIR="$SCRATCH_BASE"
 export WIEN2K_SCRATCH="$SCRATCH_BASE"
 export QE_SCRATCH="$SCRATCH_BASE"
 echo "[slurm_gen] Scratch allocated at $SCRATCH_BASE on node $(hostname)"
+
+# Lustre striping for parallel MPI-IO (case.vector writes)
+if command -v lfs &> /dev/null && [ "$(stat -f -c %T "$SCRATCH_BASE" 2>/dev/null)" = "lustre" ]; then
+    echo "[slurm_gen] Lustre detected: configuring striping on $SCRATCH_BASE"
+    lfs setstripe -c ${SLURM_CPUS_ON_NODE:-4} -s 1M "$SCRATCH_BASE" 2>/dev/null || true
+fi
 
 # Multi-node synchronization
 if [ -n "$SLURM_JOB_NODELIST" ] && [ "$SLURM_NNODES" -gt 1 ]; then

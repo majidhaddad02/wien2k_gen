@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ..core.constants import RYDBERG_TO_EV
+from ..core.constants import RYDBERG_TO_EV, HBAR2_OVER_ME_EV_ANG2
 from ..exceptions import ParsingError, MissingInputError
 
 
@@ -248,12 +248,14 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
     }
 
 
-def compute_band_gap(band_data: Dict[str, Any]) -> Tuple[float, bool, Optional[int], Optional[int]]:
+def compute_direct_band_gap(
+    band_data: Dict[str, Any],
+) -> Tuple[float, bool, Optional[int], Optional[int]]:
     """
-    Compute the band gap from pre-parsed band structure data.
+    Compute the direct band gap from pre-parsed band structure data.
 
-    Determines the valence band maximum (VBM) and conduction band minimum (CBM)
-    across all k-points, and classifies the gap as direct or indirect.
+    The direct gap is the minimum energy difference between the conduction
+    band minimum (CBM) and valence band maximum (VBM) *at the same k-point*.
 
     Parameters
     ----------
@@ -264,10 +266,10 @@ def compute_band_gap(band_data: Dict[str, Any]) -> Tuple[float, bool, Optional[i
     -------
     tuple
         (gap_eV, is_direct, vbm_k_index, cbm_k_index)
-        - ``gap_eV`` (float): band gap in eV (0.0 for metals).
-        - ``is_direct`` (bool): True if gap is direct.
-        - ``vbm_k`` (int or None): k-index of VBM.
-        - ``cbm_k`` (int or None): k-index of CBM.
+        - ``gap_eV`` (float): direct band gap in eV (0.0 for metals).
+        - ``is_direct`` (bool): always True for a direct gap by definition.
+        - ``vbm_k`` (int or None): k-index of VBM at the direct gap k-point.
+        - ``cbm_k`` (int or None): k-index of CBM (same as vbm_k).
     """
     eigenvalues = band_data["eigenvalues"]
     fermi = band_data["fermi"]
@@ -276,45 +278,247 @@ def compute_band_gap(band_data: Dict[str, Any]) -> Tuple[float, bool, Optional[i
     nbnd = band_data["nbnd"]
 
     if nspin == 2:
-        # Use majority spin (up) for gap analysis
         energies = eigenvalues[0]
     else:
         energies = eigenvalues[0]
 
-    # Find VBM: highest occupied band (energy <= fermi)
     vbm_per_k = np.full(nkpt, -np.inf)
-    vbm_band_per_k = np.zeros(nkpt, dtype=int)
+    cbm_per_k = np.full(nkpt, np.inf)
+
     for ik in range(nkpt):
         for ib in range(nbnd):
             e = energies[ik, ib]
-            if e <= fermi + 0.01:  # small tolerance
+            if e <= fermi + 0.01:
                 if e > vbm_per_k[ik]:
                     vbm_per_k[ik] = e
-                    vbm_band_per_k[ik] = ib
+            if e > fermi - 0.01:
+                if e < cbm_per_k[ik]:
+                    cbm_per_k[ik] = e
 
-    # Find CBM: lowest unoccupied band (energy > fermi)
+    per_k_gaps = cbm_per_k - vbm_per_k
+    direct_k_idx = int(np.argmin(per_k_gaps))
+    direct_gap = max(0.0, per_k_gaps[direct_k_idx])
+
+    is_direct = True
+
+    return direct_gap, is_direct, direct_k_idx, direct_k_idx
+
+
+def compute_band_gap(
+    band_data: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Compute both direct and indirect band gaps from band structure data.
+
+    The direct gap is the minimum CBM-VBM energy difference at the same
+    k-point. The indirect gap is the minimum energy difference between
+    any CBM and any VBM across all k-points, which determines the true
+    electronic gap in semiconductors.
+
+    Parameters
+    ----------
+    band_data : dict
+        Output from :func:`parse_band_structure`.
+
+    Returns
+    -------
+    dict
+        Keys:
+        - ``direct_gap_ev`` (float): direct gap in eV.
+        - ``indirect_gap_ev`` (float): indirect gap in eV.
+        - ``gap_type`` (str): "direct" if the fundamental gap is direct,
+          "indirect" otherwise.
+        - ``vbm_energy_ev`` (float): global VBM energy in eV.
+        - ``cbm_energy_ev`` (float): global CBM energy in eV.
+        - ``vbm_k_index`` (int): k-index of global VBM.
+        - ``cbm_k_index`` (int): k-index of global CBM.
+        - ``direct_k_index`` (int): k-index where direct gap occurs.
+        - ``vbm_k_coords`` (np.ndarray): k-coordinates of VBM.
+        - ``cbm_k_coords`` (np.ndarray): k-coordinates of CBM.
+    """
+    eigenvalues = band_data["eigenvalues"]
+    fermi = band_data["fermi"]
+    nspin = band_data["nspin"]
+    nkpt = band_data["nkpt"]
+    nbnd = band_data["nbnd"]
+    k_points = band_data.get("k_points", np.zeros((nkpt, 3)))
+
+    if nspin == 2:
+        energies = eigenvalues[0]
+    else:
+        energies = eigenvalues[0]
+
+    vbm_per_k = np.full(nkpt, -np.inf)
     cbm_per_k = np.full(nkpt, np.inf)
-    cbm_band_per_k = np.zeros(nkpt, dtype=int)
+
     for ik in range(nkpt):
         for ib in range(nbnd):
             e = energies[ik, ib]
-            if e > fermi - 0.01:  # small tolerance
+            if e <= fermi + 0.01:
+                if e > vbm_per_k[ik]:
+                    vbm_per_k[ik] = e
+            if e > fermi - 0.01:
                 if e < cbm_per_k[ik]:
                     cbm_per_k[ik] = e
-                    cbm_band_per_k[ik] = ib
 
-    # Global VBM and CBM
+    per_k_gaps = cbm_per_k - vbm_per_k
+    direct_k_idx = int(np.argmin(per_k_gaps))
+    direct_gap = max(0.0, per_k_gaps[direct_k_idx])
+
     vbm_energy = np.max(vbm_per_k)
     cbm_energy = np.min(cbm_per_k)
-
-    gap_ev = max(0.0, cbm_energy - vbm_energy)
-
-    vbm_k_idx: Optional[int] = int(np.argmax(vbm_per_k))
-    cbm_k_idx: Optional[int] = int(np.argmin(cbm_per_k))
+    vbm_k_idx = int(np.argmax(vbm_per_k))
+    cbm_k_idx = int(np.argmin(cbm_per_k))
+    indirect_gap = max(0.0, cbm_energy - vbm_energy)
 
     is_direct = vbm_k_idx == cbm_k_idx
 
-    return gap_ev, is_direct, vbm_k_idx, cbm_k_idx
+    vbm_k_coords = None
+    cbm_k_coords = None
+    if k_points.shape[0] > max(vbm_k_idx, cbm_k_idx):
+        vbm_k_coords = k_points[vbm_k_idx].copy()
+        cbm_k_coords = k_points[cbm_k_idx].copy()
+
+    return {
+        "direct_gap_ev": round(direct_gap, 6),
+        "indirect_gap_ev": round(indirect_gap, 6),
+        "gap_type": "direct" if is_direct else "indirect",
+        "vbm_energy_ev": round(vbm_energy, 6),
+        "cbm_energy_ev": round(cbm_energy, 6),
+        "vbm_k_index": vbm_k_idx,
+        "cbm_k_index": cbm_k_idx,
+        "direct_k_index": direct_k_idx,
+        "vbm_k_coords": vbm_k_coords,
+        "cbm_k_coords": cbm_k_coords,
+    }
+
+
+def compute_effective_mass(
+    band_data: Dict[str, Any],
+    band_index: int,
+    kpoint_index: int,
+    direction: str = "central",
+) -> float:
+    """
+    Compute the effective mass at a given band and k-point.
+
+    Uses a 3-point finite-difference formula for the second derivative of
+    energy with respect to k:
+
+        m* / m_e = HBAR2_OVER_ME_EV_ANG2 / (d²E/dk²)
+
+    where d²E/dk² ≈ (E[k+1] - 2E[k] + E[k-1]) / dk², and dk is the
+    Euclidean distance between consecutive k-points along the band path.
+
+    Parameters
+    ----------
+    band_data : dict
+        Output from :func:`parse_band_structure`.
+    band_index : int
+        Index of the band to compute effective mass for.
+    kpoint_index : int
+        Index of the k-point at which to evaluate.
+    direction : str
+        Finite-difference scheme: "central", "forward", or "backward".
+
+    Returns
+    -------
+    float
+        Effective mass ratio m*/m_e. Positive for band minima (electrons),
+        negative for band maxima (holes).
+
+    References
+    ----------
+    Ashcroft & Mermin 1976, Chapter 8.
+    Crowley et al. 2016.
+    """
+    eigenvalues = band_data["eigenvalues"]
+    nspin = band_data["nspin"]
+    nkpt = band_data["nkpt"]
+    nbnd = band_data["nbnd"]
+    k_points = band_data.get("k_points", np.zeros((nkpt, 3)))
+
+    if nspin == 2:
+        energies = eigenvalues[0]
+    else:
+        energies = eigenvalues[0]
+
+    if band_index < 0 or band_index >= nbnd:
+        raise ValueError(
+            f"band_index {band_index} out of range [0, {nbnd - 1}]"
+        )
+    if kpoint_index < 0 or kpoint_index >= nkpt:
+        raise ValueError(
+            f"kpoint_index {kpoint_index} out of range [0, {nkpt - 1}]"
+        )
+
+    e0 = energies[kpoint_index, band_index]
+
+    if direction == "central":
+        if kpoint_index == 0:
+            direction = "forward"
+        elif kpoint_index == nkpt - 1:
+            direction = "backward"
+
+    if direction == "central":
+        km = kpoint_index - 1
+        kp = kpoint_index + 1
+        em = energies[km, band_index]
+        ep = energies[kp, band_index]
+        dk_m = np.linalg.norm(k_points[kpoint_index] - k_points[km])
+        dk_p = np.linalg.norm(k_points[kp] - k_points[kpoint_index])
+
+        if abs(dk_m - dk_p) > max(dk_m, dk_p) * 0.1:
+            d2e = (ep - 2.0 * e0 + em) / ((dk_p + dk_m) / 2.0) ** 2
+        else:
+            dk = (dk_m + dk_p) / 2.0
+            d2e = (ep - 2.0 * e0 + em) / (dk * dk)
+
+    elif direction == "forward":
+        if kpoint_index + 2 >= nkpt:
+            kp1 = kpoint_index + 1
+            if kp1 >= nkpt:
+                raise ValueError(
+                    "Not enough k-points for forward finite difference"
+                )
+            dk = np.linalg.norm(k_points[kp1] - k_points[kpoint_index])
+            ep = energies[kp1, band_index]
+            d2e = (ep - e0) / (dk * dk)
+        else:
+            kp1 = kpoint_index + 1
+            kp2 = kpoint_index + 2
+            dk = np.linalg.norm(k_points[kp1] - k_points[kpoint_index])
+            ep1 = energies[kp1, band_index]
+            ep2 = energies[kp2, band_index]
+            d2e = (-ep2 + 4.0 * ep1 - 3.0 * e0) / (2.0 * dk * dk)
+
+    elif direction == "backward":
+        if kpoint_index - 2 < 0:
+            km1 = kpoint_index - 1
+            if km1 < 0:
+                raise ValueError(
+                    "Not enough k-points for backward finite difference"
+                )
+            dk = np.linalg.norm(k_points[kpoint_index] - k_points[km1])
+            em = energies[km1, band_index]
+            d2e = (e0 - em) / (dk * dk)
+        else:
+            km1 = kpoint_index - 1
+            km2 = kpoint_index - 2
+            dk = np.linalg.norm(k_points[kpoint_index] - k_points[km1])
+            em1 = energies[km1, band_index]
+            em2 = energies[km2, band_index]
+            d2e = (3.0 * e0 - 4.0 * em1 + em2) / (2.0 * dk * dk)
+
+    else:
+        raise ValueError(
+            f"Unknown direction: {direction}. Use 'central', 'forward', or 'backward'."
+        )
+
+    if abs(d2e) < 1e-12:
+        return float("inf")
+
+    return HBAR2_OVER_ME_EV_ANG2 / d2e
 
 
 def detect_semiconductor(gap: float) -> str:
@@ -518,5 +722,7 @@ __all__ = [
     "parse_band_structure",
     "parse_dos",
     "compute_band_gap",
+    "compute_direct_band_gap",
+    "compute_effective_mass",
     "detect_semiconductor",
 ]

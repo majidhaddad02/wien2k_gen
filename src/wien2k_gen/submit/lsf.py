@@ -127,6 +127,8 @@ class LSFJobSpec:
     preemption_grace_sec: int = 60
     dry_run: bool = False
     validate_constraints: bool = True
+    stripe_count: int = 4
+    stripe_size_mb: int = 1
 
 
 # =============================================================================
@@ -367,6 +369,12 @@ class LSFSubmitProvider(SubmitProvider):
             'export JOB_SCRATCH="$SCRATCH_BASE"',
             'export TMPDIR="$SCRATCH_BASE"',
             'echo "[lsf_submit] Scratch allocated at $SCRATCH_BASE on $(hostname)"',
+            '',
+            '# Lustre striping for parallel MPI-IO (case.vector writes)',
+            'if command -v lfs &> /dev/null && [ "$(stat -f -c %T "$SCRATCH_BASE" 2>/dev/null)" = "lustre" ]; then',
+            '    echo "[lsf_submit] Lustre detected: configuring striping on $SCRATCH_BASE"',
+            '    lfs setstripe -c ${LSB_DJOB_NUMPROC:-4} -s 1M "$SCRATCH_BASE" 2>/dev/null || true',
+            'fi',
             '',
             '# Multi-host scratch sync (if LSF assigned multiple hosts)',
             'if [ -n "$LSB_MCPU_HOSTS" ]; then',

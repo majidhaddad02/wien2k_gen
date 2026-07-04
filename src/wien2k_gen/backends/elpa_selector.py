@@ -14,9 +14,10 @@ on HPC systems with InfiniBand interconnects.
 """
 
 import math
-from typing import Dict, Optional
-from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
+from dataclasses import dataclass, field
 
+from ..core.topology import factorize_blacs_grid
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -30,6 +31,7 @@ class SolverSelection:
     estimated_speedup: float
     reason: str
     requires_recompilation: bool
+    recommended_grid: Tuple[int, int] = field(default_factory=lambda: (1, 1))
 
 
 def select_eigensolver(
@@ -38,6 +40,7 @@ def select_eigensolver(
     is_soc: bool,
     gpu_available: bool,
     nbands: Optional[int] = None,
+    total_ranks: int = 1,
 ) -> SolverSelection:
     """
     Select the optimal eigenvalue solver for a WIEN2k diagonalization phase.
@@ -50,22 +53,31 @@ def select_eigensolver(
         is_soc: Whether spin-orbit coupling is included (doubles effective matrix).
         gpu_available: Whether GPU acceleration (cuSOLVER/MAGMA) is detected.
         nbands: Number of bands (optional; used for additional heuristics).
+        total_ranks: Total MPI ranks participating; used for BLACS grid recommendation.
 
     Returns:
-        SolverSelection with recommended solver, block size, and rationale.
+        SolverSelection with recommended solver, block size, recommended BLACS grid (p, q),
+        and rationale.
     """
     effective_nmat = nmat * 2 if is_soc else nmat
+    blacs_grid = factorize_blacs_grid(total_ranks)
+
+    def _mk(rec_solver, block_size, speedup, reason, recomp):
+        return SolverSelection(
+            recommended_solver=rec_solver,
+            block_size=block_size,
+            estimated_speedup=speedup,
+            reason=reason,
+            requires_recompilation=recomp,
+            recommended_grid=blacs_grid,
+        )
 
     if nmat < 2000:
-        return SolverSelection(
-            recommended_solver="LAPACK",
-            block_size=32,
-            estimated_speedup=1.0,
-            reason=(
-                f"Small matrix (nmat={nmat}): ScaLAPACK communication overhead "
-                f"exceeds benefit at this size. Single-node LAPACK is fastest."
-            ),
-            requires_recompilation=False,
+        return _mk(
+            "LAPACK", 32, 1.0,
+            f"Small matrix (nmat={nmat}): ScaLAPACK communication overhead "
+            f"exceeds benefit at this size. Single-node LAPACK is fastest.",
+            False,
         )
 
     if effective_nmat >= 10000:
@@ -73,81 +85,71 @@ def select_eigensolver(
         elpa_block = 64 if elpa_kernel == "ELPA2" else 32
 
         if gpu_available:
-            return SolverSelection(
-                recommended_solver=f"{elpa_kernel}+GPU",
-                block_size=min(256, max(32, effective_nmat // 8)),
-                estimated_speedup=3.5 if elpa_kernel == "ELPA2" else 2.5,
-                reason=(
-                    f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
-                    f"{elpa_kernel} with GPU acceleration recommended. "
-                    f"Consider cuSOLVER (NVIDIA) or MAGMA (AMD/NVIDIA) for "
-                    f"accelerated tridiagonalization."
-                ),
-                requires_recompilation=True,
+            return _mk(
+                f"{elpa_kernel}+GPU",
+                min(256, max(32, effective_nmat // 8)),
+                3.5 if elpa_kernel == "ELPA2" else 2.5,
+                f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
+                f"{elpa_kernel} with GPU acceleration recommended. "
+                f"Consider cuSOLVER (NVIDIA) or MAGMA (AMD/NVIDIA) for "
+                f"accelerated tridiagonalization.",
+                True,
             )
 
         elpa_available = _check_elpa_runtime()
         if elpa_available:
-            return SolverSelection(
-                recommended_solver=elpa_kernel,
-                block_size=elpa_block,
-                estimated_speedup=2.8 if elpa_kernel == "ELPA2" else 1.8,
-                reason=(
-                    f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
-                    f"{elpa_kernel} provides optimal strong scaling for matrices "
-                    f"above 10000. Two-stage tridiagonalization reduces "
-                    f"communication volume by ~40% vs ScaLAPACK."
-                ),
-                requires_recompilation=False,
+            return _mk(
+                elpa_kernel,
+                elpa_block,
+                2.8 if elpa_kernel == "ELPA2" else 1.8,
+                f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
+                f"{elpa_kernel} provides optimal strong scaling for matrices "
+                f"above 10000. Two-stage tridiagonalization reduces "
+                f"communication volume by ~40% vs ScaLAPACK.",
+                False,
             )
         else:
             block_size = min(256, max(32, effective_nmat // 8))
-            return SolverSelection(
-                recommended_solver="ScaLAPACK",
-                block_size=block_size,
-                estimated_speedup=1.0,
-                reason=(
-                    f"Large matrix (nmat={nmat}) but ELPA not detected at runtime. "
-                    f"Using ScaLAPACK with optimized block_size={block_size}. "
-                    f"Consider installing ELPA for reduced walltime."
-                ),
-                requires_recompilation=False,
+            return _mk(
+                "ScaLAPACK",
+                block_size,
+                1.0,
+                f"Large matrix (nmat={nmat}) but ELPA not detected at runtime. "
+                f"Using ScaLAPACK with optimized block_size={block_size}. "
+                f"Consider installing ELPA for reduced walltime.",
+                False,
             )
 
     if 2000 <= nmat < 10000:
         block_size = min(256, max(32, nmat // 8))
 
         if is_soc:
-            return SolverSelection(
-                recommended_solver="ELPA1" if _check_elpa_runtime() else "ScaLAPACK",
-                block_size=elpa_block if _check_elpa_runtime() else block_size,
-                estimated_speedup=1.4,
-                reason=(
-                    f"SOC calculation (effective nmat={effective_nmat}): spinor "
-                    f"matrices are 2x larger. ELPA preferred if available; falling "
-                    f"back to ScaLAPACK with block_size={block_size}."
-                ),
-                requires_recompilation=not _check_elpa_runtime(),
+            elpa_avail = _check_elpa_runtime()
+            elpa_block = 32
+            return _mk(
+                "ELPA1" if elpa_avail else "ScaLAPACK",
+                elpa_block if elpa_avail else block_size,
+                1.4,
+                f"SOC calculation (effective nmat={effective_nmat}): spinor "
+                f"matrices are 2x larger. ELPA preferred if available; falling "
+                f"back to ScaLAPACK with block_size={block_size}.",
+                not elpa_avail,
             )
 
-        return SolverSelection(
-            recommended_solver="ScaLAPACK",
-            block_size=block_size,
-            estimated_speedup=1.0,
-            reason=(
-                f"Moderate matrix (nmat={nmat}): ScaLAPACK with block_size="
-                f"{block_size} provides good balance of communication and "
-                f"computation. ELPA overhead not yet justified."
-            ),
-            requires_recompilation=False,
+        return _mk(
+            "ScaLAPACK",
+            block_size,
+            1.0,
+            f"Moderate matrix (nmat={nmat}): ScaLAPACK with block_size="
+            f"{block_size} provides good balance of communication and "
+            f"computation. ELPA overhead not yet justified.",
+            False,
         )
 
-    return SolverSelection(
-        recommended_solver="LAPACK",
-        block_size=32,
-        estimated_speedup=1.0,
-        reason=f"Fallback for nmat={nmat}: LAPACK single-core safest default.",
-        requires_recompilation=False,
+    return _mk(
+        "LAPACK", 32, 1.0,
+        f"Fallback for nmat={nmat}: LAPACK single-core safest default.",
+        False,
     )
 
 

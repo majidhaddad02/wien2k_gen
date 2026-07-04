@@ -47,6 +47,7 @@ class SyntheticWorkloadParams(TypedDict, total=False):
     atoms: int
     kpoints: int
     nmat: int
+    nbands: int
     is_hybrid: bool
     is_soc: bool
     complexity_class: str  # 'small', 'medium', 'large', 'exascale'
@@ -76,32 +77,128 @@ class SimulationConfig:
     enable_roofline: bool = True
 
 
+@dataclass
+class LogPParameters:
+    """
+    LogP communication model parameters (Culler et al. 1993).
+    Separates latency, overhead, gap, and processor count for realistic
+    MPI communication time estimation.
+
+    References
+    ----------
+    Culler et al. 1993 "LogP: Towards a Realistic Model of Parallel Computation"
+    Hoefler et al. 2010 "LogP - A Simple, Realistic Communication Model for HPC"
+    """
+    L: float = 1.0e-6       # Network latency (seconds)
+    o: float = 1.0e-7       # CPU overhead per message (seconds)
+    g: float = 8.0e-11      # Gap = 1/bandwidth (seconds per byte)
+    G: int = 0              # Message size in bytes (set dynamically)
+
+    @classmethod
+    def default_infiniband_edr(cls) -> "LogPParameters":
+        """InfiniBand EDR: ~1.0 us latency, 12.5 GB/s bandwidth."""
+        return cls(L=1.0e-6, o=1.0e-7, g=8.0e-11)
+
+    @classmethod
+    def default_omnipath(cls) -> "LogPParameters":
+        """Intel OmniPath: ~1.2 us latency, 12.5 GB/s bandwidth."""
+        return cls(L=1.2e-6, o=1.2e-7, g=8.0e-11)
+
+    @classmethod
+    def default_ethernet(cls) -> "LogPParameters":
+        """Ethernet (10 GbE): ~50 us latency, 1.25 GB/s bandwidth."""
+        return cls(L=50.0e-6, o=1.0e-6, g=8.0e-10)
+
+
 # =============================================================================
 # DFT Complexity & Workload Models
 # =============================================================================
 
-def _calculate_flop_count(nmat: int, atoms: int, kpoints: int, is_hybrid: bool) -> float:
+def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -> float:
+    """
+    Estimate FLOP count for iterative Davidson diagonalization.
+
+    WIEN2k uses the Davidson method rather than full O(N^3) diagonalization.
+    Complexity is O(nmat * nbands * (nbands + niter)) per k-point per iteration,
+    significantly cheaper than O(nmat^3) when nbands << nmat.
+
+    Components per iteration per k-point:
+    - Frobenius orthogonalization: nmat * nbands^2
+    - Rayleigh-Ritz subspace diagonalization: nbands * subspace^2  (subspace ~ 2*nbands)
+    - Residual computation: nmat * nbands
+
+    Parameters
+    ----------
+    nmat : int
+        Matrix dimension (basis set size).
+    nbands : int
+        Number of bands (eigenvalues) sought.
+    nkpt : int
+        Number of k-points.
+    niter : int
+        Typical Davidson iterations (3-5).
+
+    Returns
+    -------
+    float
+        Estimated total FLOP count.
+
+    References
+    ----------
+    Blaha et al. 2020, WIEN2k User's Guide, Section 6.4.3.
+    Saad 2011, "Numerical Methods for Large Eigenvalue Problems", Chapter 4.
+    """
+    subspace = 2 * nbands
+
+    frob_orth = nmat * (nbands ** 2) * niter
+
+    rr_diag = nbands * (subspace ** 2)
+
+    residual = nmat * nbands * niter
+
+    total_per_iter = frob_orth + rr_diag + residual
+
+    return total_per_iter * nkpt * niter
+
+
+def _calculate_flop_count(
+    nmat: int,
+    atoms: int,
+    kpoints: int,
+    is_hybrid: bool,
+    nbands: int = 0,
+) -> float:
     """
     Estimate total FLOP count for a DFT calculation.
-    Approximations:
-    • lapw1 (Hamiltonian): O(N^3) per k-point (dominant diagonalization).
-    • lapw0 (Potential): O(N^2).
-    • Mixer/Post-processing: O(N^2).
-    • Hybrid: Adds expensive exact exchange calculation O(N^3).
+
+    Uses iterative Davidson diagonalization (O(nmat*nbands^2)) rather than
+    full O(nmat^3) diagonalization, consistent with WIEN2k lapw1 behavior.
+
+    Parameters
+    ----------
+    nmat : int
+        Matrix dimension.
+    atoms : int
+        Number of atoms.
+    kpoints : int
+        Number of k-points.
+    is_hybrid : bool
+        Whether hybrid functional is used.
+    nbands : int
+        Number of bands. Defaults to int(0.6 * nmat) if <= 0.
     """
-    # Base cost for lapw1 (diagonalization)
-    # 20 FLOPs per element is a conservative estimate for full diagonalization
-    flop_lapw1 = (nmat ** 3) * kpoints * 20.0
-    
-    # Lapw0 cost scales with grid size (approx proportional to atoms)
+    if nbands <= 0:
+        nbands = int(0.6 * nmat)
+
+    flop_lapw1 = estimate_davidson_flops(nmat, nbands, kpoints)
+
     flop_lapw0 = (nmat ** 2) * atoms * 100.0
 
     total_flops = flop_lapw1 + flop_lapw0
 
-    # Hybrid functionals increase cost significantly (often 5-10x)
     if is_hybrid:
         total_flops *= 5.0
-        
+
     return total_flops
 
 
@@ -118,12 +215,58 @@ def _calculate_memory_traffic_gb(nmat: int, atoms: int, kpoints: int) -> float:
 def _calculate_mpi_messages(nmat: int, cores: int, mode: str) -> int:
     """Estimate number of MPI messages exchanged during parallel run."""
     if mode == "kpoint":
-        return kpoints  # Minimal communication (map-reduce)
+        return 1  # Minimal communication (map-reduce)
     if mode == "mpi":
-        # ScaLAPACK diagonalization communication ~ O(log P) or O(sqrt P) matrix blocks
-        # Heuristic: increases with cores and matrix size
         return int(cores * math.log2(max(2, cores)) * (nmat / 1000.0))
     return cores
+
+
+def estimate_logp_communication(
+    total_cores: int,
+    message_size_bytes: int,
+    params: LogPParameters,
+    operation: str = "allreduce",
+) -> float:
+    """
+    Estimate MPI communication time using the LogP model.
+
+    Separates network latency (L), CPU overhead (o), bandwidth gap (g),
+    and message size (G) for realistic parallel performance prediction.
+
+    Parameters
+    ----------
+    total_cores : int
+        Number of MPI ranks (P).
+    message_size_bytes : int
+        Size of each message in bytes (G).
+    params : LogPParameters
+        Hardware-specific LogP parameters.
+    operation : str
+        Communication pattern: "allreduce" or "nearest".
+
+    Returns
+    -------
+    float
+        Estimated communication time in seconds.
+
+    References
+    ----------
+    Culler et al. 1993, "LogP: Towards a Realistic Model of Parallel
+    Computation", PPoPP.
+    Hoefler et al. 2010, "LogP - A Simple, Realistic Communication Model
+    for HPC", SC10.
+    """
+    P = max(2, total_cores)
+    G = float(message_size_bytes)
+
+    if operation == "allreduce":
+        time_sec = params.L + 2.0 * math.log2(P) * (params.o + params.g * G)
+    elif operation == "nearest":
+        time_sec = params.L + params.o + params.g * G
+    else:
+        time_sec = params.L + params.o + params.g * G
+
+    return time_sec
 
 
 # =============================================================================
@@ -153,10 +296,11 @@ class WorkloadSimulator:
         nmat = problem.get("nmat", 1000)
         atoms = problem.get("atoms", 10)
         kpoints = problem.get("kpoints", 1)
+        nbands = problem.get("nbands", 0)
         is_hybrid = problem.get("is_hybrid", False)
 
         # 1. Calculate Workload Characteristics
-        total_flops = _calculate_flop_count(nmat, atoms, kpoints, is_hybrid)
+        total_flops = _calculate_flop_count(nmat, atoms, kpoints, is_hybrid, nbands)
         total_traffic_gb = _calculate_memory_traffic_gb(nmat, atoms, kpoints)
         
         # 2. Hardware Limits (from Profile)
@@ -194,10 +338,19 @@ class WorkloadSimulator:
             time_sec = total_flops / (peak_flops * total_cores * parallel_efficiency)
             bottleneck = "hybrid"
 
-        # 5. Adjust for MPI/IO Overhead
-        # MPI Latency penalty (LogP model approximation)
-        msg_count = _calculate_mpi_messages(nmat, total_cores, mode)
-        mpi_penalty_sec = (msg_count * self.config.mpi_latency_us) * 1e-6
+        # 5. Adjust for MPI/IO Overhead (LogP model)
+        msg_size_bytes = int((nmat / max(1, math.sqrt(total_cores))) ** 2) * 16
+        logp_params = LogPParameters.default_infiniband_edr()
+
+        if mode == "kpoint":
+            mpi_penalty_sec = estimate_logp_communication(
+                total_cores, msg_size_bytes, logp_params, "allreduce"
+            )
+        else:
+            n_exchanges = max(1, int(math.log2(max(2, nmat))))
+            mpi_penalty_sec = n_exchanges * estimate_logp_communication(
+                total_cores, msg_size_bytes, logp_params, "nearest"
+            )
         time_sec += mpi_penalty_sec
 
         # I/O Penalty (Lapw2 bottleneck simulation)
@@ -233,7 +386,9 @@ class WorkloadSimulator:
                 "flops_estimated": total_flops,
                 "traffic_gb": total_traffic_gb,
                 "parallel_efficiency": parallel_efficiency,
-                "mpi_penalty_ms": mpi_penalty_sec * 1000
+                "mpi_penalty_ms": mpi_penalty_sec * 1000,
+                "davidson_nbands": nbands if nbands > 0 else int(0.6 * nmat),
+                "logp_model": "infiniband_edr",
             },
             "timestamp": time.time()
         }
@@ -333,9 +488,12 @@ __all__ = [
     "SyntheticWorkloadParams",
     "BenchmarkResult",
     "SimulationConfig",
+    "LogPParameters",
     "WorkloadSimulator",
     "generate_strong_scaling_suite",
     "generate_weak_scaling_suite",
     "_calculate_flop_count",
     "_calculate_memory_traffic_gb",
+    "estimate_davidson_flops",
+    "estimate_logp_communication",
 ]

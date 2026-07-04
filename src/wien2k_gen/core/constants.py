@@ -21,6 +21,13 @@ ELECTRON_MASS = 9.1093837015e-31
 # Elementary charge (C)
 ELEMENTARY_CHARGE = 1.602176634e-19
 
+# Reduced Planck constant (J·s)
+HBAR = 1.054571817e-34
+
+# HBAR^2 / ELECTRON_MASS in eV·Å² for effective mass calculation:
+# m* / m_e = HBAR2_OVER_ME_EV_ANG2 / (d²E/dk²)
+HBAR2_OVER_ME_EV_ANG2 = 7.619964
+
 __all__ = [
     "RYDBERG_TO_EV",
     "HARTREE_TO_EV",
@@ -28,4 +35,6 @@ __all__ = [
     "KB_EV",
     "ELECTRON_MASS",
     "ELEMENTARY_CHARGE",
+    "HBAR",
+    "HBAR2_OVER_ME_EV_ANG2",
 ]
