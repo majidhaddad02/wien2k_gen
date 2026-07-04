@@ -46,13 +46,18 @@ def mock_hardware_profile() -> Dict[str, Any]:
 # =============================================================================
 
 @pytest.fixture
-def clean_env(monkeypatch):
+def clean_env():
     """Isolate tests from host environment variables."""
+    saved = os.environ.copy()
     preserve = {"PATH", "HOME", "USER", "LOGNAME"}
-    for k in list(os.environ.keys()):
-        if k not in preserve:
-            monkeypatch.delenv(k, raising=False)
-    yield os.environ
+    clean = {k: v for k, v in saved.items() if k in preserve or k.startswith("PYTEST")}
+    os.environ.clear()
+    os.environ.update(clean)
+    try:
+        yield os.environ
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 @pytest.fixture
 def temp_config_dir(tmp_path):

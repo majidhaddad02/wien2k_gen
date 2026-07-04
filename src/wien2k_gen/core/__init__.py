@@ -1,7 +1,7 @@
 """
 Core Package Initialization for WIEN2k Parallel Execution Engine.
 Exposes topology detection, hardware profiling, scheduler integration,
-configuration building, and pipeline orchestration.
+configuration building, pipeline orchestration, and workflow provenance.
 Designed for exascale HPC environments with robust error handling,
 type safety, and explicit public API declaration.
 """
@@ -83,6 +83,20 @@ from .energy import (
     get_power_cap,
     HAS_RAPL,
 )
+from .constants import RYDBERG_TO_EV, HARTREE_TO_EV, BOHR_TO_ANGSTROM
+
+# =============================================================================
+# Workflow Provenance
+# =============================================================================
+from .workflow import (
+    NodeStatus,
+    WorkflowNode,
+    WorkflowDAG,
+    WorkflowStore,
+    create_wien2k_workflow,
+    create_convergence_workflow,
+    create_band_structure_workflow,
+)
 
 # =============================================================================
 # Explicit Public API Declaration
@@ -143,4 +157,16 @@ __all__ = [
     "estimate_energy_per_scf_cycle",
     "get_power_cap",
     "HAS_RAPL",
+    "RYDBERG_TO_EV",
+    "HARTREE_TO_EV",
+    "BOHR_TO_ANGSTROM",
+
+    # Workflow Provenance
+    "NodeStatus",
+    "WorkflowNode",
+    "WorkflowDAG",
+    "WorkflowStore",
+    "create_wien2k_workflow",
+    "create_convergence_workflow",
+    "create_band_structure_workflow",
 ]

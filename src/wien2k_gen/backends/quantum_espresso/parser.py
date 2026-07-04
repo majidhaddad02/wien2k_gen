@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, TypedDict
 from dataclasses import dataclass, field
 
+from ...core.constants import RYDBERG_TO_EV
 from ...logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -100,8 +101,8 @@ def _extract_energy_block(content: str) -> Tuple[Optional[float], Optional[float
     if fermi_match:
         try:
             fermi_energy_ev = float(fermi_match.group(1))
-            # Convert eV to Ry (1 Ry ≈ 13.60569806 eV)
-            fermi_energy = fermi_energy_ev / 13.60569806
+            # Convert eV to Ry (1 Ry ≈ RYDBERG_TO_EV eV)
+            fermi_energy = fermi_energy_ev / RYDBERG_TO_EV
         except ValueError:
             pass
 
@@ -313,7 +314,7 @@ def parse_qe_output(
     result["total_energy_ry"] = total_ry
     result["fermi_energy_ry"] = fermi_ry
     if total_ry is not None:
-        result["total_energy_ev"] = total_ry * 13.60569806  # Ry to eV
+        result["total_energy_ev"] = total_ry * RYDBERG_TO_EV  # Ry to eV
 
     # 4. Forces & Stress
     result["forces"] = _extract_forces(content, natoms)

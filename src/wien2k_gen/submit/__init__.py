@@ -1,12 +1,16 @@
 """
 Job Submission & Scheduler Integration Package.
-Provides production-grade SLURM script generation, submission handling,
+Provides production-grade SLURM, LSF, and PBS/Torque script generation, submission handling,
 and cluster resource management with preemption resilience, NUMA awareness,
 and HPC best practices.
 
 Submodules:
 • slurm: Advanced SBATCH template generation, job validation, atomic script writing,
   and direct `sbatch` submission with structured result tracking.
+• lsf: LSF submit provider with #BSUB directive generation, bsub/bkill/bjobs integration,
+  job array support, and optional jsrun for IBM Spectrum LSF.
+• pbs: PBS/Torque submit provider with #PBS directive generation, qsub/qdel/qstat integration,
+  job array support, and multi-node scratch synchronization.
 
 Designed for seamless integration with the wien2k_gen pipeline, UI wizards,
 and automated HPC workflow dispatchers.
@@ -27,20 +31,78 @@ from .slurm import (
 )
 
 # =============================================================================
+# LSF Submit Provider Exports
+# =============================================================================
+from .lsf import (
+    SubmitProvider,
+    LSFSubmitProvider,
+    LSFDirectives,
+    LSFJobSpec,
+    _validate_lsf_time,
+    _validate_lsf_memory,
+    _check_lsf_limits,
+)
+
+# =============================================================================
+# PBS/Torque Submit Provider Exports
+# =============================================================================
+from .pbs import (
+    PBSSubmitProvider,
+    PBSDirectives,
+    PBSJobSpec,
+    _validate_pbs_time,
+    _validate_pbs_memory,
+    _check_pbs_limits,
+)
+
+# =============================================================================
+# Provider Registry
+# =============================================================================
+# Maps scheduler backend keys to provider classes for dynamic dispatch.
+SUBMIT_PROVIDERS = {
+    "slurm": None,  # SLURM uses functional API; not yet class-based
+    "lsf": LSFSubmitProvider,
+    "pbs": PBSSubmitProvider,
+    "torque": PBSSubmitProvider,
+}
+
+
+# =============================================================================
 # Explicit Public API Declaration
 # =============================================================================
 # Controls `from wien2k_gen.submit import *` and provides clear IDE auto-completion boundaries.
 # Only exposes production-ready interfaces; internal helpers remain encapsulated.
 __all__ = [
-    # Data Structures
+    # Data Structures — SLURM
     "SlurmDirectives",
-    "SubmissionResult",
     "SlurmJobSpec",
-    # Core Functions
+    # Data Structures — LSF
+    "LSFDirectives",
+    "LSFJobSpec",
+    # Data Structures — PBS/Torque
+    "PBSDirectives",
+    "PBSJobSpec",
+    # Shared
+    "SubmissionResult",
+    "SUBMIT_PROVIDERS",
+    # Abstract Base
+    "SubmitProvider",
+    # Providers
+    "LSFSubmitProvider",
+    "PBSSubmitProvider",
+    # Core Functions — SLURM
     "generate_sbatch_script",
     "submit_slurm_job",
-    # Validation Utilities (exposed for CLI/UI integration)
+    # Validation Utilities — SLURM
     "_validate_time_format",
     "_validate_memory_string",
     "_check_scheduler_limits",
+    # Validation Utilities — LSF
+    "_validate_lsf_time",
+    "_validate_lsf_memory",
+    "_check_lsf_limits",
+    # Validation Utilities — PBS
+    "_validate_pbs_time",
+    "_validate_pbs_memory",
+    "_check_pbs_limits",
 ]

@@ -25,12 +25,7 @@ from typing import Dict, Any, List, Optional, Union, Tuple, TypedDict
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 
-from rich.table import Table
-from rich.tree import Tree
-from rich.text import Text
-from rich.console import Console
-from rich.panel import Panel
-
+from ..core.constants import RYDBERG_TO_EV
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -117,7 +112,7 @@ def _parse_wien2k_scf(content: str) -> SCFParseResult:
     ene_match = re.search(r':ENE\s+:\s+TOTAL\s+ENERGY\s*=\s*([-\d\.Ee+]+)', content, re.IGNORECASE)
     if ene_match:
         result["final_energy_ry"] = float(ene_match.group(1))
-        result["final_energy_ev"] = result["final_energy_ry"] * 13.60569806
+        result["final_energy_ev"] = result["final_energy_ry"] * RYDBERG_TO_EV
 
     # Convergence & Cycles
     cycle_matches = re.findall(r':DIS\s+:\s+CHARGE\s+CONVERGENCE\s*=\s*([\d\.Ee+]+)', content, re.IGNORECASE)
@@ -181,7 +176,7 @@ def _parse_vasp_outcar(content: str) -> SCFParseResult:
     ene_match = re.search(r'free\s+energy\s+TOTEN\s*=\s*([-\d\.Ee+]+)', content, re.IGNORECASE)
     if ene_match:
         result["final_energy_ev"] = float(ene_match.group(1))
-        result["final_energy_ry"] = result["final_energy_ev"] / 13.60569806
+        result["final_energy_ry"] = result["final_energy_ev"] / RYDBERG_TO_EV
 
     # Convergence
     if "reached required accuracy" in content.lower() or "aborting loop because ediff is reached" in content.lower():
@@ -209,7 +204,7 @@ def _parse_vasp_outcar(content: str) -> SCFParseResult:
                 except ValueError:
                     continue
         if forces:
-            result["max_force_ry_au"] = max(forces) / 13.60569806 * 0.529177  # eV/Å to Ry/a0 approx
+            result["max_force_ry_au"] = max(forces) / RYDBERG_TO_EV * 0.529177  # eV/Å to Ry/a0 approx
 
     if "error" in content.lower() and "warning" not in content.lower():
         result["errors"].append("Critical error in OUTCAR.")
@@ -242,7 +237,7 @@ def _parse_qe_pwscf(content: str) -> SCFParseResult:
     ene_match = re.search(r'!\s+total\s+energy\s*=\s*([-\d\.Ee+]+)\s*Ry', content, re.IGNORECASE)
     if ene_match:
         result["final_energy_ry"] = float(ene_match.group(1))
-        result["final_energy_ev"] = result["final_energy_ry"] * 13.60569806
+        result["final_energy_ev"] = result["final_energy_ry"] * RYDBERG_TO_EV
 
     # SCF Convergence
     if "convergence has been achieved" in content.lower():
@@ -365,6 +360,9 @@ def visualize_scaling(
     """
     if not scaling_data or len(scaling_data) < 2:
         return "[dim]Insufficient data for scaling analysis (requires ≥2 runs).[/]"
+
+    from rich.table import Table
+    from rich.console import Console
         
     sorted_runs = sorted(scaling_data.items())
     base_cores, base_time = sorted_runs[0]
@@ -439,6 +437,8 @@ def generate_report(
     report.warnings = parsed_scf.get("warnings", [])
 
     # Build Rich Tree for UI consumption
+    from rich.tree import Tree
+    from rich.console import Console
     tree = Tree(f"[bold]{report.code_backend.upper()} Analysis Report[/]")
     conv_node = tree.add(f"Convergence: {'[green]YES[/]' if parsed_scf.get('converged') else '[red]NO[/]'}")
     conv_node.add(f"Cycles: {parsed_scf.get('total_cycles', 0)}")

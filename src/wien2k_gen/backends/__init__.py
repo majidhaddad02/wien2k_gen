@@ -118,6 +118,8 @@ def get_backend(code: Optional[str] = None) -> Type[Backend]:
             code = "quantum_espresso"
         elif list(Path(".").glob("INCAR")) and list(Path(".").glob("POSCAR")):
             code = "vasp"
+        elif list(Path(".").glob("*.inp")):
+            code = "cp2k"
         else:
             available = ", ".join(k for k in _BACKENDS.keys() if not k.startswith("_"))
             raise ValueError(

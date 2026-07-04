@@ -11,6 +11,7 @@ Package Structure:
 • utils/: Atomic I/O, file locking, scratch staging, diagnostics, validation
 • ui/: Textual TUI, Rich CLI fallback, async workers, analysis engine
 • benchmark/: Synthetic simulation, real-cluster execution, calibration
+• api/: REST API server and web dashboard for monitoring and job management
 """
 
 __version__ = "9.8.0"

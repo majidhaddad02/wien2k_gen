@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wien2kGen Dashboard</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-card: #161b22;
+  --bg-hover: #21262d;
+  --border: #30363d;
+  --accent: #58a6ff;
+  --accent2: #3fb950;
+  --warn: #d29922;
+  --danger: #f85149;
+  --text: #c9d1d9;
+  --text2: #8b949e;
+  --font: 'Menlo', 'Consolas', 'Monaco', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+header {
+  background: var(--bg-card); border-bottom: 1px solid var(--border);
+  padding: 12px 24px; display: flex; justify-content: space-between; align-items: center;
+}
+header h1 { font-size: 16px; font-weight: 600; color: var(--accent); }
+header .meta { font-size: 12px; color: var(--text2); }
+main { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; padding: 16px; }
+.card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 16px; min-width: 0;
+}
+.card h2 { font-size: 13px; font-weight: 600; color: var(--accent2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.card h2 .badge { float: right; font-size: 10px; color: var(--text2); font-weight: 400; }
+.cards-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.stat-card {
+  background: var(--bg-hover); border-radius: 6px; padding: 12px; text-align: center;
+  border: 1px solid var(--border);
+}
+.stat-card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
+.stat-card .label { font-size: 10px; color: var(--text2); margin-top: 4px; text-transform: uppercase; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text2); font-weight: 600; font-size: 10px; text-transform: uppercase; }
+tr:hover { background: var(--bg-hover); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.status-pending { background: var(--warn); }
+.status-running { background: var(--accent); animation: pulse 1.5s infinite; }
+.status-completed { background: var(--accent2); }
+.status-failed { background: var(--danger); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+form { display: flex; flex-direction: column; gap: 8px; }
+form label { font-size: 11px; color: var(--text2); }
+input, select, textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 8px; font-family: var(--font); font-size: 12px; outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+button {
+  background: var(--accent); color: #000; border: none; border-radius: 4px;
+  padding: 8px 16px; font-family: var(--font); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+canvas { width: 100%; height: 200px; border-radius: 4px; background: var(--bg); }
+.log-panel { max-height: 200px; overflow-y: auto; font-size: 11px; }
+.log-entry { padding: 2px 0; border-bottom: 1px solid var(--border); }
+.log-level-INFO { color: var(--accent); }
+.log-level-WARN { color: var(--warn); }
+.log-level-ERROR { color: var(--danger); }
+.log-time { color: var(--text2); margin-right: 8px; font-size: 10px; }
+.refresh-indicator { animation: spin 1s linear infinite; display: inline-block; }
+@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+.toast { position: fixed; top: 16px; right: 16px; padding: 10px 16px; border-radius: 6px; font-size: 12px; z-index: 9999; opacity: 0; transition: opacity 0.3s; }
+.toast.show { opacity: 1; }
+.toast-success { background: var(--accent2); color: #000; }
+.toast-error { background: var(--danger); color: #fff; }
+#convergence-section { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#9881; WIEN2KGEN DASHBOARD</h1>
+  <div class="meta">
+    <span id="conn-status">CONNECTING...</span> &bull;
+    <span id="refresh-time"></span>
+  </div>
+</header>
+<main>
+  <!-- Status Cards -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>System Status <span class="badge" id="status-badge">&mdash;</span></h2>
+    <div class="cards-row">
+      <div class="stat-card"><div class="value" id="cpu-val">&mdash;</div><div class="label">CPU %</div></div>
+      <div class="stat-card"><div class="value" id="mem-val">&mdash;</div><div class="label">Memory %</div></div>
+      <div class="stat-card"><div class="value" id="disk-val">&mdash;</div><div class="label">Disk %</div></div>
+      <div class="stat-card"><div class="value" id="job-count">&mdash;</div><div class="label">Running Jobs</div></div>
+      <div class="stat-card"><div class="value" id="wflow-count">&mdash;</div><div class="label">Active Workflows</div></div>
+      <div class="stat-card"><div class="value" id="uptime-val">&mdash;</div><div class="label">Uptime</div></div>
+    </div>
+  </div>
+
+  <!-- Topology -->
+  <div class="card">
+    <h2>Hardware Topology <span class="badge" id="topo-badge">&mdash;</span></h2>
+    <div style="overflow-x:auto;">
+      <table><thead><tr><th>Node</th><th>Cores</th><th>RAM (MB)</th><th>Env</th><th>Hetero</th></tr></thead><tbody id="topo-tbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Jobs -->
+  <div class="card">
+    <h2>Submitted Jobs <span class="badge" id="jobs-badge">&mdash;</span></h2>
+    <div style="overflow-x:auto;">
+      <table><thead><tr><th>Job ID</th><th>Status</th><th>Backend</th><th>Submitted</th></tr></thead><tbody id="jobs-tbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Workflows -->
+  <div class="card">
+    <h2>Active Workflows <span class="badge" id="workflows-badge">&mdash;</span></h2>
+    <div style="overflow-x:auto;">
+      <table><thead><tr><th>Workflow ID</th><th>Status</th><th>Created</th></tr></thead><tbody id="workflows-tbody"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Submit Form -->
+  <div class="card">
+    <h2>Submit Job</h2>
+    <form id="submit-form">
+      <label>Backend</label>
+      <select name="backend">
+        <option value="wien2k">wien2k</option>
+        <option value="vasp">vasp</option>
+        <option value="qe">quantum_espresso</option>
+        <option value="cp2k">cp2k</option>
+      </select>
+      <label>K-Points (Nx Ny Nz)</label>
+      <input type="text" name="kpoints" placeholder="e.g. 4 4 4" value="4 4 4">
+      <label>RKmax</label>
+      <input type="number" name="rkmax" value="7.0" step="0.5" min="3" max="12">
+      <label>Max Cores</label>
+      <input type="number" name="max_cores" placeholder="auto" value="">
+      <label>Extra Params (JSON)</label>
+      <textarea name="extra" rows="2" placeholder='{"atoms": 10}'></textarea>
+      <button type="submit">Submit</button>
+    </form>
+  </div>
+
+  <!-- Convergence Plot -->
+  <div class="card" id="convergence-section">
+    <h2>Convergence Plot <span class="badge" id="conv-badge">&mdash;</span></h2>
+    <canvas id="conv-canvas"></canvas>
+  </div>
+
+  <!-- Log Tail -->
+  <div class="card" style="grid-column: 1 / -1;">
+    <h2>Live Log <span class="badge" id="log-badge">&mdash;</span></h2>
+    <div class="log-panel" id="log-panel"></div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API_BASE = window.location.origin;
+const POLL_MS = 5000;
+let convData = [];
+
+function api(path) {
+  return fetch(API_BASE + path).then(r => r.json()).catch(e => null);
+}
+
+function fmtTime(ts) {
+  var d = new Date(ts * 1000);
+  return d.toLocaleTimeString();
+}
+
+function fmtUptime(s) {
+  var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = Math.floor(s % 60);
+  return h + "h " + m + "m " + sec + "s";
+}
+
+function statusDot(st) {
+  var cls = "status-dot ";
+  if (st === "running") cls += "status-running";
+  else if (st === "completed") cls += "status-completed";
+  else if (st === "failed" || st === "cancelled") cls += "status-failed";
+  else cls += "status-pending";
+  return '<span class="' + cls + '"></span>';
+}
+
+async function refresh() {
+  var t0 = performance.now();
+
+  var results = await Promise.allSettled([
+    api("/api/v1/status"),
+    api("/api/v1/health"),
+    api("/api/v1/topology"),
+    api("/api/v1/jobs"),
+    api("/api/v1/workflows"),
+    api("/api/v1/logs"),
+  ]);
+
+  var status = results[0].value || {};
+  var health = results[1].value || {};
+  var topo = results[2].value || {};
+  var jobs = results[3].value || {};
+  var wfs = results[4].value || {};
+  var logs = results[5].value || {};
+
+  document.getElementById("conn-status").textContent = "CONNECTED";
+  document.getElementById("conn-status").style.color = "var(--accent2)";
+  document.getElementById("status-badge").textContent = "v" + (status.version || "?");
+  document.getElementById("uptime-val").textContent = fmtUptime(status.uptime_seconds || 0);
+
+  document.getElementById("cpu-val").textContent = Math.round(health.cpu_percent || 0) + "%";
+  document.getElementById("mem-val").textContent = Math.round(health.memory_percent || 0) + "%";
+  document.getElementById("disk-val").textContent = Math.round(health.disk_percent || 0) + "%";
+  document.getElementById("job-count").textContent = status.job_count || 0;
+  document.getElementById("wflow-count").textContent = status.active_workflows || 0;
+
+  // topology table
+  var topoTbody = document.getElementById("topo-tbody");
+  var nodes = topo.nodes || ["localhost"];
+  var cores = topo.cores_per_node || [topo.total_cores || 1];
+  var mems = topo.memory_per_node || [0];
+  topoTbody.innerHTML = "";
+  for (var i = 0; i < nodes.length; i++) {
+    topoTbody.innerHTML += "<tr><td>" + nodes[i] + "</td><td>" + (cores[i] || 1) + "</td><td>" + (mems[i] || 0) + "</td><td>" + (topo.env_type || "?") + "</td><td>" + (topo.heterogeneous ? "Yes" : "No") + "</td></tr>";
+  }
+  document.getElementById("topo-badge").textContent = nodes.length + " nodes";
+
+  // jobs table
+  var jobsTbody = document.getElementById("jobs-tbody");
+  var jobList = jobs.jobs || [];
+  jobsTbody.innerHTML = "";
+  jobList.slice(-10).reverse().forEach(function(j) {
+    jobsTbody.innerHTML += "<tr><td>" + j.job_id + "</td><td>" + statusDot(j.status) + j.status + "</td><td>" + ((j.params || {}).backend || "wien2k") + "</td><td>" + fmtTime(j.submitted_at) + "</td></tr>";
+  });
+  document.getElementById("jobs-badge").textContent = (jobs.count || 0) + " jobs";
+
+  // workflows table
+  var wfTbody = document.getElementById("workflows-tbody");
+  var wfList = wfs.workflows || [];
+  wfTbody.innerHTML = "";
+  wfList.slice(-10).reverse().forEach(function(w) {
+    wfTbody.innerHTML += "<tr><td>" + w.workflow_id + "</td><td>" + statusDot(w.status) + w.status + "</td><td>" + fmtTime(w.created_at) + "</td></tr>";
+  });
+  document.getElementById("workflows-badge").textContent = (wfs.count || 0) + " workflows";
+
+  // log tail
+  var logPanel = document.getElementById("log-panel");
+  var entries = logs.entries || [];
+  logPanel.innerHTML = "";
+  entries.slice(-50).reverse().forEach(function(e) {
+    var cls = "log-entry log-level-" + (e.level || "INFO");
+    var ts = fmtTime(e.timestamp);
+    logPanel.innerHTML += '<div class="' + cls + '"><span class="log-time">' + ts + '</span>' + (e.message || "") + "</div>";
+  });
+  document.getElementById("log-badge").textContent = (logs.count || 0) + " entries";
+
+  // convergence canvas (build from workflow data if available)
+  if (wfList.length > 0) {
+    var lastWf = wfList[wfList.length - 1];
+    if (lastWf.convergence_data && lastWf.convergence_data.length > 0) {
+      convData = lastWf.convergence_data;
+    }
+  }
+  drawConvergence();
+
+  var elapsed = (performance.now() - t0).toFixed(0);
+  document.getElementById("refresh-time").textContent = "refresh " + elapsed + "ms";
+}
+
+function drawConvergence() {
+  var canvas = document.getElementById("conv-canvas");
+  var ctx = canvas.getContext("2d");
+  var W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W * (window.devicePixelRatio || 1);
+  canvas.height = H * (window.devicePixelRatio || 1);
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.fillStyle = "var(--bg)";
+  ctx.fillRect(0, 0, W, H);
+
+  if (convData.length < 2) {
+    ctx.fillStyle = "var(--text2)";
+    ctx.font = "12px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("No convergence data yet", W / 2, H / 2);
+    return;
+  }
+
+  var values = convData.map(function(d) { return d.total_energy_ev || 0; });
+  var minV = Math.min.apply(null, values), maxV = Math.max.apply(null, values);
+  var range = maxV - minV || 1;
+
+  var pad = { top: 20, right: 20, bottom: 30, left: 60 };
+
+  ctx.strokeStyle = "var(--border)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, H - pad.bottom);
+  ctx.lineTo(W - pad.right, H - pad.bottom);
+  ctx.stroke();
+
+  ctx.fillStyle = "var(--text2)";
+  ctx.font = "10px monospace";
+  ctx.textAlign = "right";
+  for (var i = 0; i <= 4; i++) {
+    var y = pad.top + (H - pad.top - pad.bottom) * i / 4;
+    var val = maxV - range * i / 4;
+    ctx.fillText(val.toFixed(4), pad.left - 6, y + 4);
+  }
+
+  ctx.textAlign = "center";
+  for (var i = 0; i < values.length; i++) {
+    var x = pad.left + (W - pad.left - pad.right) * i / (values.length - 1);
+    ctx.fillText(i + 1, x, H - pad.bottom + 14);
+  }
+
+  ctx.strokeStyle = "var(--accent)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (var i = 0; i < values.length; i++) {
+    var x = pad.left + (W - pad.left - pad.right) * i / (values.length - 1);
+    var y = pad.top + (H - pad.top - pad.bottom) * (1 - (values[i] - minV) / range);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = "var(--accent2)";
+  for (var i = 0; i < values.length; i++) {
+    var x = pad.left + (W - pad.left - pad.right) * i / (values.length - 1);
+    var y = pad.top + (H - pad.top - pad.bottom) * (1 - (values[i] - minV) / range);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  document.getElementById("conv-badge").textContent = convData.length + " points";
+}
+
+function toast(msg, ok) {
+  var el = document.getElementById("toast");
+  el.textContent = msg;
+  el.className = "toast " + (ok ? "toast-success" : "toast-error") + " show";
+  setTimeout(function() { el.className = "toast"; }, 3000);
+}
+
+document.getElementById("submit-form").addEventListener("submit", function(e) {
+  e.preventDefault();
+  var fd = new FormData(e.target);
+  var body = { backend: fd.get("backend") };
+  var kpts = (fd.get("kpoints") || "").trim().split(/\s+/).map(Number);
+  if (kpts.length === 3) body.kpoints = kpts;
+  var rk = parseFloat(fd.get("rkmax"));
+  if (!isNaN(rk)) body.rkmax = rk;
+  var mc = parseInt(fd.get("max_cores"));
+  if (!isNaN(mc) && mc > 0) body.max_cores = mc;
+  var extra = fd.get("extra");
+  if (extra) { try { Object.assign(body, JSON.parse(extra)); } catch(_) {} }
+
+  var btn = e.target.querySelector("button");
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+
+  fetch(API_BASE + "/api/v1/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.job_id) {
+      toast("Job " + data.job_id + " submitted!", true);
+      e.target.reset();
+    } else {
+      toast("Error: " + (data.error || "unknown"), false);
+    }
+  })
+  .catch(function(err) { toast("Submit failed: " + err, false); })
+  .finally(function() { btn.disabled = false; btn.textContent = "Submit"; });
+});
+
+refresh();
+setInterval(refresh, POLL_MS);
+window.addEventListener("resize", drawConvergence);
+</script>
+</body>
+</html>

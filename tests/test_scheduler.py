@@ -11,8 +11,8 @@ import threading
 from unittest.mock import patch, MagicMock, call
 from pathlib import Path
 
-from wien2k_gen.core.scheduler import detect, _parse_lscpu_json, _parse_numactl, TopologyData
-from wien2k_gen.types import TopologyData as TypesTopologyData
+from wien2k_gen.core.scheduler import detect
+from wien2k_gen.types import TopologyData
 from wien2k_gen.exceptions import DetectionFailedError, InvalidTopologyError
 
 
