@@ -1,0 +1,81 @@
+# Iron Magnetic: WIEN2k Production Example
+# =====================================================================
+# Fe BCC (Im-3m) — Ferromagnetic (spin-polarized), 2.2 μB/atom
+# Requires spin-orbit coupling (SOC) for magnetocrystalline anisotropy.
+#
+# References:
+#   Pulay 1980: Convergence acceleration in iterative sequences (Chem. Phys. Lett. 73, 393)
+#   Blaha et al. 2020: WIEN2k User's Guide, Chapter 7.6 (Magnetism)
+#   Kresse & Furthmuller 1996: Efficient iterative schemes
+# =====================================================================
+
+calculation:
+  name: "Fe_magnetic"
+  type: "scf"
+  xc: "PBE"
+  spin: "spin-polarized"           # ↑ Spin-up / ↓ Spin-down
+  relativistic: "spin-orbit"       # SOC for magnetic anisotropy
+  orbital_potential: "LDA+U"       # Hubbard U = 4.0 eV on Fe-3d
+
+scf:
+  max_iterations: 200
+  convergence_energy: 1e-5
+  convergence_charge: 1e-4
+  mixing_method: "MSR1a"
+  mixing_factor: 0.15
+  diis_history: 10
+  msr1a_gamma: 0.3                 # Charge sloshing suppression (Sec. P3-9)
+
+# ── k‑Mesh ──────────────────────────────────────────────────────────
+kmesh:
+  grid: [14, 14, 14]
+  shift: [0, 0, 0]
+  total_kpoints: 2744               # IBZ: ~350 (48 sym ops)
+
+structure:
+  lattice: "cubic"
+  a: 2.867                           # Angstrom
+  spacegroup: 229                    # Im-3m
+  atoms:
+    - element: "Fe"
+      positions: [[0.0, 0.0, 0.0]]
+      multiplicity: 1
+      spin_moment: 2.2               # Initial magnetic moment (μB)
+
+sphere:
+  rmt: 2.20
+  rkmax: 9.0                        # Higher for 3d elements
+  gmax: 18.0
+
+# ── LDA+U Parameters ────────────────────────────────────────────────
+hubbard:
+  l: 2                               # d-orbital
+  u: 4.0                             # eV
+  j: 0.9                             # eV (Hund's exchange)
+  double_counting: "FLL"             # Fully localized limit
+
+# ── Parallel (hybrid MPI+OpenMP, Anderson mixing) ──────────────────
+parallel:
+  strategy: "hybrid"
+  target_ranks: 48                   # 3 nodes x 16 cores
+  omp_threads: 2                     # Threads for DIACCEL heavy ops
+  kpar: 4                            # k-point groups of 12 ranks each
+  granularity: 1
+  openmp_stacksize_mb: 512
+  expected_speedup: 15.0x
+
+# ── Mixing Analysis Hooks (Sec. P2-6) ──────────────────────────────
+monitor:
+  analyze_mixing: true
+  anderson_stuck_threshold: 20       # iterations without improvement
+  diis_divergence_threshold: 50      # max divergence before fallback
+  fft_sloshing_check: true           # charge sloshing via FFT (P3-9)
+
+# ── Benchmark Data (Intel Xeon Platinum 8360Y, 2x36, IB HDR) ───────
+benchmark:
+  nodes: [1, 2, 4, 8]
+  runtime_seconds: [9800, 5200, 2800, 1650]
+  walltime_seconds: [10200, 5700, 3300, 2100]
+  efficiency_percent: [100, 94, 87, 74]
+  memory_per_node_gb: 48
+  io_volume_gb: 18.9

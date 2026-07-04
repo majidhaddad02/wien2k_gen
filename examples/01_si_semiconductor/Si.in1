@@ -1,0 +1,8 @@
+WFFIL
+ 8.00      10    4 (R-MT*K-MAX; MAX L IN WF, V-NMT
+  0.30    4  0      (GLOBAL E-PARAMETER WITH OTHER CHOICES, WARN)
+ 1    -1.10      0.30   0.000 CONT=1
+ 2     0.30      0.30   0.000 CONT=1
+ 2     1.50      0.30   0.000 CONT=1
+K-VECTORS FOR BZ:  4 4 4   shift
+ 1  1  1

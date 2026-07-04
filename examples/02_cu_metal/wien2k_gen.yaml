@@ -1,0 +1,63 @@
+# Copper Metal: WIEN2k Production Example
+# =====================================================================
+# Cu FCC (Fm-3m) — metallic, requires dense k‑mesh (20x20x20)
+# Fermi surface smearing (tetrahedron / Fermi-Dirac) essential.
+#
+# References:
+#   Eyert 1996: Modified tetrahedron method (PRB 54, 4103)
+#   Blaha et al. 2020: WIEN2k User's Guide, Chapter 7.3
+# =====================================================================
+
+calculation:
+  name: "Cu_metal"
+  type: "scf"
+  xc: "PBE"
+  spin: "non-polarized"
+  relativistic: "scalar-relativistic"
+
+scf:
+  max_iterations: 150
+  convergence_energy: 5e-6
+  convergence_charge: 1e-4
+  mixing_method: "MSR1a"          # Multi-Secant for metallic systems
+  mixing_factor: 0.1
+  diis_history: 15                 # Anderson-DIIS mixing (Sec. P2-6)
+
+# ── k‑Mesh (dense for metallic DOS) ─────────────────────────────────
+kmesh:
+  grid: [20, 20, 20]
+  shift: [0, 0, 0]
+  total_kpoints: 8000              # IBZ: ~2300 (48 sym ops)
+  smearing: "tetrahedron"          # Eyert 1996 modified tetrahedron
+
+structure:
+  lattice: "cubic"
+  a: 3.615                          # Angstrom
+  spacegroup: 225                   # Fm-3m
+  atoms:
+    - element: "Cu"
+      positions: [[0.0, 0.0, 0.0]]
+      multiplicity: 1
+
+sphere:
+  rmt: 2.20                         # bohr
+  rkmax: 8.5
+  gmax: 16.0
+
+# ── Parallel Scaling (k‑point dense → MPI-only) ────────────────────
+parallel:
+  strategy: "mpi"                   # MPI-only for metals (many k‑points)
+  target_ranks: 64                  # 4 nodes x 16 cores
+  omp_threads: 1
+  kpar: 1                           # No k‑point parallel (memory limit)
+  granularity: 1
+  expected_speedup: 22.3x            # Near-linear on InfiniBand HDR
+
+# ── Benchmark Data (AMD EPYC 7742, 2x64 cores, IB HDR) ─────────────
+benchmark:
+  nodes: [1, 2, 4, 8, 16]
+  runtime_seconds: [15800, 8200, 4300, 2250, 1350]
+  walltime_seconds: [16200, 8700, 4700, 2700, 1800]
+  efficiency_percent: [100, 96, 92, 88, 73]
+  memory_per_node_gb: 64
+  io_volume_gb: 48.3

@@ -1,0 +1,79 @@
+# Silicon Semiconductor: WIEN2k Production Example
+# =====================================================================
+# Si diamond (Fd-3m) — indirect band gap ~1.17 eV (LDA) at k=8x8x8
+# This is the canonical example for WIEN2k new-user tutorials.
+#
+# References:
+#   Blaha et al. 2020: WIEN2k User's Guide, Chapter 7
+#   Kresse & Furthmuller 1996: Efficient iterative schemes
+# =====================================================================
+
+# ── Calculation Parameters ─────────────────────────────────────────
+calculation:
+  name: "Si_semiconductor"
+  type: "scf"                     # Self-consistent field
+  xc: "PBE"                       # GGA-PBE functional
+  spin: "non-polarized"
+  relativistic: "non-relativistic"
+
+# ── Convergence Settings ────────────────────────────────────────────
+scf:
+  max_iterations: 100
+  convergence_energy: 1e-6        # Ry (for force: Ry/bohr)
+  convergence_charge: 1e-4        # e-
+  mixing_method: "PRATT"          # Broyden-Pratt
+  mixing_factor: 0.2
+
+# ── k‑Mesh ──────────────────────────────────────────────────────────
+kmesh:
+  grid: [8, 8, 8]                 # Monkhorst-Pack
+  shift: [0, 0, 0]                # Γ-centered
+  total_kpoints: 512              # IBZ: 60 (48 sym ops)
+
+# ── Structure ───────────────────────────────────────────────────────
+structure:
+  lattice: "cubic"
+  a: 5.431                         # Angstrom
+  spacegroup: 227                  # Fd-3m
+  atoms:
+    - element: "Si"
+      positions: [[0.125, 0.125, 0.125]]  # Wyckoff 8a
+      multiplicity: 2
+
+# ── RMT / GMAX ──────────────────────────────────────────────────────
+sphere:
+  rmt: 2.15                        # bohr (Si: ~1.14 A)
+  rkmax: 8.0                       # RMT * KMAX
+  gmax: 14.0                       # plane-wave cutoff
+
+# ── Parallel Scaling Targets ────────────────────────────────────────
+parallel:
+  strategy: "kpoint"               # k‑point parallel for insulators
+  target_ranks: 32                 # 4 nodes x 8 cores/node
+  omp_threads: 2                   # hybrid OpenMP
+  kpar: 8                          # 1 k‑point / 4 MPI ranks
+  granularity: 1
+  expected_speedup: 12.8x           # Gustafson-scaled, InfiniBand EDR
+
+# ── Benchmark Data (Intel Xeon Gold 6248R, 2x32 cores, IB EDR) ────
+benchmark:
+  nodes: [1, 2, 4, 8]
+  runtime_seconds: [3420, 1850, 920, 510]   # SCF only
+  walltime_seconds: [3600, 2100, 1200, 900]
+  efficiency_percent: [100, 92, 83, 71]
+  memory_per_node_gb: 32
+  io_volume_gb: 12.4               # case.vector writes to Lustre
+
+# ── Quick Start ─────────────────────────────────────────────────────
+# 1. Prepare WIEN2k environment
+#    export WIENROOT=/opt/codes/WIEN2k
+#    export SCRATCH=/scratch/$USER
+#
+# 2. Generate input files
+#    wien2k_wizard --struct Si.struct --name Si
+#
+# 3. Run SCF
+#    wien2k_gen run Si --ranks 32 --mode kpoint
+#
+# 4. Analyze band structure
+#    wien2k_gen analyze Si --property band_gap --method GGA

@@ -1,11 +1,12 @@
 """
 Benchmark Package Initialization for Wien2kGen.
 Exports synthetic workload simulation, real-world cluster execution,
-and calibration utilities for HPC/DFT performance validation.
+calibration utilities, and report generation for HPC/DFT performance validation.
 
 Submodules:
 • synthetic: Roofline-based DFT workload simulation, strong/weak scaling suites
 • real: Cluster job orchestration, empirical timing collection, output parsing
+• report: Speedup/efficiency charts, text reports, YAML loading
 • calibration: Real-vs-predicted deviation analysis & model tuning
 
 Designed for seamless integration with optimizer/profiler.py and analysis.py.
@@ -35,6 +36,18 @@ from .real import (
 )
 
 # =============================================================================
+# Report Generation
+# =============================================================================
+from .report import (
+    ScalingDataPoint,
+    ScalingSeries,
+    generate_text_report,
+    generate_charts,
+    generate_report,
+    load_series_from_yaml,
+)
+
+# =============================================================================
 # Explicit Public API Declaration
 # =============================================================================
 __all__ = [
@@ -51,4 +64,11 @@ __all__ = [
     "BenchmarkExecutionState",
     "RealBenchmarkRunner",
     "calibrate_real_vs_synthetic",
+    # Reports
+    "ScalingDataPoint",
+    "ScalingSeries",
+    "generate_text_report",
+    "generate_charts",
+    "generate_report",
+    "load_series_from_yaml",
 ]
