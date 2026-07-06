@@ -472,3 +472,38 @@ def detect(
     )
     
     return Topology(**cache_payload)
+
+
+def _detect_scheduler() -> str:
+    """Auto-detect available scheduler from environment variables and available binaries."""
+    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
+        return "slurm"
+    if os.environ.get("PBS_JOBID"):
+        return "pbs"
+    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
+        return "lsf"
+
+    for cmd in ["sbatch", "sinfo"]:
+        if shutil.which(cmd):
+            return "slurm"
+    for cmd in ["qsub", "pbsnodes"]:
+        if shutil.which(cmd):
+            return "pbs"
+    for cmd in ["bsub", "bjobs"]:
+        if shutil.which(cmd):
+            return "lsf"
+
+    return "slurm"
+
+
+def auto_detect_memory() -> str:
+    """Return a sensible default memory string (e.g., "16G") based on 80% of system RAM."""
+    try:
+        from .hardware import get_total_mem_kb
+        total_gb = get_total_mem_kb() / (1024 * 1024)
+        mem_gb = int(total_gb * 0.8)
+        if mem_gb < 1:
+            mem_gb = 8
+        return f"{mem_gb}G"
+    except Exception:
+        return "8G"

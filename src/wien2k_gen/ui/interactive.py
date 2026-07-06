@@ -42,7 +42,7 @@ from ..logging_config import get_logger
 
 # Local UI imports
 from .widgets import LogPanel, ResourceSummaryTable
-from .tabs import ResourcesTab, SettingsTab, SubmitTab
+from .tabs import ResourcesTab, SettingsTab, SubmitTab, AdvancedTab
 from .tabs.settings_tab import SettingsChangedMessage
 from .dialogs import HelpDialog, ProfileDialog, ReportDialog
 
@@ -121,6 +121,8 @@ class Wien2kGenApp(App):
                     yield SettingsTab()
                 with TabPane("Submission", id="submission"):
                     yield SubmitTab()
+                with TabPane("Advanced", id="advanced"):
+                    yield AdvancedTab()
 
             # Main Configuration Area
             with ScrollableContainer(id="config_area"):
@@ -134,7 +136,7 @@ class Wien2kGenApp(App):
                     yield TextArea(id="preview", read_only=True, soft_wrap=True)
 
                 with Collapsible(title="Performance & I/O Estimator", id="estimator"):
-                    yield Static("Running estimation...")
+                    yield Static("Performance estimation (Coming in v0.2)")
 
             # Terminal Panel (Toggleable)
             with Container(id="terminal_panel", classes="advanced-hidden"):

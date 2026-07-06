@@ -32,8 +32,12 @@ from datetime import datetime, timezone
 
 # Project imports (aligned with refactored architecture)
 from ..core.topology import Topology
+from ..core.scheduler import auto_detect_memory
 from ..core.pipeline import run_pipeline
 from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives, SubmissionResult
+from ..submit.pbs import PBSSubmitProvider
+from ..submit.lsf import LSFSubmitProvider
+from ..submit import SUBMIT_PROVIDERS
 from ..utils.scratch import setup_scratch, cleanup_scratch, ScratchConfig
 from ..ui.analysis import parse_scf_log, SCFParseResult
 from ..logging_config import get_logger
@@ -51,7 +55,7 @@ class RealBenchmarkConfig:
     backend: str = "wien2k"
     problem_params: Dict[str, Any] = field(default_factory=dict)
     timeout_sec: float = 3600.0
-    use_slurm: bool = True
+    scheduler: str = "slurm"
     partition: str = ""
     walltime: str = "02:00:00"
     cleanup_after: bool = True
@@ -95,8 +99,13 @@ class RealBenchmarkRunner:
     Handles environment setup, job submission, real-time monitoring,
     output parsing, and resource cleanup.
     """
-    def __init__(self, config: Optional[RealBenchmarkConfig] = None) -> None:
-        self.config = config or RealBenchmarkConfig()
+    def __init__(self, config: Optional[Union[RealBenchmarkConfig, Dict[str, Any]]] = None) -> None:
+        if config is None:
+            self.config = RealBenchmarkConfig()
+        elif isinstance(config, dict):
+            self.config = RealBenchmarkConfig(**config)
+        else:
+            self.config = config
         self.state = BenchmarkExecutionState()
         self._work_dir = Path(self.config.work_dir or os.getcwd())
 
@@ -187,7 +196,7 @@ class RealBenchmarkRunner:
             nodes=1,
             ntasks=topo.total_cores,
             cpus_per_task=1,
-            mem_per_node="8G",
+            mem_per_node=auto_detect_memory(),
             time=self.config.walltime or "02:00:00",
             output=str(work_dir / "slurm_bench_%j.out"),
             error=str(work_dir / "slurm_bench_%j.err"),
@@ -246,6 +255,108 @@ class RealBenchmarkRunner:
 
         return exit_code, wall_time, job_id
 
+    def _execute_pbs(self, work_dir: Path, topo: Topology) -> Tuple[int, float, Optional[str]]:
+        """Submit benchmark as PBS job and monitor until completion."""
+        provider = PBSSubmitProvider()
+        result = provider.submit(
+            topo=topo,
+            exec_command="run_lapw -p -NI",
+            directives={
+                "job_name": f"w2k_bench_{self.state.job_id or 'real'}",
+                "queue": self.config.partition or "",
+                "nodes": 1,
+                "walltime": self.config.walltime or "02:00:00",
+                "mem": auto_detect_memory(),
+                "ncpus": topo.total_cores,
+            },
+            working_dir=work_dir,
+        )
+
+        if not result.get("success"):
+            logger.error(f"PBS submission failed: {result.get('errors')}")
+            return 1, 0.0, None
+
+        job_id = result.get("job_id")
+        self.state.job_id = job_id
+        logger.info(f"PBS job {job_id} submitted. Monitoring...")
+        start = time.monotonic()
+
+        while True:
+            if self.state.cancel_event.is_set():
+                subprocess.run(["qdel", str(job_id)], check=False)
+                return 143, time.monotonic() - start, job_id
+            try:
+                status_result = subprocess.run(
+                    ["qstat", "-f", str(job_id)],
+                    capture_output=True, text=True, timeout=5
+                )
+                if "job_state" not in status_result.stdout.lower():
+                    break
+                for line in status_result.stdout.splitlines():
+                    if "job_state" in line.lower() and any(s in line.upper() for s in ("F", "C", "E")):
+                        break
+            except Exception:
+                pass
+            time.sleep(10.0)
+
+        wall_time = time.monotonic() - start
+        exit_code = 0
+        for log_file in work_dir.glob("pbs-*"):
+            content = log_file.read_text(errors="ignore").lower()
+            if "error" in content and "warning" not in content:
+                exit_code = 1
+        return exit_code, wall_time, job_id
+
+    def _execute_lsf(self, work_dir: Path, topo: Topology) -> Tuple[int, float, Optional[str]]:
+        """Submit benchmark as LSF job and monitor until completion."""
+        provider = LSFSubmitProvider()
+        result = provider.submit(
+            topo=topo,
+            exec_command="run_lapw -p -NI",
+            directives={
+                "job_name": f"w2k_bench_{self.state.job_id or 'real'}",
+                "queue": self.config.partition or "",
+                "nodes": 1,
+                "walltime": self.config.walltime or "02:00:00",
+                "memory": auto_detect_memory(),
+                "nprocs": topo.total_cores,
+            },
+            working_dir=work_dir,
+        )
+
+        if not result.get("success"):
+            logger.error(f"LSF submission failed: {result.get('errors')}")
+            return 1, 0.0, None
+
+        job_id = result.get("job_id")
+        self.state.job_id = job_id
+        logger.info(f"LSF job {job_id} submitted. Monitoring...")
+        start = time.monotonic()
+
+        while True:
+            if self.state.cancel_event.is_set():
+                subprocess.run(["bkill", str(job_id)], check=False)
+                return 143, time.monotonic() - start, job_id
+            try:
+                status_result = subprocess.run(
+                    ["bjobs", "-o", "stat", "-noheader", str(job_id)],
+                    capture_output=True, text=True, timeout=5
+                )
+                status = status_result.stdout.strip()
+                if not status or status in ("DONE", "EXIT"):
+                    break
+            except Exception:
+                pass
+            time.sleep(10.0)
+
+        wall_time = time.monotonic() - start
+        exit_code = 0
+        for log_file in work_dir.glob("lsf-*"):
+            content = log_file.read_text(errors="ignore").lower()
+            if "error" in content and "warning" not in content:
+                exit_code = 1
+        return exit_code, wall_time, job_id
+
     def run(self, topo: Topology) -> RealBenchmarkResult:
         """
         Execute complete benchmark lifecycle: setup -> generate -> run -> parse -> cleanup.
@@ -279,8 +390,22 @@ class RealBenchmarkRunner:
 
             # 2. Execute
             self.state.status_message = "Running benchmark..."
-            if self.config.use_slurm and os.getenv("SLURM_JOB_ID"):
+            scheduler = self.config.scheduler
+            sched_env = {
+                "slurm": "SLURM_JOB_ID",
+                "pbs": "PBS_JOBID",
+                "lsf": "LSB_JOBID",
+            }
+            env_var = sched_env.get(scheduler, "SLURM_JOB_ID")
+
+            if scheduler == "slurm" and os.getenv(env_var):
                 exit_code, wall_time, job_id = self._execute_slurm(work_dir, topo)
+                result["job_id"] = job_id
+            elif scheduler == "pbs" and os.getenv(env_var):
+                exit_code, wall_time, job_id = self._execute_pbs(work_dir, topo)
+                result["job_id"] = job_id
+            elif scheduler == "lsf" and os.getenv(env_var):
+                exit_code, wall_time, job_id = self._execute_lsf(work_dir, topo)
                 result["job_id"] = job_id
             else:
                 exit_code, wall_time = self._execute_local(work_dir)

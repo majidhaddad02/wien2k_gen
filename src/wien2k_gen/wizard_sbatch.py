@@ -32,7 +32,7 @@ from rich.syntax import Syntax
 from rich.rule import Rule
 from rich.align import Align
 
-from .core.scheduler import detect as detect_topology
+from .core.scheduler import detect as detect_topology, _detect_scheduler, auto_detect_memory
 from .submit.slurm import (
     generate_sbatch_script,
     SlurmJobSpec,
@@ -44,30 +44,6 @@ from .logging_config import get_logger
 
 logger = get_logger(__name__)
 console = Console()
-
-
-# =============================================================================
-# Scheduler Detection
-# =============================================================================
-
-def _detect_scheduler() -> str:
-    """Auto-detect available scheduler from environment."""
-    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
-        return "slurm"
-    if os.environ.get("PBS_JOBID"):
-        return "pbs"
-    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
-        return "lsf"
-    for cmd in ["sbatch", "sinfo"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "slurm"
-    for cmd in ["qsub", "pbsnodes"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "pbs"
-    for cmd in ["bsub", "bjobs"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "lsf"
-    return "slurm"
 
 
 # =============================================================================
@@ -210,7 +186,7 @@ class ResourcesStep(WizardStep):
         while True:
             mem_val = Prompt.ask(
                 "Memory per Node",
-                default="8G",
+                default=auto_detect_memory(),
                 console=self.console
             )
             if validate_mem_format(mem_val):
@@ -381,16 +357,15 @@ class ReviewStep(WizardStep):
         submit_cmds = {
             "slurm": ["sbatch", str(path)],
             "pbs":   ["qsub", str(path)],
-            "lsf":   ["bsub", "<", str(path)],
+            "lsf":   ["bsub"],
         }
         cmd = submit_cmds.get(scheduler, ["sbatch", str(path)])
-        use_shell = scheduler == "lsf"
 
         try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True, text=True, timeout=30, shell=use_shell
-            )
+            kwargs = {"capture_output": True, "text": True, "timeout": 30}
+            if scheduler == "lsf":
+                kwargs["input"] = self.wizard.script_content
+            res = subprocess.run(cmd, **kwargs)
             
             if res.returncode == 0:
                 job_id = "Unknown"
@@ -465,7 +440,6 @@ def run_sbatch_wizard() -> bool:
 __all__ = [
     "run_sbatch_wizard",
     "SBATCHWizard",
-    "_detect_scheduler",
 ]
 
 if __name__ == "__main__":

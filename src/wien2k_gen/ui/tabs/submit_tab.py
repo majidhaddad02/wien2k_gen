@@ -34,7 +34,7 @@ from textual.reactive import reactive
 from textual.message import Message
 from textual import on, work
 
-from ...core.scheduler import detect as detect_topology
+from ...core.scheduler import detect as detect_topology, auto_detect_memory
 from ...submit.slurm import (
     submit_slurm_job,
     generate_sbatch_script,
@@ -152,10 +152,11 @@ class SubmitTab(Container):
     nodes: int = reactive(1)
     ntasks: int = reactive(0)
     cpus_per_task: int = reactive(1)
-    mem_per_node: str = reactive("4G")
+    mem_per_node: str = reactive(auto_detect_memory())
     walltime: str = reactive("24:00:00")
     partition: str = reactive("")
     qos: str = reactive("")
+    gres: str = reactive("")
     dependency: str = reactive("")
     account: str = reactive("")
     job_name: str = reactive("wien2k_job")
@@ -213,35 +214,46 @@ class SubmitTab(Container):
             with Horizontal(classes="param-row"):
                 yield Label("Nodes:", classes="param-label")
                 yield ValidatedInput(id="inp_nodes", value_type="positive_int", value="1")
-                
+
                 yield Label("Tasks (-n):", classes="param-label")
                 yield ValidatedInput(id="inp_ntasks", value_type="non_zero_int", value="0", placeholder="0=Auto")
 
             with Horizontal(classes="param-row"):
                 yield Label("CPUs/Task:", classes="param-label")
                 yield ValidatedInput(id="inp_cpt", value_type="positive_int", value="1")
-                
+
                 yield Label("Memory:", classes="param-label")
-                yield ValidatedInput(id="inp_mem", value_type="str", value="4G", placeholder="e.g., 64G")
+                yield ValidatedInput(id="inp_mem", value_type="str", value=auto_detect_memory(), placeholder="e.g., 64G")
 
             with Horizontal(classes="param-row"):
                 yield Label("Time:", classes="param-label")
                 yield ValidatedInput(id="inp_time", value_type="str", value="24:00:00", placeholder="HH:MM:SS")
-                
+
                 yield Label("Partition:", classes="param-label")
                 yield ValidatedInput(id="inp_part", value_type="str", value="", placeholder="Default")
 
             with Horizontal(classes="param-row"):
                 yield Label("Job Name:", classes="param-label")
                 yield ValidatedInput(id="inp_name", value_type="str", value="wien2k_job")
-                
+
                 yield Label("Dependency:", classes="param-label")
                 yield ValidatedInput(id="inp_dep", value_type="str", value="", placeholder="afterok:123")
 
             with Horizontal(classes="param-row"):
+                yield Label("QoS:", classes="param-label")
+                yield ValidatedInput(id="inp_qos", value_type="str", value="", placeholder="Optional")
+
+                yield Label("GRES:", classes="param-label")
+                yield ValidatedInput(id="inp_gres", value_type="str", value="", placeholder="e.g., gpu:a100:1")
+
+            with Horizontal(classes="param-row"):
+                yield Label("Account:", classes="param-label")
+                yield ValidatedInput(id="inp_account", value_type="str", value="", placeholder="Optional")
+
+            with Horizontal(classes="param-row"):
                 yield Label("Handle Preemption:")
                 yield Switch(id="sw_preemption", value=True)
-                
+
                 yield Label("Use Local Scratch:")
                 yield Switch(id="sw_scratch", value=True)
 
@@ -321,15 +333,19 @@ class SubmitTab(Container):
 
     def _sync_inputs(self) -> Dict[str, Any]:
         """Read values from UI widgets and sanitize."""
+        default_mem = auto_detect_memory()
         return {
             "nodes": int(self.query_one("#inp_nodes").value or "1"),
             "ntasks": int(self.query_one("#inp_ntasks").value or "0"),
             "cpus_per_task": int(self.query_one("#inp_cpt").value or "1"),
-            "mem_per_node": self.query_one("#inp_mem").value or "4G",
+            "mem_per_node": self.query_one("#inp_mem").value or default_mem,
             "walltime": self.query_one("#inp_time").value or "24:00:00",
             "partition": self.query_one("#inp_part").value or "",
             "dependency": self.query_one("#inp_dep").value or "",
             "job_name": self.query_one("#inp_name").value or "wien2k_job",
+            "qos": self.query_one("#inp_qos").value or "",
+            "gres": self.query_one("#inp_gres").value or "",
+            "account": self.query_one("#inp_account").value or "",
             "preemption": self.query_one("#sw_preemption").value,
             "scratch": self.query_one("#sw_scratch").value,
             "scheduler": self.scheduler,
@@ -387,6 +403,9 @@ class SubmitTab(Container):
                     mem_per_node=params["mem_per_node"],
                     time=params["walltime"],
                     dependency=params["dependency"] or None,
+                    qos=params["qos"] or None,
+                    gres=params["gres"] or None,
+                    account=params["account"] or None,
                     preemption_grace_sec=self.preemption_grace if params["preemption"] else None
                 )
 
@@ -402,17 +421,20 @@ class SubmitTab(Container):
                 provider_cls = SUBMIT_PROVIDERS.get(sched)
                 if provider_cls:
                     provider = provider_cls()
+                    nsched_directives = {
+                        "job_name": params["job_name"],
+                        "queue": params["partition"],
+                        "nodes": params["nodes"],
+                        "walltime": params["walltime"],
+                        "mem" if sched == "pbs" else "memory": params["mem_per_node"],
+                        "nprocs": ntasks,
+                    }
+                    if sched == "pbs":
+                        nsched_directives["account"] = params["account"]
                     self.script_content = provider.generate_submit_script(
                         topo=self._get_app_topo(),
                         exec_command=self._get_exec_command(),
-                        directives={
-                            "job_name": params["job_name"],
-                            "queue": params["partition"],
-                            "nodes": params["nodes"],
-                            "walltime": params["walltime"],
-                            "mem" if sched == "pbs" else "memory": params["mem_per_node"],
-                            "nprocs": ntasks,
-                        },
+                        directives=nsched_directives,
                     )
                 else:
                     self.script_content = f"# Scheduler '{sched}' provider not available.\n"
@@ -464,6 +486,9 @@ class SubmitTab(Container):
                     mem_per_node=params["mem_per_node"],
                     time=params["walltime"],
                     dependency=params["dependency"] or None,
+                    qos=params["qos"] or None,
+                    gres=params["gres"] or None,
+                    account=params["account"] or None,
                     preemption_grace_sec=self.preemption_grace if params["preemption"] else None,
                 )
                 
@@ -480,17 +505,20 @@ class SubmitTab(Container):
                     self.call_later(lambda: self.notify(f"Scheduler '{sched}' not available.", severity="error"))
                     return
                 provider = provider_cls()
+                nsched_directives = {
+                    "job_name": params["job_name"],
+                    "queue": params["partition"],
+                    "nodes": params["nodes"],
+                    "walltime": params["walltime"],
+                    "mem" if sched == "pbs" else "memory": params["mem_per_node"],
+                    "nprocs": ntasks,
+                }
+                if sched == "pbs":
+                    nsched_directives["account"] = params["account"]
                 result = provider.submit(
                     topo=self._get_app_topo(),
                     exec_command=exec_cmd,
-                    directives={
-                        "job_name": params["job_name"],
-                        "queue": params["partition"],
-                        "nodes": params["nodes"],
-                        "walltime": params["walltime"],
-                        "mem" if sched == "pbs" else "memory": params["mem_per_node"],
-                        "nprocs": ntasks,
-                    },
+                    directives=nsched_directives,
                     dry_run=dry_run,
                 )
 

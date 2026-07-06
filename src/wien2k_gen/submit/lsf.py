@@ -18,6 +18,7 @@ from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 import os
 import re
+import shlex
 import time
 import datetime
 import subprocess
@@ -243,12 +244,12 @@ class LSFSubmitProvider(SubmitProvider):
         lines = []
         directives = spec.directives
 
-        job_name = directives.job_name or "wien2k_gen_job"
+        job_name = shlex.quote(directives.job_name or "wien2k_gen_job")
         array_spec = directives.job_array or ""
         if array_spec:
-            lines.append(f'#BSUB -J "{job_name}[{array_spec}]"')
+            lines.append(f'#BSUB -J {job_name}[{array_spec}]')
         else:
-            lines.append(f'#BSUB -J "{job_name}"')
+            lines.append(f'#BSUB -J {job_name}')
 
         if directives.queue:
             lines.append(f"#BSUB -q {directives.queue}")
@@ -289,14 +290,14 @@ class LSFSubmitProvider(SubmitProvider):
         lines.append(f"#BSUB -e {error}")
 
         if directives.email:
-            lines.append(f"#BSUB -u {directives.email}")
+            lines.append(f"#BSUB -u {shlex.quote(directives.email)}")
         if directives.email_when:
             lines.append(f"#BSUB -N -B -N {directives.email_when}")
 
         if directives.pre_exec:
-            lines.append(f"#BSUB -E \"{directives.pre_exec}\"")
+            lines.append(f"#BSUB -E {shlex.quote(directives.pre_exec)}")
         if directives.post_exec:
-            lines.append(f"#BSUB -Ep \"{directives.post_exec}\"")
+            lines.append(f"#BSUB -Ep {shlex.quote(directives.post_exec)}")
 
         cores_per_node = spec.topo.cores_per_node[0] if spec.topo.cores_per_node else nprocs
         lines.append(f'#BSUB -R "affinity[core({cores_per_node})]"')
@@ -492,8 +493,9 @@ class LSFSubmitProvider(SubmitProvider):
         try:
             logger.info("Submitting job via bsub...")
             proc = subprocess.run(
-                ["bsub", "<", str(result["script_path"])],
-                capture_output=True, text=True, timeout=10, shell=True,
+                ["bsub"],
+                input=script_content,
+                capture_output=True, text=True, timeout=10,
             )
 
             if proc.returncode == 0:

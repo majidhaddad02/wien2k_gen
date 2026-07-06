@@ -17,6 +17,7 @@ All documentation and inline comments are in English per project standards.
 
 import json
 import time
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Union, Literal, TypedDict
@@ -159,6 +160,19 @@ class PipelineResult:
         return asdict(self)
 
 
+def _auto_default_mem() -> str:
+    """Return a sensible default memory string based on 80% of system RAM."""
+    try:
+        from .core.hardware import get_total_mem_kb
+        total_gb = get_total_mem_kb() / (1024 * 1024)
+        mem_gb = int(total_gb * 0.8)
+        if mem_gb < 1:
+            mem_gb = 8
+        return f"{mem_gb}G"
+    except Exception:
+        return "8G"
+
+
 @dataclass(frozen=True)
 class SubmissionConfig:
     """SLURM/job submission parameters. Frozen for consistency."""
@@ -167,7 +181,7 @@ class SubmissionConfig:
     nodes: int = 1
     ntasks: int = 0  # 0 = auto-calculate from topo
     cpus_per_task: int = 1
-    mem_per_node: str = "4G"
+    mem_per_node: str = field(default_factory=lambda: _auto_default_mem())
     walltime: str = "24:00:00"
     dependency: str = ""
     qos: str = ""

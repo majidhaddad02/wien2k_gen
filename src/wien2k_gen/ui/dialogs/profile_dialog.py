@@ -314,24 +314,29 @@ class ProfileDialog(ModalScreen):
         if not name or len(name.strip()) < 3:
             self.notify("Profile name too short.", severity="error")
             return
-            
+
         self.is_busy = True
         self.status_message = "Saving profile..."
-        
+
+        backend = self.query_one("#sel_backend").value
+        wienroot = self.query_one("#inp_wienroot").value.strip()
+        scratch = self.query_one("#inp_scratch").value.strip()
+        log_level = self.query_one("#sel_log").value
+        compact = self.query_one("#sw_compact").value
+
         def _save_task() -> None:
             try:
                 data = {
-                    "backend": self.query_one("#sel_backend").value,
-                    "wienroot": self.query_one("#inp_wienroot").value.strip(),
-                    "scratch_path": self.query_one("#inp_scratch").value.strip(),
-                    "log_level": self.query_one("#sel_log").value,
-                    "compact_mode": self.query_one("#sw_compact").value,
+                    "backend": backend,
+                    "wienroot": wienroot,
+                    "scratch_path": scratch,
+                    "log_level": log_level,
+                    "compact_mode": compact,
                     "timestamp": time.time()
                 }
                 target = self.PROFILE_DIR / f"{name}.json"
                 atomic_write(target, json.dumps(data, indent=2), mode=0o644)
-                
-                # Update in-memory state
+
                 self.profiles[name] = data
                 self.selected_profile = name
                 self.call_later(lambda: self._update_table(self.profiles))
@@ -341,7 +346,7 @@ class ProfileDialog(ModalScreen):
                 self.call_later(lambda: self.notify(f"Save error: {e}", severity="error"))
             finally:
                 self.call_later(lambda: setattr(self, "is_busy", False))
-                
+
         threading.Thread(target=_save_task, daemon=True).start()
 
     def _delete_selected_profile(self) -> None:

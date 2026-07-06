@@ -215,8 +215,22 @@ class ReportDialog(ModalScreen):
         threading.Thread(target=self._export_worker, daemon=True).start()
 
     def action_copy_to_clipboard(self) -> None:
-        """Placeholder for clipboard integration (requires pyperclip or similar)."""
-        self.notify("Clipboard copy not supported in this environment.", severity="information")
+        """Copy report data to system clipboard."""
+        import subprocess
+        try:
+            content = json.dumps(self.report_data, indent=2, default=str)
+            subprocess.run(["xclip", "-selection", "c"], input=content.encode(),
+                           check=True, timeout=5)
+            self.notify("Report copied to clipboard.", severity="success")
+        except FileNotFoundError:
+            try:
+                import pyperclip
+                pyperclip.copy(json.dumps(self.report_data, indent=2, default=str))
+                self.notify("Report copied to clipboard.", severity="success")
+            except ImportError:
+                self.notify("Clipboard unavailable: install xclip or pyperclip.", severity="error")
+        except Exception as e:
+            self.notify(f"Clipboard copy failed: {e}", severity="error")
 
     # =========================================================================
     # Core Rendering & Export Logic

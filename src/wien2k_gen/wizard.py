@@ -36,7 +36,7 @@ from .config import AppConfig, load_config, get_config, DEFAULT_CONFIG_DIR, ensu
 from .logging_config import get_logger, set_context
 from .types import BackendCode, ExecutionMode, OptimizationTarget
 from .utils.atomic_write import atomic_write
-from .core.scheduler import detect as detect_topology
+from .core.scheduler import detect as detect_topology, _detect_scheduler
 from .core.builder import build_auto
 from .optimizer.advisor import suggest_optimal_resources
 from .backend_manager import list_backends, set_backend, get_backend
@@ -44,32 +44,6 @@ from .exceptions import Wien2kGenError, ConfigurationError
 
 logger = get_logger(__name__)
 console = Console()
-
-PROFILES_DIR = Path.home() / ".config" / "wien2k_gen" / "profiles"
-
-
-# =============================================================================
-# Scheduler Detection
-# =============================================================================
-
-def _detect_scheduler() -> str:
-    """Auto-detect available scheduler from environment."""
-    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
-        return "slurm"
-    if os.environ.get("PBS_JOBID"):
-        return "pbs"
-    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
-        return "lsf"
-    for cmd in ["sbatch", "sinfo"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "slurm"
-    for cmd in ["qsub", "pbsnodes"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "pbs"
-    for cmd in ["bsub", "bjobs"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "lsf"
-    return "slurm"
 
 PROFILES_DIR = Path.home() / ".config" / "wien2k_gen" / "profiles"
 

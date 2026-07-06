@@ -167,8 +167,21 @@ class HelpDialog(ModalScreen):
             pass
 
     def action_copy_to_clipboard(self) -> None:
-        """Placeholder for clipboard integration."""
-        self.notify("Clipboard copy requires external dependency (pyperclip).", severity="information")
+        """Copy help content to system clipboard."""
+        import subprocess
+        try:
+            subprocess.run(["xclip", "-selection", "c"], input=self.help_content.encode(),
+                           check=True, timeout=5)
+            self.notify("Help content copied to clipboard.", severity="success")
+        except FileNotFoundError:
+            try:
+                import pyperclip
+                pyperclip.copy(self.help_content)
+                self.notify("Help content copied to clipboard.", severity="success")
+            except ImportError:
+                self.notify("Clipboard unavailable: install xclip or pyperclip.", severity="error")
+        except Exception as e:
+            self.notify(f"Clipboard copy failed: {e}", severity="error")
 
     # =========================================================================
     # Core Logic
@@ -231,8 +244,5 @@ class HelpDialog(ModalScreen):
         self.notify(f"Found {count} occurrences of '{self.search_query}'", severity="information")
 
     def _jump_to_section(self, section_id: str) -> None:
-        """Scroll to specific documentation section."""
-        md = self.query_one("#md_content", Markdown)
-        if md:
-            # Simplified scroll-to-anchor logic
-            self.notify(f"Navigating to {section_id}...", severity="information")
+        """Scroll to specific documentation section (Coming in v0.2)."""
+        self.notify(f"Section navigation to '{section_id}' coming in v0.2.", severity="information")

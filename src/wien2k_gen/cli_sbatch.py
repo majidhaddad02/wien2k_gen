@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
 from .config import load_config, get_config, AppConfig, ensure_dirs
-from .core.scheduler import detect as detect_topology
+from .core.scheduler import detect as detect_topology, auto_detect_memory
 from .submit.slurm import (
     generate_sbatch_script,
     submit_slurm_job,
@@ -92,7 +92,7 @@ def create_sbatch_parser() -> argparse.ArgumentParser:
     gen.add_argument("--nodes", "-N", type=int, default=1, help="Number of nodes")
     gen.add_argument("--ntasks", "-n", type=int, default=0, help="Total tasks (0 = auto from topology)")
     gen.add_argument("--cpus-per-task", "-c", type=int, default=1, help="CPUs per task")
-    gen.add_argument("--mem", type=str, default="4G", help="Memory per node (e.g., 8G, 16000M)")
+    gen.add_argument("--mem", type=str, default=auto_detect_memory(), help="Memory per node (e.g., 8G, 16000M)")
     gen.add_argument("--time", "-t", type=str, default="24:00:00", help="Walltime limit")
     gen.add_argument("--dependency", type=str, default="", help="Job dependency (e.g., afterok:12345)")
     gen.add_argument("--qos", type=str, default="", help="Quality of service")

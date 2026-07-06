@@ -107,7 +107,7 @@ def create_parser() -> argparse.ArgumentParser:
     sub_p.add_argument("--nodes", type=int, default=1, help="Number of nodes")
     sub_p.add_argument("--ntasks", type=int, default=0, help="Total tasks (0 = auto from topology)")
     sub_p.add_argument("--time", type=str, default="24:00:00", help="Walltime (HH:MM:SS)")
-    sub_p.add_argument("--mem", type=str, default="4G", help="Memory per node")
+    sub_p.add_argument("--mem", type=str, default=auto_detect_memory(), help="Memory per node")
     sub_p.add_argument("--job-name", type=str, default="wien2k_job", help="Job identifier")
     sub_p.add_argument("--dependency", type=str, default="", help="Job dependency (e.g., afterok:123)")
     sub_p.add_argument("--dry-run", action="store_true", help="Generate script only, do not submit")
@@ -155,32 +155,6 @@ def create_parser() -> argparse.ArgumentParser:
     bands_p.add_argument("--dos", action="store_true", help="Also parse DOS data")
 
     return parser
-
-
-# =============================================================================
-# Scheduler Detection Helpers
-# =============================================================================
-
-def _detect_scheduler() -> str:
-    """Auto-detect available scheduler from environment."""
-    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
-        return "slurm"
-    if os.environ.get("PBS_JOBID"):
-        return "pbs"
-    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
-        return "lsf"
-
-    for cmd in ["sbatch", "sinfo"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "slurm"
-    for cmd in ["qsub", "pbsnodes"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "pbs"
-    for cmd in ["bsub", "bjobs"]:
-        if os.path.exists(f"/usr/bin/{cmd}"):
-            return "lsf"
-
-    return "slurm"
 
 
 def _resolve_scheduler(flag: str) -> str:
@@ -337,9 +311,10 @@ def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any
         console.print(Panel(f"[green]✓ Synthetic benchmark complete. {len(suite)} runs generated.[/]", border_style="green"))
         return {"type": "synthetic", "runs": len(suite), "data": [s.to_dict() if hasattr(s, 'to_dict') else s for s in suite]}
     else:
+        scheduler = _resolve_scheduler(getattr(args, "scheduler", "auto"))
         runner = RealBenchmarkRunner({
             "backend": cfg.backend,
-            "use_slurm": True,
+            "scheduler": scheduler,
             "walltime": args.walltime,
             "cleanup_after": not args.skip_cleanup
         })

@@ -43,7 +43,9 @@ from .hardware import (
 # =============================================================================
 from .scheduler import (
     detect,
-    SchedulerHints
+    SchedulerHints,
+    _detect_scheduler,
+    auto_detect_memory,
 )
 
 # =============================================================================
@@ -131,6 +133,8 @@ __all__ = [
     # Scheduler & Environment
     "detect",
     "SchedulerHints",
+    "_detect_scheduler",
+    "auto_detect_memory",
     
     # Builder & Pipeline
     "build_auto",
