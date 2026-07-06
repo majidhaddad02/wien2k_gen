@@ -17,16 +17,15 @@ All documentation and inline comments are in English per project standards.
 
 import os
 import re
-import time
 import shutil
-import logging
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, TypedDict, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
+from ..core.hardware import get_numa_node_count, is_containerized
 from ..core.topology import Topology
-from ..core.hardware import get_interconnect_info, get_numa_node_count, is_containerized
-from ..utils.atomic_write import atomic_write
 from ..logging_config import get_logger
+from ..utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 
@@ -178,6 +177,18 @@ def generate_parallel_options(
     detected_launcher = _detect_mpi_launcher(topo)
     if detected_launcher and not opts.get("WIEN_MPIRUN"):
         opts["WIEN_MPIRUN"] = detected_launcher
+
+    # 4. MPI-launcher-specific USE_REMOTE tuning
+    if detected_launcher:
+        launcher_name = Path(detected_launcher).name.lower()
+        # PMIX/srun-based: remote spawning not needed
+        if any(kw in launcher_name for kw in ("srun", "orterun", "mpiexec")) and \
+                ("hydra" in launcher_name or os.getenv("SLURM_JOB_ID")):
+            opts["USE_REMOTE"] = "0"
+        # Pure mpirun without srun/pmi: may require SSH for cross-node
+        if "mpirun" in launcher_name and "openmpi" not in launcher_name and \
+                not os.getenv("SLURM_JOB_ID") and not os.getenv("PBS_JOBID"):
+            opts["USE_REMOTE"] = "1"
 
     # 4. Apply suggestion hints (if provided)
     if suggestion:
@@ -343,10 +354,10 @@ def write_parallel_options(
 # =============================================================================
 
 __all__ = [
+    "DEFAULT_OPTIONS",
     "ParallelOptionsDict",
-    "parse_parallel_options",
     "generate_parallel_options",
+    "parse_parallel_options",
     "validate_parallel_options",
     "write_parallel_options",
-    "DEFAULT_OPTIONS",
 ]

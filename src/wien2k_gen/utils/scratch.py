@@ -11,20 +11,16 @@ All documentation and inline comments are in English per project standards.
 """
 
 import os
-import re
-import time
 import shutil
-import logging
-import subprocess
 import signal
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, TypedDict
+import subprocess
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import List, Optional, Tuple, TypedDict, Union
 
 from ..core.topology import Topology
-from ..core.hardware import get_scratch_filesystem_type, get_total_mem_kb
 from ..logging_config import get_logger
-from ..utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 
@@ -53,6 +49,9 @@ class ScratchConfig:
         os.environ.get("SCRATCH", ""), 
         "/tmp"
     ])
+    env_path_vars: List[str] = field(default_factory=lambda: [
+        "SCRATCH", "TMPDIR", "TMP", "WIEN2K_SCRATCH", "QE_SCRATCH",
+    ])
     min_free_space_gb: float = 2.0
     prefer_tmpfs: bool = True
     staging_method: str = "auto"  # auto, copy, sbcast, rsync
@@ -67,6 +66,20 @@ class ScratchConfig:
     cleanup_on_exit: bool = True
     stripe_count: int = 4
     stripe_size_mb: int = 1
+
+    def resolve_priority_paths(self) -> List[str]:
+        """Resolve priority paths, removing empties and expanding env vars."""
+        resolved = []
+        for p in self.priority_paths:
+            expanded = os.path.expandvars(os.path.expanduser(p))
+            if expanded and not expanded.isspace():
+                resolved.append(expanded)
+        # Append env var values as additional candidates
+        for var in self.env_path_vars:
+            val = os.environ.get(var, "").strip()
+            if val and val not in resolved:
+                resolved.append(val)
+        return resolved
 
 
 # =============================================================================
@@ -469,13 +482,13 @@ def cleanup_scratch(path: Union[str, Path], force: bool = False) -> bool:
 # =============================================================================
 
 __all__ = [
-    "ScratchResult",
     "ScratchConfig",
-    "setup_scratch",
-    "cleanup_scratch",
-    "configure_lustre_striping",
-    "_detect_lustre",
-    "_detect_filesystem_type",
+    "ScratchResult",
     "_check_free_space_gb",
     "_collect_staging_files",
+    "_detect_filesystem_type",
+    "_detect_lustre",
+    "cleanup_scratch",
+    "configure_lustre_striping",
+    "setup_scratch",
 ]

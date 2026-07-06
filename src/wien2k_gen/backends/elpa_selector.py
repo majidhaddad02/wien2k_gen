@@ -14,8 +14,8 @@ on HPC systems with InfiniBand interconnects.
 """
 
 import math
-from typing import Dict, Optional, Tuple
 from dataclasses import dataclass, field
+from typing import Dict, Optional, Tuple
 
 from ..core.topology import factorize_blacs_grid
 from ..logging_config import get_logger
@@ -81,7 +81,7 @@ def select_eigensolver(
         )
 
     if effective_nmat >= 10000:
-        elpa_kernel = "ELPA2" if effective_nmat >= 20000 else "ELPA1"
+        elpa_kernel = "ELPA2" if effective_nmat >= 10000 else "ELPA1"
         elpa_block = 64 if elpa_kernel == "ELPA2" else 32
 
         if gpu_available:

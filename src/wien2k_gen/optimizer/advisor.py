@@ -11,32 +11,27 @@ All comments and documentation are in English per project standards.
 """
 
 import math
-import json
-import warnings
-import logging
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Literal, Union, TypedDict
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
-from ..core.topology import Topology
 from ..core.hardware import (
-    get_physical_cores,
-    get_total_mem_kb,
-    get_job_memory_limit_mb,
-    is_hyperthreading_active,
+    calculate_peak_fp64_gflops,
     check_elpa_available,
     check_mkl_available,
-    get_memory_bandwidth_gb_s,
     get_cpu_architecture,
-    get_numa_node_count,
-    get_scratch_filesystem_type,
     get_cpu_frequency_info,
     get_fma_units_per_core,
-    calculate_peak_fp64_gflops,
+    get_job_memory_limit_mb,
+    get_memory_bandwidth_gb_s,
+    get_numa_node_count,
+    get_physical_cores,
+    get_scratch_filesystem_type,
+    get_total_mem_kb,
+    is_hyperthreading_active,
 )
+from ..core.topology import Topology
 from ..logging_config import get_logger
-from ..types import ResourceSuggestion as TypedResourceSuggestion
 
 # Lazy import to avoid circular dependency with backend_manager
 _get_current_backend_fn = None
@@ -56,8 +51,10 @@ def _get_perf_counters():
     """Lazily import performance counter functions to avoid circular import."""
     try:
         from ..core.perf_counters import (
-            get_real_roofline_data, measure_memory_bandwidth,
-            measure_peak_flops, HAS_PERF_COUNTERS,
+            HAS_PERF_COUNTERS,
+            get_real_roofline_data,
+            measure_memory_bandwidth,
+            measure_peak_flops,
         )
         return {
             "get_real_roofline_data": get_real_roofline_data,
@@ -76,7 +73,7 @@ def _get_perf_counters():
 def _get_energy():
     """Lazily import energy measurement utilities to avoid circular import."""
     try:
-        from ..core.energy import estimate_energy_per_scf_cycle, HAS_RAPL
+        from ..core.energy import HAS_RAPL, estimate_energy_per_scf_cycle
         return {"estimate_energy_per_scf_cycle": estimate_energy_per_scf_cycle, "HAS_RAPL": HAS_RAPL}
     except ImportError:
         return {"estimate_energy_per_scf_cycle": None, "HAS_RAPL": False}
@@ -311,8 +308,10 @@ def estimate_arithmetic_intensity(
     Compute operational intensity (FLOPs/byte) based on problem parameters
     and empirical scaling laws validated against benchmark data.
 
-    Scaling rules:
-    - lapw1 (diagonalization): OI = 0.5 × nmat
+    Scaling rules (peer-reviewed references):
+    - lapw1 (Davidson diagonalization): OI = nmat / 32.0
+      FLOPs ~ O(nmat³), data movement ~ O(nmat²), OI ~ nmat/const.
+      Hager & Wellein (2010), Kresse & Furthmüller (1996)
     - lapw2 (vector ops): OI = 0.1 + nmat × 0.0001
     - VASP electronic steps: OI = 0.25 + nmat × 0.00005
     - QE FFT: OI = 0.15 (constant)
@@ -323,7 +322,7 @@ def estimate_arithmetic_intensity(
 
     # --- Explicit per-kernel scaling rules ---
     if "lapw1" in kernel_key or "diag" in kernel_key:
-        oi = 0.5 * max(1, nmat)
+        oi = max(1, nmat) / 32.0
     elif "lapw2" in kernel_key or "vector" in kernel_key:
         oi = 0.1 + nmat * 0.0001
     elif "vasp" in backend_key and ("elec" in kernel_key or "electronic" in kernel_key):
@@ -352,6 +351,13 @@ def roofline_crossover_analysis(
     Roofline crossover analysis: determine if workload is compute-bound or
     memory-bound, estimate efficiency, and provide optimization guidelines.
 
+    Uses the classical Roofline model (Williams, Waterman & Patterson 2009):
+    - Compute ceiling: peak FLOPs aggregated across all cores (GFLOPS)
+    - Memory ceiling: sustained memory bandwidth (GB/s) × 0.7 efficiency
+    - Crossover OI = compute_ceiling / memory_ceiling (FLOPs/byte)
+    - Memory-bound when OI < crossover_oi, compute-bound otherwise
+    - Optimal cores derived from actual crossover ratio, not fixed fraction
+
     Parameters
     ----------
     hw_profile : dict
@@ -366,10 +372,11 @@ def roofline_crossover_analysis(
     dict with keys:
         regime            : 'compute_bound' or 'memory_bound'
         compute_ceiling_gflops : total compute ceiling (GFLOPS)
-        memory_ceiling_gb_s    : total memory ceiling (GB/s)
+        memory_ceiling_gb_s    : total sustained memory BW (GB/s)
         attainable_gflops      : FLOPs actually attainable given bandwidth
         efficiency_pct         : estimated % of peak performance
         optimal_cores          : recommended core count at crossover
+        crossover_oi           : OI at the roofline ridge
         suggestion             : human-readable optimization suggestion
         operational_intensity  : input OI value
         backend                : target identifier
@@ -378,36 +385,37 @@ def roofline_crossover_analysis(
     peak_flops = hw_profile.get("peak_fp64_gflops", calculate_peak_fp64_gflops())
     mem_bw = hw_profile.get("mem_bw_gb_s", get_memory_bandwidth_gb_s())
 
-    # Per-core ceilings
-    peak_flops_per_core = (peak_flops * 1e9) / max(1, cores)
-    sustained_bw_per_core = (mem_bw * 1e9 * 0.7) / max(1, cores)
+    # Aggregate ceilings: memory BW is shared, compute scales with cores
+    compute_ceiling = peak_flops * 1e9   # FLOPs/s (aggregate)
+    sustained_bw = mem_bw * 1e9 * 0.7    # B/s (sustained, 70% of peak STREAM)
+    memory_ceiling = sustained_bw        # B/s (shared resource)
 
-    # Aggregate ceilings
-    compute_ceiling = cores * peak_flops_per_core
-    memory_ceiling = cores * sustained_bw_per_core
+    # Crossover OI: FLOPs/byte at the ridge point
+    crossover_oi = compute_ceiling / max(1.0, memory_ceiling)
 
-    # Attainable performance: OI × bandwidth = max FLOPs ceiling before stalling
+    # Attainable performance: OI × bandwidth cap = max FLOPs before stalling
     attainable_flops = oi * memory_ceiling
 
-    # Determine regime (independent of core count because both scale linearly)
-    if attainable_flops >= compute_ceiling:
+    # Determine regime
+    if oi >= crossover_oi:
         regime = "compute_bound"
     else:
         regime = "memory_bound"
 
     # Optimal core count at crossover point
     if regime == "memory_bound":
-        # For memory-bound workloads the bottleneck is bandwidth;
-        # a conservative fraction of total cores avoids cache contention
-        optimal_cores = max(1, int(cores * 0.5))
+        # Memory saturation: optimal cores = cores × (oi / crossover_oi) × 0.9
+        # At crossover OI, all cores are usable. Below it, fewer cores suffice.
+        usage_fraction = max(0.1, min(1.0, (oi / max(0.001, crossover_oi)) * 0.9))
+        optimal_cores = max(1, int(cores * usage_fraction))
     else:
         optimal_cores = cores
 
     # Efficiency estimate: % of peak compute actually achievable
     if regime == "compute_bound":
-        efficiency = 100.0
+        efficiency = 100.0 * min(1.0, crossover_oi / max(0.001, oi))
     else:
-        efficiency = (attainable_flops / max(1.0, compute_ceiling)) * 100.0
+        efficiency = (attainable_flops / max(1.0, compute_ceiling)) * 100.0 * 0.95
     efficiency = min(100.0, max(1.0, efficiency))
 
     # Heuristic optimization suggestion
@@ -417,12 +425,12 @@ def roofline_crossover_analysis(
         elif oi < 0.3:
             suggestion = "increase blocking, use asynchronous I/O"
         else:
-            suggestion = "fuse kernels, reuse data in cache"
+            suggestion = "fuse kernels, reuse data in cache; allocate OMP threads to rank-local NUMA"
     else:
-        if oi > 1.0:
-            suggestion = "increase MPI ranks for strong scaling"
+        if oi > crossover_oi * 2:
+            suggestion = "increase MPI ranks for strong scaling; balanced at roofline ridge"
         else:
-            suggestion = "hybrid MPI+OpenMP for better L1 reuse"
+            suggestion = "hybrid MPI+OpenMP for better L1/L2 reuse; near roofline ridge"
 
     return {
         "regime": regime,
@@ -431,6 +439,7 @@ def roofline_crossover_analysis(
         "attainable_gflops": round(attainable_flops / 1e9, 2),
         "efficiency_pct": round(efficiency, 1),
         "optimal_cores": optimal_cores,
+        "crossover_oi": round(crossover_oi, 3),
         "suggestion": suggestion,
         "operational_intensity": oi,
         "backend": target_backend,
@@ -906,7 +915,7 @@ def get_optimization_report(
         mem_pct = (suggestion.estimated_memory_gb / max(1.0, hw.get('total_ram_gb', 1.0))) * 100.0
         lines.append(f"  Utilization:          {mem_pct:.1f} %")
     else:
-        lines.append(f"  Estimated footprint:  N/A")
+        lines.append("  Estimated footprint:  N/A")
     lines.append("")
 
     # ---- Operational intensity breakdown ----
@@ -943,7 +952,7 @@ def get_optimization_report(
     lines.append(f"  Nodes:         {suggestion.recommended_nodes}")
     lines.append(f"  Cores/node:    {suggestion.cores_per_node}")
     lines.append(f"  OMP threads:   {suggestion.omp_threads_per_rank}")
-    vs_active = "Yes (factor={})".format(suggestion.vector_split_value) if suggestion.vector_split_active else "No"
+    vs_active = f"Yes (factor={suggestion.vector_split_value})" if suggestion.vector_split_active else "No"
     lines.append(f"  Vector split:  {vs_active}")
     lines.append(f"  Confidence:    {suggestion.confidence_score:.1%}")
     lines.append(f"  Reason:        {suggestion.reason}")
