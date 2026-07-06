@@ -214,7 +214,7 @@ class FileLock:
             
         try:
             mtime = self._fallback_dir.stat().st_mtime
-            age = time.monotonic() - mtime
+            age = time.time() - mtime
             if age > STALE_LOCK_THRESHOLD:
                 # Verify PID is actually dead
                 if self._pid_file and self._pid_file.exists():

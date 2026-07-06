@@ -20,6 +20,7 @@ import re
 import socket
 import json
 import hashlib
+import shutil
 import time
 import signal
 import subprocess

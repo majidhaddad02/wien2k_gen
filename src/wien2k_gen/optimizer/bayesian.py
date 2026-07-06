@@ -466,19 +466,26 @@ _ELEMENT_ATOMIC_NUMBERS = {
 
 def _estimate_memory_gb_for_config(nmat: int, total_cores: int) -> float:
     """
-    Rough memory estimate for a given config.
+    Per-rank memory estimate for a given MPI/OpenMP configuration.
+
+    In ScaLAPACK/ELPA block-cyclic distribution, the Hamiltonian matrix
+    is distributed across MPI ranks, so per-rank memory scales as nmat²/ranks.
 
     Args:
         nmat: Hamiltonian matrix size.
-        total_cores: Total CPU cores.
+        total_cores: Total CPU cores (MPI ranks × OMP threads).
 
     Returns:
-        Estimated memory in GB.
+        Estimated per-rank memory in GB.
     """
-    base_gb = (float(nmat) ** 2.0) * 16.0 / (1024.0 ** 3)
-    mpi_overhead = 1.0 + 0.05 * max(0, total_cores - 1)
-    safety = 3.0
-    return base_gb * mpi_overhead * safety
+    ranks = max(1, total_cores)
+    # Aggregate matrix memory, then divide by ranks for block-cyclic distribution
+    aggregate_gb = (float(nmat) ** 2.0) * 16.0 / (1024.0 ** 3)
+    per_rank_gb = aggregate_gb / float(ranks)
+    # Small per-rank overhead for communication buffers + replicated data
+    comm_overhead = 0.5  # GB per rank for MPI buffers, charge density copies
+    safety = 1.5  # Per-rank safety factor (was 3.0× on aggregate)
+    return (per_rank_gb + comm_overhead) * safety
 
 
 def _estimate_walltime_min_for_config(nmat: int, nkpt: int, total_cores: int) -> float:

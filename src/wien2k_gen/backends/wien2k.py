@@ -99,6 +99,28 @@ class Wien2kBackend(Backend):
 
     def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
         """Generate .machines file content for WIEN2k parallel execution."""
+        # Integrate ELPA solver recommendation into suggestion dict
+        nmat = suggestion.get("nmat", self._detect_problem_size().get("nmat", 0))
+        nkpt = suggestion.get("nkpt", self._detect_problem_size().get("kpoints", 0))
+        is_soc = suggestion.get("is_soc", self._detect_problem_size().get("is_soc", False))
+        total_ranks = sum(topo.cores_per_node) if topo.cores_per_node else 1
+
+        if nmat > 2000:
+            try:
+                from .elpa_selector import select_eigensolver, _check_elpa_runtime
+                gpu_ok = bool(os.environ.get("CUDA_VISIBLE_DEVICES", ""))
+                solver_sel = select_eigensolver(nmat, nkpt, is_soc, gpu_ok, total_ranks=total_ranks)
+                suggestion["elpa_solver"] = solver_sel.recommended_solver
+                suggestion["elpa_block_size"] = solver_sel.block_size
+                suggestion["elpa_reason"] = solver_sel.reason
+                logger.info(
+                    f"ELPA solver selected: {solver_sel.recommended_solver} "
+                    f"(block={solver_sel.block_size}, "
+                    f"BLACS={solver_sel.recommended_grid[0]}×{solver_sel.recommended_grid[1]})"
+                )
+            except Exception as e:
+                logger.debug(f"ELPA solver selection skipped: {e}")
+
         lines = self._build_machines_lines(topo, suggestion)
         return "\n".join(lines)
 
@@ -159,7 +181,7 @@ class Wien2kBackend(Backend):
 
     def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
         """Write parallel_options and run_optimized.sh with atomic writes."""
-        self._write_parallel_options()
+        self._write_parallel_options(solver_hint=suggestion.get("elpa_solver", ""))
         self._write_runner_script(topo, suggestion)
 
     def get_short_test_command(self) -> Optional[str]:
@@ -381,24 +403,44 @@ class Wien2kBackend(Backend):
         }
 
         # 1. Extract atoms from .struct file
+        # Standard WIEN2k .struct format:
+        #   Line 1: Title
+        #   Line 2: LATTICE,NONEQUIV.ATOMS: N  SPACEGROUP
+        #   Line 3: MODE OF CALC=... unit=...
+        #   Line 4: a b c alpha beta gamma
+        #   For each inequivalent atom: ATOM line, MULT line, element line, rotation matrix
         struct_files = list(Path(".").glob("*.struct"))
         if struct_files:
             try:
                 content = struct_files[0].read_text(encoding="utf-8", errors="replace")
-                match = re.search(r'NUMBER OF ATOMS\s*=\s*(\d+)', content, re.IGNORECASE)
+                # Primary: parse NONEQUIV.ATOMS from line 2 (number of inequivalent atoms)
+                match = re.search(r'NONEQUIV\.ATOMS\s*:\s*(\d+)', content, re.IGNORECASE)
                 if match:
-                    result["atoms"] = int(match.group(1))
-                else:
-                    atom_lines = [l for l in content.splitlines() if re.match(r'^\s*ATOM\s*[-\d]+:', l, re.IGNORECASE)]
-                    if atom_lines:
-                        result["atoms"] = len(atom_lines)
+                    nat_inequiv = int(match.group(1))
+                    # Try to sum multiplicities for total atom count
+                    mult_matches = re.findall(r'MULT\s*=\s*(\d+)', content, re.IGNORECASE)
+                    if mult_matches and len(mult_matches) >= nat_inequiv:
+                        result["atoms"] = sum(int(m) for m in mult_matches[:nat_inequiv])
                     else:
-                        coord_lines = sum(
-                            1 for line in content.splitlines()
-                            if re.match(r'^\s*[A-Za-z][A-Za-z0-9]?\s+[-+]?\d*\.\d+\s+[-+]?\d*\.\d+\s+[-+]?\d*\.\d+', line)
-                        )
-                        if coord_lines > 0:
-                            result["atoms"] = coord_lines
+                        result["atoms"] = nat_inequiv
+                else:
+                    # Fallback 1: sum MULT values
+                    mult_matches = re.findall(r'MULT\s*=\s*(\d+)', content, re.IGNORECASE)
+                    if mult_matches:
+                        result["atoms"] = sum(int(m) for m in mult_matches)
+                    else:
+                        # Fallback 2: count ATOM lines
+                        atom_lines = [l for l in content.splitlines() if re.match(r'^\s*ATOM\s*[-\d]+:', l, re.IGNORECASE)]
+                        if atom_lines:
+                            result["atoms"] = len(atom_lines)
+                        else:
+                            # Fallback 3: count coordinate-like lines
+                            coord_lines = sum(
+                                1 for line in content.splitlines()
+                                if re.match(r'^\s*[A-Za-z][A-Za-z0-9]?\s+[-+]?\d*\.\d+\s+[-+]?\d*\.\d+\s+[-+]?\d*\.\d+', line)
+                            )
+                            if coord_lines > 0:
+                                result["atoms"] = coord_lines
             except Exception as e:
                 logger.warning(f"Failed to parse .struct file: {e}")
 
@@ -441,9 +483,23 @@ class Wien2kBackend(Backend):
         if list(Path(".").glob("*.inso")):
             result["is_soc"] = True
 
-        # 6. Detect hybrid functional from .inm file
-        if list(Path(".").glob("*.inm")):
-            result["is_hybrid"] = True
+        # 6. Detect hybrid functional from .in0 / .in0_st / .inc files
+        # WIEN2k hybrid functionals (HSE, PBE0, etc.) are flagged by HYBR keyword
+        # in .in0 or .in0_st.  The .inm file is for LDA+U (Hubbard U), NOT hybrid.
+        hybrid_detected = False
+        for hybrid_file_pat in ["*.in0", "*.in0_st", "*.in0_grr", "*.inc"]:
+            hybrid_files = list(Path(".").glob(hybrid_file_pat))
+            for hf in hybrid_files[:1]:
+                try:
+                    content = hf.read_text(encoding="utf-8", errors="replace")
+                    if re.search(r'\bHYBR', content, re.IGNORECASE):
+                        hybrid_detected = True
+                        break
+                except Exception:
+                    pass
+            if hybrid_detected:
+                break
+        result["is_hybrid"] = hybrid_detected
 
         # 7. Extract RKMAX from .in0 file
         in0_files = list(Path(".").glob("*.in0"))
@@ -832,10 +888,12 @@ class Wien2kBackend(Backend):
 
         return lines
 
-    def _write_parallel_options(self) -> None:
+    def _write_parallel_options(self, solver_hint: str = "") -> None:
         """
         Write parallel_options file with HPC best practices.
-        Uses atomic write for safety.
+
+        If a solver recommendation is provided (ELPA1/ELPA2/ScaLAPACK),
+        injects the appropriate USE_ELPA / ELPA_KERNEL environment variables.
         """
         content = (
             "# Auto-generated by wien2k_gen v9.8.0\n"
@@ -846,6 +904,24 @@ class Wien2kBackend(Backend):
             "setenv DELAY 0.1\n"
             "setenv SLEEPY 1\n"
         )
+        # Inject ELPA environment variables based on solver recommendation
+        solver_upper = solver_hint.upper().strip()
+        if "ELPA2" in solver_upper:
+            content += (
+                "setenv USE_ELPA 2\n"
+                "setenv ELPA_KERNEL ELPA2\n"
+            )
+        elif "ELPA1" in solver_upper or "ELPA" in solver_upper:
+            content += (
+                "setenv USE_ELPA 1\n"
+                "setenv ELPA_KERNEL ELPA1\n"
+            )
+        elif "SCALAPACK" in solver_upper:
+            content += (
+                "setenv USE_ELPA 0\n"
+                "# ScaLAPACK: ensure MKL/OpenBLAS threading is controlled\n"
+                "setenv OMP_NUM_THREADS 1\n"
+            )
         atomic_write(Path("parallel_options"), content, mode=0o644)
 
     def _write_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
@@ -908,6 +984,34 @@ class Wien2kBackend(Backend):
         omp = suggestion.get("omp_threads_per_rank", 1)
         mode = suggestion.get("mode", "mpi")
         is_soc = suggestion.get("is_soc", False)
+        solver_hint = suggestion.get("elpa_solver", "")
+
+        # ELPA environment and run_lapw flag
+        elpa_env = ""
+        elpa_parallel_opts = ""
+        elpa_run_flag = ""
+        solver_upper = solver_hint.upper().strip()
+        if "ELPA2" in solver_upper:
+            elpa_env = 'export USE_ELPA=2\nexport ELPA_KERNEL=ELPA2\n'
+            elpa_parallel_opts = 'setenv USE_ELPA 2\nsetenv ELPA_KERNEL ELPA2\n'
+            elpa_run_flag = '-elpa 2'
+        elif "ELPA1" in solver_upper or "ELPA" in solver_upper:
+            elpa_env = 'export USE_ELPA=1\nexport ELPA_KERNEL=ELPA1\n'
+            elpa_parallel_opts = 'setenv USE_ELPA 1\nsetenv ELPA_KERNEL ELPA1\n'
+            elpa_run_flag = '-elpa 1'
+        elif "SCALAPACK" in solver_upper:
+            elpa_parallel_opts = 'setenv USE_ELPA 0\n'
+
+        # Default run_lapw command with optional ELPA flag
+        run_lapw_cmd = f"run_lapw -p -NI {elpa_run_flag}".strip()
+        # BLACS grid for ELPA awareness
+        blacs_env = ""
+        if solver_hint:
+            from ..core.topology import factorize_blacs_grid
+            total_ranks = sum(topo.cores_per_node) if topo.cores_per_node else 1
+            p, q = factorize_blacs_grid(total_ranks)
+            if p > 1 and q > 1:
+                blacs_env = f'export BLACS_GRID="{p}x{q}"\n'
 
         # Optimal MKL threads
         mkl_threads = self._get_optimal_mkl_threads(omp, mode, nmat, is_soc)
@@ -921,11 +1025,13 @@ class Wien2kBackend(Backend):
         # Generate script content
         content = f"""#!/bin/bash
 # Auto-generated by wien2k_gen v9.8.0 (WIEN2k backend)
-# Mode: {mode.upper()} | OMP={omp} | MKL={mkl_threads}
+# Mode: {mode.upper()} | OMP={omp} | MKL={mkl_threads} | Solver: {solver_hint or 'default'}
 # Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}Z
 {warning_comments}
 {mpi_env}
 {ic_export}
+{elpa_env}
+{blacs_env}
 
 # WIEN2k environment
 export WIENROOT={wienroot}
@@ -963,6 +1069,7 @@ setenv MPI_REMOTE 0
 setenv TASKSET no
 setenv DELAY 0.1
 setenv SLEEPY 1
+{elpa_parallel_opts}
 PARALLEL_OPTIONS_EOF
 export PARALLEL_OPTIONS="$SCRATCH_DIR/parallel_options"
 
@@ -992,8 +1099,8 @@ _checkpoint_handler() {{
 }}
 trap _checkpoint_handler TERM USR1
 
-# User-customizable command (default: run_lapw -p -NI)
-: "${{RUN_LAPW_CMD:=run_lapw -p -NI}}"
+# User-customizable command (default: run_lapw -p -NI with solver flags)
+: "${{RUN_LAPW_CMD:={run_lapw_cmd}}}"
 
 # Execute with NUMA binding if recommended
 {numa_prefix}exec $RUN_LAPW_CMD "$@"
