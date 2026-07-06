@@ -38,6 +38,18 @@ from ..core.hardware import (
 from ..logging_config import get_logger
 from ..types import ResourceSuggestion as TypedResourceSuggestion
 
+# Lazy import to avoid circular dependency with backend_manager
+_get_current_backend_fn = None
+
+
+def _get_current_backend():
+    global _get_current_backend_fn
+    if _get_current_backend_fn is None:
+        from ..backend_manager import get_current_backend as _gcb
+        _get_current_backend_fn = _gcb
+    return _get_current_backend_fn()
+
+
 # Lazy import to avoid circular dependency with core
 
 def _get_perf_counters():
@@ -239,38 +251,52 @@ def estimate_memory_footprint_gb(
     rkmax: float = 7.0,
     atoms: int = 10,
     is_soc: bool = False,
-    is_hybrid: bool = False
+    is_hybrid: bool = False,
+    total_cores: int = 1,
+    omp_threads: int = 1,
 ) -> float:
     """
-    Estimate memory footprint in GB using empirical WIEN2k scaling laws.
+    Estimate per-rank memory footprint in GB using empirical WIEN2k scaling laws.
+
+    In ScaLAPACK/ELPA block-cyclic distribution, the Hamiltonian and eigenvector
+    matrices are distributed across MPI ranks, reducing per-rank memory by ~ranks.
+    Charge density and LAPACK work arrays may be partially replicated.
+
     Components modeled:
-    • Hamiltonian matrix: nmat² × 16 bytes (complex double)
-    • Eigenvectors: nmat × nbands × 16 bytes
-    • Charge density: empirical factor × nmat × atoms
-    • LAPACK work arrays: ~50% of Hamiltonian
-    • MPI buffers: ~10% overhead
-    • SOC multiplier: 2× for spinor wavefunctions
-    • Hybrid functional: 1.2× overhead
-    • RKMAX scaling: ~RKMAX²
-    • Safety factor: 3.0× for production stability
+    • Hamiltonian matrix:  nmat² × 16B  (complex double)         → distributed
+    • Eigenvectors:        nmat × nbands × 16B                    → distributed
+    • Charge density:      empirical factor × nmat × atoms         → replicated
+    • LAPACK work arrays:  ~50% of Hamiltonian (partially replicated)
+    • SOC multiplier:      2× for spinor wavefunctions
+    • Hybrid functional:   1.2× overhead
+    • RKMAX scaling:       ~RKMAX²
+    • Safety factor:       1.5× per-rank (down from 3× aggregate)
     """
     if nmat <= 0:
-        return 2.0  # Minimum fallback for tiny systems
-        
+        return 2.0
+
+    ranks = max(1, total_cores // max(1, omp_threads))
+
     # Base components (bytes -> GB)
     hamiltonian_gb = (nmat ** 2) * 16.0 / (1024.0 ** 3)
     eff_bands = nbands if nbands else (nmat // 2)
     eigenvector_gb = nmat * eff_bands * 16.0 / (1024.0 ** 3)
-    charge_density_gb = nmat * 0.001 * atoms  # Empirical scaling
-    lapack_work_gb = 0.5 * hamiltonian_gb  # Conservative estimate
+    charge_density_gb = nmat * 0.001 * atoms  # Replicated per rank
+    lapack_work_gb = 0.5 * hamiltonian_gb      # Partially replicated
+
+    # Distribute matrix memory across MPI ranks
+    # ScaLAPACK block-cyclic: ~nmat²/(p×q) per rank. Use ranks for estimate.
+    distributed_share = max(1.0, float(ranks))
+    distributed_gb = (hamiltonian_gb + eigenvector_gb) / distributed_share
+    replicated_gb = (charge_density_gb + 0.2 * lapack_work_gb)  # 20% replicated
 
     # Multipliers
     rkmax_factor = max(1.0, (rkmax / 7.0) ** 2)
     soc_factor = 2.0 if is_soc else 1.0
     hybrid_factor = 1.2 if is_hybrid else 1.0
-    safety_factor = 3.0  # Critical for production stability
+    safety_factor = 1.5  # Per-rank safety (was 3.0× for aggregate estimate)
 
-    total_gb = (hamiltonian_gb + eigenvector_gb + charge_density_gb + lapack_work_gb) * \
+    total_gb = (distributed_gb + replicated_gb) * \
                rkmax_factor * soc_factor * hybrid_factor * safety_factor
 
     return round(total_gb, 2)
@@ -612,7 +638,10 @@ def suggest_optimal_resources(
         total_cores_available = user_max_cores
 
     # Estimate memory requirements
-    estimated_mem_gb = estimate_memory_footprint_gb(nmat, nbands, rkmax, atoms, is_soc, is_hybrid)
+    estimated_mem_gb = estimate_memory_footprint_gb(
+        nmat, nbands, rkmax, atoms, is_soc, is_hybrid,
+        total_cores=total_cores_available,
+    )
 
     # Roofline-based bandwidth cap for k-point parallelism
     max_kp_cores_bw = estimate_max_kp_cores_roofline(
