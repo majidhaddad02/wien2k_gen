@@ -1,12 +1,13 @@
 """
-Submit Tab – Job Submission & SLURM Script Management.
+Submit Tab – Job Submission & Scheduler Script Management.
 Provides a reactive interface for configuring and submitting parallel jobs
-to HPC schedulers (primarily SLURM). Integrates with the `submit` module
-to generate, validate, and dispatch SBATCH scripts.
+to HPC schedulers (SLURM, PBS, LSF). Integrates with the `submit` module
+to generate, validate, and dispatch scripts.
 
 Key Architecture Features:
-• Modern Textual  @on event routing & @work non-blocking execution
-• Reactive form fields updating the SBATCH script preview in real-time
+• Modern Textual @on event routing & @work non-blocking execution
+• Reactive form fields updating the script preview in real-time
+• Multi-scheduler support via SUBMIT_PROVIDERS registry with dropdown selection
 • Structured error boundaries with machine-readable fallback & Rich UI hints
 • Job status tracking, dependency management, and atomic export
 • Comprehensive validation of time formats, memory units, and core allocation
@@ -27,13 +28,12 @@ from typing import Dict, Any, List, Optional, Union
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, Container
 from textual.widgets import (
-    Button, Input, Label, Static, Switch, Rule, TextArea, ProgressBar
+    Button, Input, Label, Static, Switch, Rule, TextArea, ProgressBar, Select
 )
 from textual.reactive import reactive
 from textual.message import Message
 from textual import on, work
 
-# Project imports (aligned with refactored architecture)
 from ...core.scheduler import detect as detect_topology
 from ...submit.slurm import (
     submit_slurm_job,
@@ -41,6 +41,7 @@ from ...submit.slurm import (
     SlurmJobSpec,
     SlurmDirectives,
 )
+from ...submit import SUBMIT_PROVIDERS
 from ...utils.validation import backup_machines
 from ...exceptions import Wien2kGenError, format_error_for_ui
 from ...logging_config import get_logger
@@ -75,7 +76,7 @@ class JobFailedMessage(Message, bubble=True):
 class SubmitTab(Container):
     """
     Tab for job submission configuration, script generation,
-    and execution tracking.
+    and execution tracking with multi-scheduler support.
     """
     DEFAULT_CSS = """
     SubmitTab {
@@ -149,7 +150,7 @@ class SubmitTab(Container):
     # Reactive State
     # ===================================================================
     nodes: int = reactive(1)
-    ntasks: int = reactive(0)  # 0 means auto-calculate
+    ntasks: int = reactive(0)
     cpus_per_task: int = reactive(1)
     mem_per_node: str = reactive("4G")
     walltime: str = reactive("24:00:00")
@@ -158,17 +159,27 @@ class SubmitTab(Container):
     dependency: str = reactive("")
     account: str = reactive("")
     job_name: str = reactive("wien2k_job")
+    scheduler: str = reactive("slurm")
 
-    # Advanced options
     disable_ssh: bool = reactive(True)
     enable_preemption: bool = reactive(True)
     preemption_grace: int = reactive(60)
     use_local_scratch: bool = reactive(True)
 
-    # Status & Output
     is_submitting: bool = reactive(False)
     script_content: str = reactive("")
     validation_errors: List[str] = reactive([])
+
+    _app_topo = None
+    _app_backend: str = "wien2k"
+
+    _BACKEND_COMMANDS = {
+        "wien2k": "run_lapw -p",
+        "vasp": "mpirun -np N vasp_std",
+        "qe": "mpirun -np N pw.x -i input.in",
+        "quantum_espresso": "mpirun -np N pw.x -i input.in",
+        "cp2k": "mpirun -np N cp2k.popt input.inp",
+    }
 
     # ===================================================================
     # Lifecycle & Composition
@@ -177,16 +188,28 @@ class SubmitTab(Container):
     def on_mount(self) -> None:
         """Initialize with defaults and generate initial script preview."""
         self.log.info("SubmitTab mounted. Initializing submission parameters...")
+        app = self.app
+        if hasattr(app, "topo") and app.topo is not None:
+            self._app_topo = app.topo
+        if hasattr(app, "selected_backend"):
+            self._app_backend = app.selected_backend
         self.call_later(self._update_script_preview)
 
     def compose(self) -> ComposeResult:
         """Build the submission layout."""
-        yield Static("Job Submission & SLURM Configuration", id="submit_header")
+        yield Static("Job Submission & Scheduler Configuration", id="submit_header")
 
         with Container(id="params_grid"):
             yield Static("Resource Parameters", classes="title")
-            
-            # Row 1: Nodes & Tasks
+
+            with Horizontal(classes="param-row"):
+                yield Label("Scheduler:", classes="param-label")
+                yield Select(
+                    [("SLURM", "slurm"), ("PBS/Torque", "pbs"), ("LSF", "lsf")],
+                    id="sel_scheduler",
+                    value="slurm",
+                )
+
             with Horizontal(classes="param-row"):
                 yield Label("Nodes:", classes="param-label")
                 yield ValidatedInput(id="inp_nodes", value_type="positive_int", value="1")
@@ -194,7 +217,6 @@ class SubmitTab(Container):
                 yield Label("Tasks (-n):", classes="param-label")
                 yield ValidatedInput(id="inp_ntasks", value_type="non_zero_int", value="0", placeholder="0=Auto")
 
-            # Row 2: Threads & Memory
             with Horizontal(classes="param-row"):
                 yield Label("CPUs/Task:", classes="param-label")
                 yield ValidatedInput(id="inp_cpt", value_type="positive_int", value="1")
@@ -202,7 +224,6 @@ class SubmitTab(Container):
                 yield Label("Memory:", classes="param-label")
                 yield ValidatedInput(id="inp_mem", value_type="str", value="4G", placeholder="e.g., 64G")
 
-            # Row 3: Time & Partition
             with Horizontal(classes="param-row"):
                 yield Label("Time:", classes="param-label")
                 yield ValidatedInput(id="inp_time", value_type="str", value="24:00:00", placeholder="HH:MM:SS")
@@ -210,7 +231,6 @@ class SubmitTab(Container):
                 yield Label("Partition:", classes="param-label")
                 yield ValidatedInput(id="inp_part", value_type="str", value="", placeholder="Default")
 
-            # Row 4: Name & Dependency
             with Horizontal(classes="param-row"):
                 yield Label("Job Name:", classes="param-label")
                 yield ValidatedInput(id="inp_name", value_type="str", value="wien2k_job")
@@ -218,7 +238,6 @@ class SubmitTab(Container):
                 yield Label("Dependency:", classes="param-label")
                 yield ValidatedInput(id="inp_dep", value_type="str", value="", placeholder="afterok:123")
 
-            # Toggles
             with Horizontal(classes="param-row"):
                 yield Label("Handle Preemption:")
                 yield Switch(id="sw_preemption", value=True)
@@ -227,7 +246,7 @@ class SubmitTab(Container):
                 yield Switch(id="sw_scratch", value=True)
 
         with Container(id="preview_panel"):
-            yield Static("SBATCH Script Preview", classes="title")
+            yield Static("Scheduler Script Preview", classes="title")
             yield TextArea(id="script_preview", read_only=True, language="bash", soft_wrap=True)
 
         with Container(id="actions_panel"):
@@ -259,9 +278,16 @@ class SubmitTab(Container):
     def on_export_pressed(self) -> None:
         self._export_script()
 
+    @on(Select.Changed, "#sel_scheduler")
+    def on_scheduler_changed(self, event: Select.Changed) -> None:
+        """Update scheduler and refresh preview."""
+        self.scheduler = event.value
+        if not self.is_submitting:
+            self.call_later(self._update_script_preview)
+
     @on(Input.Changed)
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Trigger preview update on input change (debounced in production)."""
+        """Trigger preview update on input change."""
         if not self.is_submitting:
             self.call_later(self._update_script_preview)
 
@@ -274,6 +300,24 @@ class SubmitTab(Container):
     # ===================================================================
     # Core Logic
     # ===================================================================
+
+    def _get_app_topo(self):
+        """Read topology from app state, falling back to fresh detection."""
+        app = self.app
+        if hasattr(app, "topo") and app.topo is not None:
+            return app.topo
+        if hasattr(app, "topology") and app.topology is not None:
+            return app.topology
+        return detect_topology()
+
+    def _get_exec_command(self) -> str:
+        """Generate correct execution command based on app-selected backend."""
+        app = self.app
+        if hasattr(app, "selected_backend"):
+            self._app_backend = app.selected_backend
+        if hasattr(app, "exec_command") and app.exec_command:
+            return app.exec_command
+        return self._BACKEND_COMMANDS.get(self._app_backend, "run_lapw -p")
 
     def _sync_inputs(self) -> Dict[str, Any]:
         """Read values from UI widgets and sanitize."""
@@ -288,22 +332,28 @@ class SubmitTab(Container):
             "job_name": self.query_one("#inp_name").value or "wien2k_job",
             "preemption": self.query_one("#sw_preemption").value,
             "scratch": self.query_one("#sw_scratch").value,
+            "scheduler": self.scheduler,
         }
 
     def _validate_params(self, params: Dict[str, Any]) -> List[str]:
         """Validate parameters before generation/submission."""
         errors = []
-        
-        if not re.match(r'^(\d+-)?(\d{1,2}:)?\d{2}:\d{2}$', params["walltime"]):
-            errors.append("Invalid time format. Use HH:MM:SS or D-HH:MM:SS.")
+        sched = params.get("scheduler", "slurm")
+
+        if sched in ("slurm", "pbs"):
+            if not re.match(r'^(\d+-)?(\d{1,2}:)?\d{2}:\d{2}$', params["walltime"]):
+                errors.append("Invalid time format. Use HH:MM:SS or D-HH:MM:SS.")
+        else:
+            if not re.match(r'^\d{1,3}:\d{2}$', params["walltime"]):
+                errors.append("Invalid time format. Use HH:MM.")
             
-        if not re.match(r'^\d+[KMGkmgTt]?$', params["mem_per_node"]):
+        if not re.match(r'^\d+[KMGkmgTtBb]?$', params["mem_per_node"]):
             errors.append("Invalid memory format. Use e.g., 64G or 4000M.")
             
         if params["ntasks"] > 0:
             total_requested = params["ntasks"] * params["cpus_per_task"]
             if params["nodes"] > 0 and total_requested < params["nodes"]:
-                errors.append(f"Tasks × CPUs ({total_requested}) < Nodes ({params['nodes']}). Invalid allocation.")
+                errors.append(f"Tasks x CPUs ({total_requested}) < Nodes ({params['nodes']}). Invalid allocation.")
 
         return errors
 
@@ -320,33 +370,55 @@ class SubmitTab(Container):
 
             self.validation_errors = []
 
-            # Auto-calculate ntasks if 0
             ntasks = params["ntasks"]
             if ntasks == 0:
-                topo = detect_topology()
+                topo = self._get_app_topo()
                 ntasks = topo.total_cores or (params["nodes"] * params["cpus_per_task"])
 
-            directives = SlurmDirectives(
-                job_name=params["job_name"],
-                partition=params["partition"],
-                nodes=params["nodes"],
-                ntasks=ntasks,
-                cpus_per_task=params["cpus_per_task"],
-                mem_per_node=params["mem_per_node"],
-                time=params["walltime"],
-                dependency=params["dependency"],
-                preemption_grace_sec=self.preemption_grace if params["preemption"] else 0
-            )
-            
-            spec = SlurmJobSpec(
-                topo=detect_topology(),
-                exec_command="run_lapw -p -NI",
-                directives=directives,
-            )
-            
-            self.script_content = generate_sbatch_script(spec)
+            sched = params.get("scheduler", "slurm")
+
+            if sched == "slurm":
+                directives = SlurmDirectives(
+                    job_name=params["job_name"],
+                    partition=params["partition"],
+                    nodes=params["nodes"],
+                    ntasks=ntasks,
+                    cpus_per_task=params["cpus_per_task"],
+                    mem_per_node=params["mem_per_node"],
+                    time=params["walltime"],
+                    dependency=params["dependency"] or None,
+                    preemption_grace_sec=self.preemption_grace if params["preemption"] else None
+                )
+
+                topo = self._get_app_topo()
+                spec = SlurmJobSpec(
+                    topo=topo,
+                    exec_command=self._get_exec_command(),
+                    directives=directives,
+                )
+
+                self.script_content = generate_sbatch_script(spec)
+            else:
+                provider_cls = SUBMIT_PROVIDERS.get(sched)
+                if provider_cls:
+                    provider = provider_cls()
+                    self.script_content = provider.generate_submit_script(
+                        topo=self._get_app_topo(),
+                        exec_command=self._get_exec_command(),
+                        directives={
+                            "job_name": params["job_name"],
+                            "queue": params["partition"],
+                            "nodes": params["nodes"],
+                            "walltime": params["walltime"],
+                            "mem" if sched == "pbs" else "memory": params["mem_per_node"],
+                            "nprocs": ntasks,
+                        },
+                    )
+                else:
+                    self.script_content = f"# Scheduler '{sched}' provider not available.\n"
+
             self.query_one("#script_preview", TextArea).text = self.script_content
-            self.query_one("#status_panel", Static).update("[green]✓ Script generated successfully.[/]")
+            self.query_one("#status_panel", Static).update(f"[green]{'SBATCH' if sched == 'slurm' else ('#PBS' if sched == 'pbs' else '#BSUB')} script generated successfully.[/]")
 
         except Wien2kGenError as e:
             self.query_one("#status_panel", Static).update(format_error_for_ui(e))
@@ -372,32 +444,55 @@ class SubmitTab(Container):
             return
 
         self.call_later(lambda: self._set_submitting_state(True))
+        sched = params.get("scheduler", "slurm")
 
         try:
             ntasks = params["ntasks"]
             if ntasks == 0:
-                topo = detect_topology()
+                topo = self._get_app_topo()
                 ntasks = topo.total_cores or (params["nodes"] * params["cpus_per_task"])
 
-            directives = SlurmDirectives(
-                job_name=params["job_name"],
-                partition=params["partition"],
-                nodes=params["nodes"],
-                ntasks=ntasks,
-                cpus_per_task=params["cpus_per_task"],
-                mem_per_node=params["mem_per_node"],
-                time=params["walltime"],
-                dependency=params["dependency"],
-                preemption_grace_sec=self.preemption_grace if params["preemption"] else 0
-            )
-            
-            spec = SlurmJobSpec(
-                topo=detect_topology(),
-                exec_command="run_lapw -p -NI",
-                directives=directives,
-            )
+            exec_cmd = self._get_exec_command()
 
-            result = submit_slurm_job(spec, dry_run=dry_run)
+            if sched == "slurm":
+                directives = SlurmDirectives(
+                    job_name=params["job_name"],
+                    partition=params["partition"],
+                    nodes=params["nodes"],
+                    ntasks=ntasks,
+                    cpus_per_task=params["cpus_per_task"],
+                    mem_per_node=params["mem_per_node"],
+                    time=params["walltime"],
+                    dependency=params["dependency"] or None,
+                    preemption_grace_sec=self.preemption_grace if params["preemption"] else None,
+                )
+                
+                spec = SlurmJobSpec(
+                    topo=self._get_app_topo(),
+                    exec_command=exec_cmd,
+                    directives=directives,
+                )
+
+                result = submit_slurm_job(spec, dry_run=dry_run)
+            else:
+                provider_cls = SUBMIT_PROVIDERS.get(sched)
+                if not provider_cls:
+                    self.call_later(lambda: self.notify(f"Scheduler '{sched}' not available.", severity="error"))
+                    return
+                provider = provider_cls()
+                result = provider.submit(
+                    topo=self._get_app_topo(),
+                    exec_command=exec_cmd,
+                    directives={
+                        "job_name": params["job_name"],
+                        "queue": params["partition"],
+                        "nodes": params["nodes"],
+                        "walltime": params["walltime"],
+                        "mem" if sched == "pbs" else "memory": params["mem_per_node"],
+                        "nprocs": ntasks,
+                    },
+                    dry_run=dry_run,
+                )
 
             if result.get("success"):
                 self.call_later(lambda: self.post_message(JobSubmittedMessage(
@@ -432,7 +527,7 @@ class SubmitTab(Container):
     def on_job_submitted_message(self, msg: JobSubmittedMessage) -> None:
         """Handle successful submission."""
         self.notify(f"Job {msg.job_id} queued successfully.", severity="success")
-        self.query_one("#status_panel", Static).update(f"[bold green]✓ Job {msg.job_id} submitted![/]")
+        self.query_one("#status_panel", Static).update(f"[bold green]Job {msg.job_id} submitted![/]")
         
         if Path(".machines").exists():
             backup_machines(".machines")
@@ -440,7 +535,7 @@ class SubmitTab(Container):
     def on_job_failed_message(self, msg: JobFailedMessage) -> None:
         """Handle submission failure."""
         self.notify(f"Submission failed: {msg.error}", severity="error")
-        self.query_one("#status_panel", Static).update(f"[red]✗ Submission Failed: {msg.error}[/]")
+        self.query_one("#status_panel", Static).update(f"[red]Submission Failed: {msg.error}[/]")
 
     # ===================================================================
     # Helpers

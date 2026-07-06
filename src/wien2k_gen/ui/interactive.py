@@ -35,6 +35,7 @@ from ..core.scheduler import detect
 from ..core.pipeline import run_pipeline
 from ..optimizer.advisor import suggest_optimal_resources
 from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
+from ..submit import SUBMIT_PROVIDERS
 from ..utils.diagnostic import run_diagnostics
 from ..exceptions import Wien2kGenError, format_error_for_ui
 from ..logging_config import get_logger
@@ -42,9 +43,22 @@ from ..logging_config import get_logger
 # Local UI imports
 from .widgets import LogPanel, ResourceSummaryTable
 from .tabs import ResourcesTab, SettingsTab, SubmitTab
+from .tabs.settings_tab import SettingsChangedMessage
 from .dialogs import HelpDialog, ProfileDialog, ReportDialog
 
 logger = get_logger(__name__)
+
+
+def backend_to_exec_command(backend: str) -> str:
+    """Map backend code to its default execution command."""
+    commands = {
+        "wien2k": "run_lapw -p",
+        "vasp": "mpirun -np N vasp_std",
+        "qe": "mpirun -np N pw.x -i input.in",
+        "quantum_espresso": "mpirun -np N pw.x -i input.in",
+        "cp2k": "mpirun -np N cp2k.popt input.inp",
+    }
+    return commands.get(backend.lower(), "run_lapw -p")
 
 
 class Wien2kGenApp(App):
@@ -71,6 +85,7 @@ class Wien2kGenApp(App):
     # Reactive State (Triggers automatic UI updates)
     # =========================================================================
     topology: Optional[Topology] = reactive(None)
+    topo: Optional[Topology] = None
     config_content: str = reactive("")
     is_running: bool = reactive(False)
     progress_value: float = reactive(0.0)
@@ -79,6 +94,9 @@ class Wien2kGenApp(App):
     last_warnings: List[str] = reactive([])
     last_errors: List[str] = reactive([])
     current_tab: str = reactive("resources")
+    selected_scheduler: str = reactive("slurm")
+    selected_backend: str = reactive("wien2k")
+    exec_command: str = reactive("run_lapw -p")
 
     # =========================================================================
     # App Lifecycle & Composition
@@ -146,6 +164,13 @@ class Wien2kGenApp(App):
         """Sync reactive state with active tab."""
         self.current_tab = event.tab.id
 
+    def on_settings_changed_message(self, msg: SettingsChangedMessage) -> None:
+        """Update app state when backend changes in SettingsTab."""
+        config = msg.config
+        if "backend" in config:
+            self.selected_backend = config["backend"]
+            self.exec_command = backend_to_exec_command(config["backend"])
+
     @on(Button.Pressed, "#generate_btn")
     def on_generate_pressed(self) -> None:
         self.action_generate_config()
@@ -212,8 +237,8 @@ class Wien2kGenApp(App):
         try:
             topo = detect(max_cores=None, force_refresh=True)
             
-            # Thread-safe UI update
             self.call_later(lambda: setattr(self, "topology", topo))
+            self.call_later(lambda: setattr(self, "topo", topo))
             self.call_later(lambda: setattr(self, "status_message", f"Topology: {topo.total_cores} cores | {topo.env_type}"))
             logger.info(f"Topology detected: {topo}")
         except Exception as e:
@@ -233,6 +258,7 @@ class Wien2kGenApp(App):
             while not self.topology:
                 time.sleep(0.2)
 
+            # NOTE: progress_value is a visual indicator; actual progress is tracked by PipelineResult
             self.call_later(lambda: setattr(self, "progress_value", 0.2))
             suggestion = suggest_optimal_resources(self.topology)
             self.call_later(lambda: setattr(self, "progress_value", 0.5))
@@ -275,30 +301,51 @@ class Wien2kGenApp(App):
 
     @work(exclusive=True, thread=True)
     def _run_submission_worker(self) -> None:
-        """Submit job to SLURM/scheduler asynchronously."""
+        """Submit job to scheduler asynchronously."""
         self.call_later(lambda: setattr(self, "is_running", True))
         self.call_later(lambda: setattr(self, "progress_value", 0.0))
         self.call_later(lambda: setattr(self, "status_message", "Submitting job..."))
 
         try:
-            if not self.topology:
+            topo = self.topo or self.topology
+            if not topo:
                 raise ValueError("Topology not detected. Cannot submit.")
 
-            spec = SlurmJobSpec(
-                topo=self.topology,
-                exec_command="run_lapw -p",
-                directives=SlurmDirectives(
-                    job_name="wien2k_gen_job",
-                    partition="",
-                    nodes=1,
-                    ntasks=self.topology.total_cores,
-                    cpus_per_task=1,
-                    time="24:00:00",
-                ),
-                working_dir=Path.cwd()
-            )
+            sched = self.selected_scheduler
+            exec_cmd = self.exec_command or "run_lapw -p"
+            if sched == "slurm":
+                spec = SlurmJobSpec(
+                    topo=topo,
+                    exec_command=exec_cmd,
+                    directives=SlurmDirectives(
+                        job_name="wien2k_gen_job",
+                        partition="",
+                        nodes=1,
+                        ntasks=topo.total_cores,
+                        cpus_per_task=1,
+                        time="24:00:00",
+                    ),
+                    working_dir=Path.cwd()
+                )
 
-            result = submit_slurm_job(spec=spec, dry_run=False)
+                result = submit_slurm_job(spec=spec, dry_run=False)
+            else:
+                provider_cls = SUBMIT_PROVIDERS.get(sched)
+                if not provider_cls:
+                    raise ValueError(f"Scheduler provider '{sched}' not available.")
+                provider = provider_cls()
+                result = provider.submit(
+                    topo=topo,
+                    exec_command=exec_cmd,
+                    directives={
+                        "job_name": "wien2k_gen_job",
+                        "nodes": 1,
+                        "walltime": "24:00:00",
+                        "nprocs": topo.total_cores,
+                    },
+                    dry_run=False,
+                )
+
             self.call_later(lambda: setattr(self, "progress_value", 1.0))
 
             if result.get("success"):

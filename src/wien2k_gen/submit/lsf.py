@@ -14,7 +14,7 @@ Key Features:
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, List, Optional, TypedDict, Union
+from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass, field
 import os
 import re
@@ -88,27 +88,35 @@ class SubmitProvider(ABC):
 # LSF-Specific Type Definitions
 # =============================================================================
 
-class LSFDirectives(TypedDict, total=False):
+@dataclass
+class LSFDirectives:
     """Core LSF job directives with type-safe defaults."""
-    job_name: str
-    queue: str
-    project: str
-    nodes: int
-    nprocs: int
-    walltime: str           # e.g., "24:00"  (HH:MM)
-    memory: str             # e.g., "64G" or "64000" (MB)
-    span_hosts: str         # e.g., "span[hosts=1]" or "span[ptile=16]"
-    rusage_mem: str         # e.g., "rusage[mem=64G]"
-    output: str
-    error: str
-    job_array: str          # e.g., "1-100"
-    email: str
-    email_when: str         # e.g., "began,end"
-    exclusive: bool
-    gpu: str                # e.g., "num=1:mode=shared:j_exclusive=no"
-    jsrun: bool             # IBM Spectrum LSF jsrun integration
-    pre_exec: str
-    post_exec: str
+    job_name: Optional[str] = None
+    queue: Optional[str] = None
+    project: Optional[str] = None
+    nodes: Optional[int] = None
+    nprocs: Optional[int] = None
+    walltime: Optional[str] = None           # e.g., "24:00"  (HH:MM)
+    memory: Optional[str] = None             # e.g., "64G" or "64000" (MB)
+    span_hosts: Optional[str] = None         # e.g., "span[hosts=1]" or "span[ptile=16]"
+    rusage_mem: Optional[str] = None         # e.g., "rusage[mem=64G]"
+    output: Optional[str] = None
+    error: Optional[str] = None
+    job_array: Optional[str] = None          # e.g., "1-100"
+    email: Optional[str] = None
+    email_when: Optional[str] = None         # e.g., "began,end"
+    exclusive: Optional[bool] = None
+    gpu: Optional[str] = None                # e.g., "num=1:mode=shared:j_exclusive=no"
+    jsrun: Optional[bool] = None             # IBM Spectrum LSF jsrun integration
+    pre_exec: Optional[str] = None
+    post_exec: Optional[str] = None
+
+    def to_dict(self) -> Dict:
+        result = {}
+        for key, val in self.__dict__.items():
+            if val is not None:
+                result[key] = val
+        return result
 
 
 @dataclass
@@ -119,7 +127,7 @@ class LSFJobSpec:
     """
     topo: Topology
     exec_command: str
-    directives: LSFDirectives = field(default_factory=dict)
+    directives: LSFDirectives = field(default_factory=LSFDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
     modules_to_load: List[str] = field(default_factory=list)
     environment_vars: Dict[str, str] = field(default_factory=dict)
@@ -152,13 +160,13 @@ def _check_lsf_limits(spec: LSFJobSpec) -> List[str]:
     warnings_list = []
     directives = spec.directives
 
-    if directives.get("walltime") and not _validate_lsf_time(directives["walltime"]):
-        warnings_list.append(f"Invalid walltime format: {directives['walltime']}. Expected HH:MM.")
+    if directives.walltime and not _validate_lsf_time(directives.walltime):
+        warnings_list.append(f"Invalid walltime format: {directives.walltime}. Expected HH:MM.")
 
-    if directives.get("memory") and not _validate_lsf_memory(directives["memory"]):
-        warnings_list.append(f"Invalid memory format: {directives['memory']}. Expected e.g., 64G.")
+    if directives.memory and not _validate_lsf_memory(directives.memory):
+        warnings_list.append(f"Invalid memory format: {directives.memory}. Expected e.g., 64G.")
 
-    requested_cores = directives.get("nprocs", 1)
+    requested_cores = directives.nprocs or 1
     if spec.topo.total_cores > 0 and requested_cores > spec.topo.total_cores:
         warnings_list.append(
             f"Requested cores ({requested_cores}) exceed available topology cores ({spec.topo.total_cores})."
@@ -206,7 +214,7 @@ class LSFSubmitProvider(SubmitProvider):
         spec = LSFJobSpec(
             topo=topo,
             exec_command=exec_command,
-            directives=directives or {},
+            directives=LSFDirectives(**(directives or {})),
             modules_to_load=modules_to_load or [],
             environment_vars=environment_vars or {},
             working_dir=working_dir or Path.cwd(),
@@ -235,75 +243,61 @@ class LSFSubmitProvider(SubmitProvider):
         lines = []
         directives = spec.directives
 
-        # Job name
-        job_name = directives.get("job_name", "wien2k_gen_job")
-        array_spec = directives.get("job_array", "")
+        job_name = directives.job_name or "wien2k_gen_job"
+        array_spec = directives.job_array or ""
         if array_spec:
             lines.append(f'#BSUB -J "{job_name}[{array_spec}]"')
         else:
             lines.append(f'#BSUB -J "{job_name}"')
 
-        # Queue
-        if directives.get("queue"):
-            lines.append(f"#BSUB -q {directives['queue']}")
+        if directives.queue:
+            lines.append(f"#BSUB -q {directives.queue}")
 
-        # Project / Account
-        if directives.get("project"):
-            lines.append(f"#BSUB -P {directives['project']}")
+        if directives.project:
+            lines.append(f"#BSUB -P {directives.project}")
 
-        # Number of processors
-        nprocs = directives.get("nprocs", spec.topo.total_cores or 1)
+        nprocs = directives.nprocs or (spec.topo.total_cores or 1)
         lines.append(f"#BSUB -n {nprocs}")
 
-        # Walltime (LSF format: HH:MM)
-        walltime = directives.get("walltime", "24:00")
+        walltime = directives.walltime or "24:00"
         lines.append(f"#BSUB -W {walltime}")
 
-        # Memory limit
-        memory = directives.get("memory", "")
+        memory = directives.memory or ""
         if memory:
             lines.append(f"#BSUB -M {memory}")
 
-        # Resource requirement strings
-        rusage_mem = directives.get("rusage_mem", "")
+        rusage_mem = directives.rusage_mem or ""
         if rusage_mem:
             lines.append(f'#BSUB -R "rusage[mem={rusage_mem}]"')
 
-        span_hosts = directives.get("span_hosts", f"span[hosts={directives.get('nodes', 1)}]")
+        span_hosts = directives.span_hosts or f"span[hosts={directives.nodes or 1}]"
         if span_hosts:
             lines.append(f'#BSUB -R "{span_hosts}"')
 
-        # Exclusive node access
-        if directives.get("exclusive"):
+        if directives.exclusive:
             lines.append("#BSUB -x")
 
-        # GPU resource
-        if directives.get("gpu"):
-            lines.append(f'#BSUB -gpu "{directives["gpu"]}"')
+        if directives.gpu:
+            lines.append(f'#BSUB -gpu "{directives.gpu}"')
 
-        # jsrun integration for IBM Spectrum LSF
-        if directives.get("jsrun"):
+        if directives.jsrun:
             lines.append("#BSUB -o jsrun")
 
-        # Output and error files
-        output = directives.get("output", "lsf-%J.out")
-        error = directives.get("error", "lsf-%J.err")
+        output = directives.output or "lsf-%J.out"
+        error = directives.error or "lsf-%J.err"
         lines.append(f"#BSUB -o {output}")
         lines.append(f"#BSUB -e {error}")
 
-        # Email notifications
-        if directives.get("email"):
-            lines.append(f"#BSUB -u {directives['email']}")
-        if directives.get("email_when"):
-            lines.append(f"#BSUB -N -B -N {directives['email_when']}")
+        if directives.email:
+            lines.append(f"#BSUB -u {directives.email}")
+        if directives.email_when:
+            lines.append(f"#BSUB -N -B -N {directives.email_when}")
 
-        # Pre-execution and post-execution commands
-        if directives.get("pre_exec"):
-            lines.append(f"#BSUB -E \"{directives['pre_exec']}\"")
-        if directives.get("post_exec"):
-            lines.append(f"#BSUB -Ep \"{directives['post_exec']}\"")
+        if directives.pre_exec:
+            lines.append(f"#BSUB -E \"{directives.pre_exec}\"")
+        if directives.post_exec:
+            lines.append(f"#BSUB -Ep \"{directives.post_exec}\"")
 
-        # Resource limit for cores per host
         cores_per_node = spec.topo.cores_per_node[0] if spec.topo.cores_per_node else nprocs
         lines.append(f'#BSUB -R "affinity[core({cores_per_node})]"')
 
@@ -313,7 +307,6 @@ class LSFSubmitProvider(SubmitProvider):
         """Construct the main execution body with environment setup and command invocation."""
         lines = []
 
-        # Environment detection
         lines.append("# LSF Environment & Host Detection")
         lines.append('echo "[lsf_submit] Job ID: $LSB_JOBID"')
         lines.append('echo "[lsf_submit] Hosts: $LSB_MCPU_HOSTS"')
@@ -321,37 +314,30 @@ class LSFSubmitProvider(SubmitProvider):
         lines.append('echo "[lsf_submit] Hostname: $(hostname)"')
         lines.append("")
 
-        # Module loading
         if spec.modules_to_load:
             lines.append("# Load required modules")
             lines.append(f"module load {' '.join(spec.modules_to_load)}")
             lines.append("")
 
-        # Environment variables
         if spec.environment_vars:
             lines.append("# Set job environment variables")
             for key, value in spec.environment_vars.items():
                 lines.append(f'export {key}="{value}"')
             lines.append("")
 
-        # Working directory
         lines.append(f"cd {spec.working_dir} || exit 1")
         lines.append('echo "[lsf_submit] Working directory: $(pwd)"')
         lines.append("")
 
-        # Scratch directory setup
         if spec.scratch_enabled:
             lines.extend(self._inject_scratch_setup())
 
-        # Preemption handler
         lines.extend(self._inject_preemption_handler(spec))
         lines.append("")
 
-        # jsrun launch command override
-        if spec.directives.get("jsrun"):
+        if spec.directives.jsrun:
             lines.extend(self._inject_jsrun_command(spec))
         else:
-            # Standard MPI execution
             lines.append("# Execute calculation")
             lines.append(f'exec {spec.exec_command} "$@"')
             lines.append("EXIT_CODE=$?")
@@ -412,8 +398,8 @@ class LSFSubmitProvider(SubmitProvider):
 
     def _inject_jsrun_command(self, spec: LSFJobSpec) -> List[str]:
         """Generate jsrun-based launch command for IBM Spectrum LSF on POWER."""
-        nprocs = spec.directives.get("nprocs", 1)
-        nodes = spec.directives.get("nodes", 1)
+        nprocs = spec.directives.nprocs or 1
+        nodes = spec.directives.nodes or 1
         cpus_per_rs = max(1, nprocs // nodes) if nodes else nprocs
 
         return [
@@ -455,7 +441,7 @@ class LSFSubmitProvider(SubmitProvider):
         spec = LSFJobSpec(
             topo=topo,
             exec_command=exec_command,
-            directives=directives or {},
+            directives=LSFDirectives(**(directives or {})),
             working_dir=kwargs.get("working_dir", Path.cwd()),
             modules_to_load=kwargs.get("modules_to_load", []),
             environment_vars=kwargs.get("environment_vars", {}),
@@ -466,31 +452,27 @@ class LSFSubmitProvider(SubmitProvider):
         result: Dict[str, Any] = {
             "success": False,
             "job_id": None,
-            "script_path": script_path or Path(f"lsf_submit_{spec.directives.get('job_name', 'job')}.sh"),
+            "script_path": script_path or Path(f"lsf_submit_{spec.directives.job_name or 'job'}.sh"),
             "dry_run_content": None,
             "errors": [],
             "warnings": [],
         }
 
-        # Validation
         if spec.validate_constraints:
             result["warnings"].extend(_check_lsf_limits(spec))
 
-        # Generate script
         try:
             script_content = self._build_lsf_script(spec)
         except Exception as exc:
             result["errors"].append(f"Script generation failed: {exc}")
             return result
 
-        # Dry-run mode
         if dry_run:
             result["dry_run_content"] = script_content
             result["success"] = True
             logger.info("LSF script generated in dry-run mode. Review before submission.")
             return result
 
-        # Backup existing script
         if kwargs.get("backup", True) and result["script_path"].exists():
             try:
                 backup_path = result["script_path"].with_suffix(".sh.bak")
@@ -499,7 +481,6 @@ class LSFSubmitProvider(SubmitProvider):
             except Exception as exc:
                 logger.warning(f"Backup failed: {exc}")
 
-        # Write script
         try:
             result["script_path"].write_text(script_content, encoding="utf-8")
             result["script_path"].chmod(0o755)
@@ -508,7 +489,6 @@ class LSFSubmitProvider(SubmitProvider):
             result["errors"].append(f"Failed to write script: {exc}")
             return result
 
-        # Submit via bsub
         try:
             logger.info("Submitting job via bsub...")
             proc = subprocess.run(

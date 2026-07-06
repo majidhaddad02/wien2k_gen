@@ -13,7 +13,7 @@ Key Features:
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any, List, Optional, TypedDict
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 import os
 import re
@@ -33,26 +33,34 @@ logger = get_logger(__name__)
 # PBS-Specific Type Definitions
 # =============================================================================
 
-class PBSDirectives(TypedDict, total=False):
+@dataclass
+class PBSDirectives:
     """Core PBS job directives with type-safe defaults."""
-    job_name: str
-    queue: str
-    account: str
-    nodes: int
-    ppn: int               # processors per node
-    ncpus: int
-    walltime: str           # e.g., "24:00:00"
-    mem: str                # e.g., "64gb"
-    pmem: str               # memory per process
-    job_array: str          # e.g., "1-100"
-    output: str
-    error: str
-    join_output: bool
-    email: str
-    email_events: str       # e.g., "abe" (abort, begin, end)
-    gpu: str
-    exclusive: bool
-    rerunnable: bool
+    job_name: Optional[str] = None
+    queue: Optional[str] = None
+    account: Optional[str] = None
+    nodes: Optional[int] = None
+    ppn: Optional[int] = None               # processors per node
+    ncpus: Optional[int] = None
+    walltime: Optional[str] = None           # e.g., "24:00:00"
+    mem: Optional[str] = None                # e.g., "64gb"
+    pmem: Optional[str] = None               # memory per process
+    job_array: Optional[str] = None          # e.g., "1-100"
+    output: Optional[str] = None
+    error: Optional[str] = None
+    join_output: Optional[bool] = None
+    email: Optional[str] = None
+    email_events: Optional[str] = None       # e.g., "abe" (abort, begin, end)
+    gpu: Optional[str] = None
+    exclusive: Optional[bool] = None
+    rerunnable: Optional[bool] = None
+
+    def to_dict(self) -> Dict:
+        result = {}
+        for key, val in self.__dict__.items():
+            if val is not None:
+                result[key] = val
+        return result
 
 
 @dataclass
@@ -63,7 +71,7 @@ class PBSJobSpec:
     """
     topo: Topology
     exec_command: str
-    directives: PBSDirectives = field(default_factory=dict)
+    directives: PBSDirectives = field(default_factory=PBSDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
     modules_to_load: List[str] = field(default_factory=list)
     environment_vars: Dict[str, str] = field(default_factory=dict)
@@ -96,14 +104,14 @@ def _check_pbs_limits(spec: PBSJobSpec) -> List[str]:
     warnings_list = []
     directives = spec.directives
 
-    if directives.get("walltime") and not _validate_pbs_time(directives["walltime"]):
-        warnings_list.append(f"Invalid walltime format: {directives['walltime']}. Expected HH:MM:SS.")
+    if directives.walltime and not _validate_pbs_time(directives.walltime):
+        warnings_list.append(f"Invalid walltime format: {directives.walltime}. Expected HH:MM:SS.")
 
-    if directives.get("mem") and not _validate_pbs_memory(directives["mem"]):
-        warnings_list.append(f"Invalid memory format: {directives['mem']}. Expected e.g., 64gb.")
+    if directives.mem and not _validate_pbs_memory(directives.mem):
+        warnings_list.append(f"Invalid memory format: {directives.mem}. Expected e.g., 64gb.")
 
-    requested_nodes = directives.get("nodes", 1)
-    ppn = directives.get("ppn", 1)
+    requested_nodes = directives.nodes or 1
+    ppn = directives.ppn or 1
     requested_cores = requested_nodes * ppn
 
     if spec.topo.total_cores > 0 and requested_cores > spec.topo.total_cores:
@@ -150,7 +158,7 @@ class PBSSubmitProvider(SubmitProvider):
         spec = PBSJobSpec(
             topo=topo,
             exec_command=exec_command,
-            directives=directives or {},
+            directives=PBSDirectives(**(directives or {})),
             modules_to_load=modules_to_load or [],
             environment_vars=environment_vars or {},
             working_dir=working_dir or Path.cwd(),
@@ -179,73 +187,62 @@ class PBSSubmitProvider(SubmitProvider):
         lines = []
         directives = spec.directives
 
-        # Job name
-        job_name = directives.get("job_name", "wien2k_gen_job")
+        job_name = directives.job_name or "wien2k_gen_job"
         lines.append(f"#PBS -N {job_name}")
 
-        # Queue
-        if directives.get("queue"):
-            lines.append(f"#PBS -q {directives['queue']}")
+        if directives.queue:
+            lines.append(f"#PBS -q {directives.queue}")
 
-        # Account / Project
-        if directives.get("account"):
-            lines.append(f"#PBS -A {directives['account']}")
+        if directives.account:
+            lines.append(f"#PBS -A {directives.account}")
 
-        # Resource list
         resource_parts = []
 
-        nodes = directives.get("nodes", 1)
-        ppn = directives.get("ppn", spec.topo.cores_per_node[0] if spec.topo.cores_per_node else 1)
+        nodes = directives.nodes or 1
+        ppn = directives.ppn or (spec.topo.cores_per_node[0] if spec.topo.cores_per_node else 1)
         resource_parts.append(f"nodes={nodes}:ppn={ppn}")
 
-        walltime = directives.get("walltime", "24:00:00")
+        walltime = directives.walltime or "24:00:00"
         resource_parts.append(f"walltime={walltime}")
 
-        if directives.get("mem"):
-            resource_parts.append(f"mem={directives['mem']}")
-        if directives.get("pmem"):
-            resource_parts.append(f"pmem={directives['pmem']}")
-        if directives.get("ncpus"):
-            resource_parts.append(f"ncpus={directives['ncpus']}")
-        if directives.get("gpu"):
-            resource_parts.append(f"ngpus={directives['gpu']}")
+        if directives.mem:
+            resource_parts.append(f"mem={directives.mem}")
+        if directives.pmem:
+            resource_parts.append(f"pmem={directives.pmem}")
+        if directives.ncpus:
+            resource_parts.append(f"ncpus={directives.ncpus}")
+        if directives.gpu:
+            resource_parts.append(f"ngpus={directives.gpu}")
 
         lines.append(f"#PBS -l {','.join(resource_parts)}")
 
-        # Job array
-        if directives.get("job_array"):
-            lines.append(f"#PBS -t {directives['job_array']}")
+        if directives.job_array:
+            lines.append(f"#PBS -t {directives.job_array}")
 
-        # Output and error
-        output = directives.get("output", "pbs-${PBS_JOBID}.out")
-        if directives.get("join_output"):
+        output = directives.output or "pbs-${PBS_JOBID}.out"
+        if directives.join_output:
             lines.append(f"#PBS -j oe")
             lines.append(f"#PBS -o {output}")
         else:
             lines.append(f"#PBS -o {output}")
-            error = directives.get("error", "pbs-${PBS_JOBID}.err")
+            error = directives.error or "pbs-${PBS_JOBID}.err"
             lines.append(f"#PBS -e {error}")
 
-        # Email notifications
-        if directives.get("email"):
-            lines.append(f"#PBS -M {directives['email']}")
-        if directives.get("email_events"):
-            lines.append(f"#PBS -m {directives['email_events']}")
+        if directives.email:
+            lines.append(f"#PBS -M {directives.email}")
+        if directives.email_events:
+            lines.append(f"#PBS -m {directives.email_events}")
 
-        # Exclusive node
-        if directives.get("exclusive"):
+        if directives.exclusive:
             lines.append("#PBS -l place=excl")
 
-        # Rerunnable
-        if directives.get("rerunnable", True):
+        if directives.rerunnable if directives.rerunnable is not None else True:
             lines.append("#PBS -r y")
         else:
             lines.append("#PBS -r n")
 
-        # Shell
         lines.append("#PBS -S /bin/bash")
 
-        # Working directory
         lines.append(f"#PBS -d {spec.working_dir}")
 
         return "\n".join(lines)
@@ -254,7 +251,6 @@ class PBSSubmitProvider(SubmitProvider):
         """Construct the main execution body with environment setup and command invocation."""
         lines = []
 
-        # Environment detection
         lines.append("# PBS Environment & Host Detection")
         lines.append('echo "[pbs_submit] Job ID: $PBS_JOBID"')
         lines.append('echo "[pbs_submit] Nodfile: $PBS_NODEFILE"')
@@ -262,33 +258,27 @@ class PBSSubmitProvider(SubmitProvider):
         lines.append('echo "[pbs_submit] Hostname: $(hostname)"')
         lines.append("")
 
-        # Module loading
         if spec.modules_to_load:
             lines.append("# Load required modules")
             lines.append(f"module load {' '.join(spec.modules_to_load)}")
             lines.append("")
 
-        # Environment variables
         if spec.environment_vars:
             lines.append("# Set job environment variables")
             for key, value in spec.environment_vars.items():
                 lines.append(f'export {key}="{value}"')
             lines.append("")
 
-        # Working directory
         lines.append(f"cd {spec.working_dir} || exit 1")
         lines.append('echo "[pbs_submit] Working directory: $(pwd)"')
         lines.append("")
 
-        # Scratch directory setup
         if spec.scratch_enabled:
             lines.extend(self._inject_scratch_setup())
 
-        # Preemption handler
         lines.extend(self._inject_preemption_handler(spec))
         lines.append("")
 
-        # Execution
         lines.append("# Execute calculation")
         lines.append('echo "[pbs_submit] Launching: %s"' % spec.exec_command)
         lines.append(f'exec {spec.exec_command} "$@"')
@@ -375,7 +365,7 @@ class PBSSubmitProvider(SubmitProvider):
         spec = PBSJobSpec(
             topo=topo,
             exec_command=exec_command,
-            directives=directives or {},
+            directives=PBSDirectives(**(directives or {})),
             working_dir=kwargs.get("working_dir", Path.cwd()),
             modules_to_load=kwargs.get("modules_to_load", []),
             environment_vars=kwargs.get("environment_vars", {}),
@@ -386,31 +376,27 @@ class PBSSubmitProvider(SubmitProvider):
         result: Dict[str, Any] = {
             "success": False,
             "job_id": None,
-            "script_path": script_path or Path(f"pbs_submit_{spec.directives.get('job_name', 'job')}.sh"),
+            "script_path": script_path or Path(f"pbs_submit_{spec.directives.job_name or 'job'}.sh"),
             "dry_run_content": None,
             "errors": [],
             "warnings": [],
         }
 
-        # Validation
         if spec.validate_constraints:
             result["warnings"].extend(_check_pbs_limits(spec))
 
-        # Generate script
         try:
             script_content = self._build_pbs_script(spec)
         except Exception as exc:
             result["errors"].append(f"Script generation failed: {exc}")
             return result
 
-        # Dry-run mode
         if dry_run:
             result["dry_run_content"] = script_content
             result["success"] = True
             logger.info("PBS script generated in dry-run mode. Review before submission.")
             return result
 
-        # Backup existing script
         if kwargs.get("backup", True) and result["script_path"].exists():
             try:
                 backup_path = result["script_path"].with_suffix(".sh.bak")
@@ -419,7 +405,6 @@ class PBSSubmitProvider(SubmitProvider):
             except Exception as exc:
                 logger.warning(f"Backup failed: {exc}")
 
-        # Write script
         try:
             result["script_path"].write_text(script_content, encoding="utf-8")
             result["script_path"].chmod(0o755)
@@ -428,7 +413,6 @@ class PBSSubmitProvider(SubmitProvider):
             result["errors"].append(f"Failed to write script: {exc}")
             return result
 
-        # Submit via qsub
         try:
             logger.info("Submitting job via qsub...")
             proc = subprocess.run(

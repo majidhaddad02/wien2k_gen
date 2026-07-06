@@ -1,13 +1,14 @@
 """
-Interactive SLURM Job Submission Wizard for Wien2kGen.
+Interactive Job Submission Wizard for Wien2kGen.
 Provides a guided, visually rich, and error-proof terminal experience for creating
-and submitting SBATCH job scripts to HPC schedulers.
+and submitting job scripts to HPC schedulers (SLURM, PBS, LSF).
 
 Key Architecture Features:
 • Step-by-step interactive flow using Rich UI components (Panels, Markdown, Syntax Highlighting)
 • Intelligent input validation (Time formats, Memory strings, Integer ranges) with immediate feedback
 • Smart defaults based on environment variables and detected system topology
-• Live preview of generated #SBATCH directives before saving/submitting
+• Multi-scheduler support: SLURM (#SBATCH), PBS (#PBS), LSF (#BSUB)
+• Live preview of generated directives before saving/submitting
 • Options to Save, Submit, or Edit directly from the wizard
 • Thread-safe atomic writing for generated scripts
 • Seamless integration with the `submit` module and `core.scheduler`
@@ -37,6 +38,7 @@ from .submit.slurm import (
     SlurmJobSpec,
     SlurmDirectives,
 )
+from .submit import SUBMIT_PROVIDERS
 from .utils.atomic_write import atomic_write
 from .logging_config import get_logger
 
@@ -45,17 +47,44 @@ console = Console()
 
 
 # =============================================================================
+# Scheduler Detection
+# =============================================================================
+
+def _detect_scheduler() -> str:
+    """Auto-detect available scheduler from environment."""
+    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
+        return "slurm"
+    if os.environ.get("PBS_JOBID"):
+        return "pbs"
+    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
+        return "lsf"
+    for cmd in ["sbatch", "sinfo"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "slurm"
+    for cmd in ["qsub", "pbsnodes"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "pbs"
+    for cmd in ["bsub", "bjobs"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "lsf"
+    return "slurm"
+
+
+# =============================================================================
 # Input Validation Helpers
 # =============================================================================
 
-def validate_time_format(value: str) -> bool:
-    """Validate SLURM time format (HH:MM:SS, D-HH:MM:SS, or MM:SS)."""
-    return bool(re.match(r'^(\d+-)?(\d{1,2}:)?\d{2}:\d{2}$', value.strip()))
+def validate_time_format(value: str, scheduler: str = "slurm") -> bool:
+    """Validate time format (SLURM: HH:MM:SS or D-HH:MM:SS, PBS: HH:MM:SS, LSF: HH:MM)."""
+    if scheduler in ("pbs", "slurm"):
+        return bool(re.match(r'^(\d+-)?(\d{1,2}:)?\d{2}:\d{2}$', value.strip()))
+    else:
+        return bool(re.match(r'^\d{1,3}:\d{2}$', value.strip()))
 
 
 def validate_mem_format(value: str) -> bool:
-    """Validate SLURM memory string (Number + K/M/G/T)."""
-    return bool(re.match(r'^\d+[KMGkmgTt]?$', value.strip()))
+    """Validate memory string (Number + K/M/G/T or kb/mb/gb)."""
+    return bool(re.match(r'^\d+[KMGkmgTtBb]?$', value.strip()))
 
 
 # =============================================================================
@@ -69,51 +98,77 @@ class WizardStep:
         self.console = wizard.console
 
     def run(self) -> bool:
-        """Execute step logic. Return True to continue, False to abort."""
         raise NotImplementedError
 
 
 class WelcomeStep(WizardStep):
     def run(self) -> bool:
-        intro = """
-📝 **SBATCH Job Submission Wizard**
+        detected = self.wizard.data.get("scheduler", "slurm")
+        intro = f"""
+Job Submission Wizard
 
-Create and submit SLURM job scripts interactively.
+Create and submit {detected.upper()} job scripts interactively.
 This tool helps you define resources, check constraints, and submit jobs safely.
 """
-        self.console.print(Panel(Markdown(intro), title="SBATCH Wizard", border_style="cyan", padding=1))
+        self.console.print(Panel(
+            Markdown(intro),
+            title=f"{detected.upper()} Wizard",
+            border_style="cyan",
+            padding=1
+        ))
         if not Confirm.ask(
-            Align.center("[bold yellow]Start SBATCH wizard?[/]", vertical="middle"),
+            Align.center("[bold yellow]Start job submission wizard?[/]", vertical="middle"),
             console=self.console
         ):
             return False
         return True
 
 
+class SchedulerStep(WizardStep):
+    def run(self) -> bool:
+        self.console.print("\n[bold cyan]Step 1/5: Scheduler Selection[/]")
+        self.console.print(Rule(style="dim"))
+
+        detected = _detect_scheduler()
+        self.console.print(f"[dim]Auto-detected: [bold green]{detected.upper()}[/bold green][/dim]")
+
+        choices = ["slurm", "pbs", "lsf"]
+        choice = Prompt.ask(
+            "Select target scheduler (Enter to use detected)",
+            choices=choices + ["auto"],
+            default="auto",
+            console=self.console
+        )
+        if choice == "auto":
+            choice = detected
+        self.wizard.data["scheduler"] = choice
+        self.console.print(f"Using scheduler: [bold green]{choice.upper()}[/bold green]")
+        return True
+
+
 class IdentityStep(WizardStep):
     def run(self) -> bool:
-        self.console.print("\n[bold cyan]Step 1/4: Job Identity[/]")
+        sched = self.wizard.data.get("scheduler", "slurm")
+        self.console.print("\n[bold cyan]Step 2/5: Job Identity[/]")
         self.console.print(Rule(style="dim"))
         
-        # Job Name
         user = os.environ.get("USER", "user")
         ts = time.strftime("%m%d_%H%M")
+        default_name = f"{sched}_{user}_{ts}"
         self.wizard.data['job_name'] = Prompt.ask(
-            "Job Name (-J)",
-            default=f"w2k_{user}_{ts}",
+            "Job Name",
+            default=default_name,
             console=self.console
         )
 
-        # Partition
         self.wizard.data['partition'] = Prompt.ask(
-            "Partition (-p) [Leave empty for default]",
+            f"{'Partition' if sched == 'slurm' else 'Queue'} [Leave empty for default]",
             default="",
             console=self.console
         )
 
-        # Account
         self.wizard.data['account'] = Prompt.ask(
-            "Account (--account) [Optional]",
+            "Account / Project [Optional]",
             default="",
             console=self.console
         )
@@ -122,10 +177,10 @@ class IdentityStep(WizardStep):
 
 class ResourcesStep(WizardStep):
     def run(self) -> bool:
-        self.console.print("\n[bold cyan]Step 2/4: Resource Allocation[/]")
+        sched = self.wizard.data.get("scheduler", "slurm")
+        self.console.print("\n[bold cyan]Step 3/5: Resource Allocation[/]")
         self.console.print(Rule(style="dim"))
         
-        # Topology detection for hints
         topo = self.wizard.data.get('topo')
         if topo:
             self.console.print(f"[dim]Detected Topology: {topo.total_cores} cores available[/dim]")
@@ -134,31 +189,27 @@ class ResourcesStep(WizardStep):
             self.console.print("[dim]Topology detection skipped. Manual entry required.[/dim]")
             suggested_tasks = 16
 
-        # Nodes
         self.wizard.data['nodes'] = IntPrompt.ask(
-            "Number of Nodes (-N)",
+            "Number of Nodes",
             default=1,
             console=self.console
         )
 
-        # Tasks
         self.wizard.data['ntasks'] = IntPrompt.ask(
-            "Total Tasks (-n)",
+            f"Total {'Tasks' if sched == 'slurm' else 'Processors'}",
             default=suggested_tasks,
             console=self.console
         )
 
-        # CPUs per task
         self.wizard.data['cpus_per_task'] = IntPrompt.ask(
-            "CPUs per Task (-c)",
+            "CPUs per {'Task' if sched == 'slurm' else 'Process'}",
             default=1,
             console=self.console
         )
 
-        # Memory
         while True:
             mem_val = Prompt.ask(
-                "Memory per Node (--mem)",
+                "Memory per Node",
                 default="8G",
                 console=self.console
             )
@@ -168,25 +219,28 @@ class ResourcesStep(WizardStep):
             else:
                 self.console.print("[bold red]Invalid format. Use format like '8G', '4000M', '128G'.[/]")
 
-        # Time
         while True:
+            default_time = "24:00:00" if sched in ("slurm", "pbs") else "24:00"
+            time_prompt = f"Walltime ({'HH:MM:SS' if sched in ('slurm', 'pbs') else 'HH:MM'})"
             time_val = Prompt.ask(
-                "Walltime (--time)",
-                default="24:00:00",
+                time_prompt,
+                default=default_time,
                 console=self.console
             )
-            if validate_time_format(time_val):
+            if validate_time_format(time_val, sched):
                 self.wizard.data['walltime'] = time_val
                 break
             else:
-                self.console.print("[bold red]Invalid format. Use HH:MM:SS or D-HH:MM:SS.[/]")
+                fmt = "HH:MM:SS or D-HH:MM:SS" if sched in ("slurm", "pbs") else "HH:MM"
+                self.console.print(f"[bold red]Invalid format. Use {fmt}.[/]")
 
         return True
 
 
 class AdvancedStep(WizardStep):
     def run(self) -> bool:
-        self.console.print("\n[bold cyan]Step 3/4: Advanced Options[/]")
+        sched = self.wizard.data.get("scheduler", "slurm")
+        self.console.print("\n[bold cyan]Step 4/5: Advanced Options[/]")
         self.console.print(Rule(style="dim"))
         self.console.print("[dim]Press Enter to skip optional fields.[/dim]")
         
@@ -196,21 +250,22 @@ class AdvancedStep(WizardStep):
             console=self.console
         )
         
-        self.wizard.data['qos'] = Prompt.ask(
-            "Quality of Service (QoS)",
-            default="",
-            console=self.console
-        )
-        
-        self.wizard.data['gres'] = Prompt.ask(
-            "Generic Resources (e.g., gpu:a100:1)",
-            default="",
-            console=self.console
-        )
+        if sched == "slurm":
+            self.wizard.data['qos'] = Prompt.ask(
+                "Quality of Service (QoS)",
+                default="",
+                console=self.console
+            )
+            
+            self.wizard.data['gres'] = Prompt.ask(
+                "Generic Resources (e.g., gpu:a100:1)",
+                default="",
+                console=self.console
+            )
         
         self.wizard.data['output'] = Prompt.ask(
             "Output File Pattern",
-            default="slurm-%j.out",
+            default=f"{sched}-%j.out" if sched == "slurm" else f"{sched}-$JOB_ID.out",
             console=self.console
         )
 
@@ -219,44 +274,63 @@ class AdvancedStep(WizardStep):
 
 class ReviewStep(WizardStep):
     def run(self) -> bool:
-        self.console.print("\n[bold cyan]Step 4/4: Review & Action[/]")
+        sched = self.wizard.data.get("scheduler", "slurm")
+        self.console.print("\n[bold cyan]Step 5/5: Review & Action[/]")
         self.console.print(Rule(style="dim"))
         
-        # Generate Script
         try:
-            directives = SlurmDirectives(
-                job_name=self.wizard.data['job_name'],
-                partition=self.wizard.data['partition'],
-                nodes=self.wizard.data['nodes'],
-                ntasks=self.wizard.data['ntasks'],
-                cpus_per_task=self.wizard.data['cpus_per_task'],
-                mem_per_node=self.wizard.data['mem_per_node'],
-                time=self.wizard.data['walltime'],
-                dependency=self.wizard.data['dependency'],
-                qos=self.wizard.data['qos'],
-                gres=self.wizard.data['gres'],
-                account=self.wizard.data['account'],
-                output=self.wizard.data['output'],
-                error=self.wizard.data.get('output', 'slurm-%j.out').replace('.out', '.err')
-            )
+            if sched == "slurm":
+                directives = SlurmDirectives(
+                    job_name=self.wizard.data['job_name'],
+                    partition=self.wizard.data['partition'],
+                    nodes=self.wizard.data['nodes'],
+                    ntasks=self.wizard.data['ntasks'],
+                    cpus_per_task=self.wizard.data['cpus_per_task'],
+                    mem_per_node=self.wizard.data['mem_per_node'],
+                    time=self.wizard.data['walltime'],
+                    dependency=self.wizard.data['dependency'] or None,
+                    qos=self.wizard.data.get('qos') or None,
+                    gres=self.wizard.data.get('gres') or None,
+                    account=self.wizard.data.get('account') or None,
+                    output=self.wizard.data.get('output') or None,
+                    error=(self.wizard.data.get('output', 'slurm-%j.out') or '').replace('.out', '.err') or None,
+                )
 
-            topo = self.wizard.data.get('topo')
-            spec = SlurmJobSpec(
-                topo=topo,
-                exec_command="run_lapw -p",  # Default placeholder
-                directives=directives
-            )
+                topo = self.wizard.data.get('topo')
+                spec = SlurmJobSpec(
+                    topo=topo,
+                    exec_command="run_lapw -p",
+                    directives=directives
+                )
+                self.wizard.script_content = generate_sbatch_script(spec)
+            else:
+                provider_cls = SUBMIT_PROVIDERS.get(sched)
+                if not provider_cls:
+                    self.console.print(f"[bold red]Scheduler provider '{sched}' not available.[/]")
+                    return False
+                provider = provider_cls()
+                topo = self.wizard.data.get('topo')
+                self.wizard.script_content = provider.generate_submit_script(
+                    topo=topo,
+                    exec_command="run_lapw -p",
+                    directives={
+                        "job_name": self.wizard.data['job_name'],
+                        "queue": self.wizard.data.get('partition', ''),
+                        "nodes": self.wizard.data['nodes'],
+                        "walltime": self.wizard.data['walltime'],
+                        "mem" if sched == "pbs" else "memory": self.wizard.data['mem_per_node'],
+                        "nprocs": self.wizard.data['ntasks'],
+                    },
+                    working_dir=Path.cwd(),
+                )
 
-            self.wizard.script_content = generate_sbatch_script(spec)
         except Exception as e:
             self.console.print(f"[bold red]Failed to generate script: {e}[/]")
             return False
 
-        # Display Preview
         syntax = Syntax(self.wizard.script_content, "bash", theme="monokai", line_numbers=True)
-        self.console.print(Panel(syntax, title="Generated SBATCH Script", border_style="green"))
+        self.console.print(Panel(syntax, title=f"Generated {sched.upper()} Script", border_style="green"))
 
-        # Action Menu
         self.console.print("\n[bold]What would you like to do?[/]")
         self.console.print("  [1] Save Script to File")
         self.console.print("  [2] Save & Submit Job")
@@ -273,7 +347,6 @@ class ReviewStep(WizardStep):
             self.console.print("[dim]Wizard cancelled.[/]")
             return False
 
-        # Determine filename
         filename = Prompt.ask(
             "Enter filename to save",
             default=f"submit_{self.wizard.data['job_name']}.sh",
@@ -285,36 +358,51 @@ class ReviewStep(WizardStep):
             if not Confirm.ask(f"File {filename} exists. Overwrite?", console=self.console):
                 return False
 
-        # Save
         try:
             atomic_write(path, self.wizard.script_content, mode=0o755)
-            self.console.print(f"\n[bold green]✅ Script saved to {path.resolve()}[/]")
+            self.console.print(f"\n[bold green]Script saved to {path.resolve()}[/]")
             self.wizard.saved_path = path
             
             if choice == "2":
-                return self._submit_job(path)
+                return self._submit_job(path, sched)
             return True
             
         except Exception as e:
-            self.console.print(f"[bold red]❌ Error saving file: {e}[/]")
+            self.console.print(f"[bold red]Error saving file: {e}[/]")
             return False
 
-    def _submit_job(self, path: Path) -> bool:
-        """Submit the saved script via sbatch command."""
+    def _submit_job(self, path: Path, scheduler: str) -> bool:
+        """Submit the saved script via the appropriate scheduler command."""
         if not Confirm.ask("Proceed with submission?", console=self.console):
             return False
 
-        self.console.print("\n[yellow]Submitting job to scheduler...[/]")
+        self.console.print(f"\n[yellow]Submitting job to {scheduler.upper()} scheduler...[/]")
+
+        submit_cmds = {
+            "slurm": ["sbatch", str(path)],
+            "pbs":   ["qsub", str(path)],
+            "lsf":   ["bsub", "<", str(path)],
+        }
+        cmd = submit_cmds.get(scheduler, ["sbatch", str(path)])
+        use_shell = scheduler == "lsf"
+
         try:
             res = subprocess.run(
-                ["sbatch", str(path)],
-                capture_output=True, text=True, timeout=30
+                cmd,
+                capture_output=True, text=True, timeout=30, shell=use_shell
             )
             
             if res.returncode == 0:
-                match = re.search(r"Submitted batch job (\d+)", res.stdout)
-                job_id = match.group(1) if match else "Unknown"
-                self.console.print(f"\n[bold green]🚀 Job Submitted! ID: {job_id}[/]")
+                job_id = "Unknown"
+                if scheduler == "slurm":
+                    match = re.search(r"Submitted batch job (\d+)", res.stdout)
+                    job_id = match.group(1) if match else job_id
+                elif scheduler == "lsf":
+                    match = re.search(r"Job <(\d+)>", res.stdout)
+                    job_id = match.group(1) if match else job_id
+                else:
+                    job_id = res.stdout.strip()
+                self.console.print(f"\n[bold green]Job Submitted! ID: {job_id}[/]")
                 return True
             else:
                 self.console.print(f"[bold red]Submission Failed:[/]\n{res.stderr}")
@@ -335,7 +423,6 @@ class SBATCHWizard:
         self.script_content: str = ""
         self.saved_path: Optional[Path] = None
         
-        # Pre-load topology for smart defaults
         try:
             self.data['topo'] = detect_topology()
         except Exception:
@@ -344,6 +431,7 @@ class SBATCHWizard:
 
         self.steps = [
             WelcomeStep(self),
+            SchedulerStep(self),
             IdentityStep(self),
             ResourcesStep(self),
             AdvancedStep(self),
@@ -364,7 +452,7 @@ class SBATCHWizard:
 # =============================================================================
 
 def run_sbatch_wizard() -> bool:
-    """Entry point for the SBATCH interactive wizard."""
+    """Entry point for the job submission interactive wizard."""
     wizard = SBATCHWizard()
     success = wizard.run()
     return success
@@ -377,6 +465,7 @@ def run_sbatch_wizard() -> bool:
 __all__ = [
     "run_sbatch_wizard",
     "SBATCHWizard",
+    "_detect_scheduler",
 ]
 
 if __name__ == "__main__":

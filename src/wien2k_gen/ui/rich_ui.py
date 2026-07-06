@@ -50,6 +50,40 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
+# Terminal Detection & Capabilities
+# =============================================================================
+
+@dataclass
+class TerminalCapabilities:
+    """Runtime terminal capability assessment."""
+    supports_color: bool = False
+    supports_unicode: bool = False
+    is_interactive: bool = False
+    term_type: str = "unknown"
+
+
+def detect_terminal_capabilities() -> TerminalCapabilities:
+    """Detect terminal capabilities for adaptive output rendering."""
+    term = os.environ.get("TERM", "")
+    no_color = os.environ.get("NO_COLOR", "")
+    is_dumb = term in ("dumb", "vt100", "") or no_color
+    is_interactive = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+
+    supports_color = not is_dumb and (os.environ.get("FORCE_COLOR", "") or (
+        is_interactive and term not in ("dumb", "vt100", "")
+    ))
+
+    supports_unicode = os.environ.get("LANG", os.environ.get("LC_ALL", "")).endswith(".UTF-8") if os.environ.get("LANG") or os.environ.get("LC_ALL") else True
+
+    return TerminalCapabilities(
+        supports_color=supports_color and not bool(no_color),
+        supports_unicode=bool(supports_unicode),
+        is_interactive=is_interactive,
+        term_type=term,
+    )
+
+
+# =============================================================================
 # Type Definitions & Configuration
 # =============================================================================
 
@@ -74,20 +108,23 @@ class ConsoleManager:
     Centralized Rich console instance with environment-aware configuration.
     Handles TTY detection, color forcing, stderr/stdout routing, and theme injection.
     """
-    def __init__(self, config: Optional[CLIConfig] = None) -> None:
+    def __init__(self, config: Optional[CLIConfig] = None, force_plain: bool = False) -> None:
         self.config = config or CLIConfig()
         self._console: Optional[Console] = None
+        self._caps = detect_terminal_capabilities()
+        self._force_plain = force_plain
 
     @property
     def console(self) -> Console:
         if self._console is None:
+            use_color = self.config.color and self._caps.supports_color
             self._console = Console(
-                force_terminal=self.config.color,
-                no_color=not self.config.color,
+                force_terminal=use_color,
+                no_color=not use_color,
                 record=False,
                 stderr=True,
                 legacy_windows=False,
-                width=None  # Auto-detect terminal width
+                width=None
             )
             self._apply_theme()
         return self._console
@@ -411,6 +448,26 @@ def print_table_from_dict(title: str, data: Dict[str, Any]) -> None:
     _cli_manager.print(table)
 
 
+def get_rich_console() -> Console:
+    """Get a Rich Console configured for terminal output."""
+    caps = detect_terminal_capabilities()
+    return Console(
+        force_terminal=caps.supports_color,
+        no_color=not caps.supports_color,
+        stderr=True,
+    )
+
+
+def get_plain_console() -> Console:
+    """Get a minimal Rich Console for dumb terminals (no color, no formatting)."""
+    return Console(
+        force_terminal=False,
+        no_color=True,
+        stderr=True,
+        color_system=None if os.environ.get("NO_COLOR") else "standard",
+    )
+
+
 # =============================================================================
 # Explicit Public API Declaration
 # =============================================================================
@@ -419,6 +476,10 @@ __all__ = [
     "CLIConfig",
     "ConsoleManager",
     "console",
+    "TerminalCapabilities",
+    "detect_terminal_capabilities",
+    "get_rich_console",
+    "get_plain_console",
     "print_banner",
     "print_section_header",
     "print_status_indicator",

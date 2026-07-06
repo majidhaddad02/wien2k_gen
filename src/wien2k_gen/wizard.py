@@ -49,6 +49,32 @@ PROFILES_DIR = Path.home() / ".config" / "wien2k_gen" / "profiles"
 
 
 # =============================================================================
+# Scheduler Detection
+# =============================================================================
+
+def _detect_scheduler() -> str:
+    """Auto-detect available scheduler from environment."""
+    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
+        return "slurm"
+    if os.environ.get("PBS_JOBID"):
+        return "pbs"
+    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
+        return "lsf"
+    for cmd in ["sbatch", "sinfo"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "slurm"
+    for cmd in ["qsub", "pbsnodes"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "pbs"
+    for cmd in ["bsub", "bjobs"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "lsf"
+    return "slurm"
+
+PROFILES_DIR = Path.home() / ".config" / "wien2k_gen" / "profiles"
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -156,7 +182,21 @@ def run_wizard(topo=None) -> None:
     console.print(topo_table)
     console.print(Rule(style="dim"))
 
+    # 0.2 Scheduler Auto-Detection
+    detected = _detect_scheduler()
+    console.print(f"\n[bold cyan]Scheduler Detection:[/bold cyan] [green]{detected.upper()}[/green] detected.")
+    scheduler_choice = Prompt.ask(
+        "Select target scheduler",
+        choices=["slurm", "pbs", "lsf", "auto"],
+        default="auto",
+        console=console
+    )
+    selected_scheduler = detected if scheduler_choice == "auto" else scheduler_choice
+    console.print(f"Using scheduler: [bold]{selected_scheduler.upper()}[/bold]")
+    console.print(Rule(style="dim"))
+
     # 0.1 Profile Check
+    profile_values = {}
     if PROFILES_DIR.exists():
         profiles = list(PROFILES_DIR.glob("*.json"))
         if profiles:
@@ -172,62 +212,151 @@ def run_wizard(topo=None) -> None:
                 if prof_path.exists():
                     try:
                         with open(prof_path, "r", encoding="utf-8") as f:
-                            profile = json.load(f)
+                            profile_values = json.load(f)
                         console.print(f"[green]✅ Profile '{name}' loaded.[/green]")
-                        # In a full implementation, we would apply profile settings here
-                        return
                     except Exception as e:
                         logger.error(f"Failed to load profile: {e}")
+                        profile_values = {}
                 else:
                     console.print("[yellow]⚠️ Profile not found.[/yellow]")
 
-    # 1. Backend Selection
-    backends = list_backends()
-    current_backend = get_backend()
-    current_name = current_backend.__class__.__name__.replace("Backend", "").lower()
-    console.print(f"Current backend: [bold]{current_name}[/bold]")
-
-    if backends:
-        backend_choices = [str(i) for i in range(1, len(backends) + 1)] + ["0"]
-        choice = Prompt.ask(
-            "Select Backend (0 to keep current)",
-            choices=backend_choices,
-            default="0",
+    # 0.15 WIENROOT Detection & Validation
+    if profile_values.get("wienroot"):
+        wienroot = profile_values["wienroot"]
+        console.print(f"[bold cyan]WIENROOT from profile:[/bold cyan] [green]{wienroot}[/green]")
+    else:
+        env_wienroot = os.environ.get("WIENROOT", "")
+        candidates = detect_wienroot_candidates()
+        if candidates:
+            console.print("[bold cyan]Detected WIENROOT Candidates:[/bold cyan]")
+            cand_table = Table("Path", "Status", show_header=True, header_style="bold magenta")
+            for c in candidates:
+                valid = validate_wienroot(c)
+                status = "[green]✓ Valid[/green]" if valid else "[red]✗ Invalid[/red]"
+                cand_table.add_row(c, status)
+            console.print(cand_table)
+        
+        if env_wienroot and validate_wienroot(env_wienroot):
+            default_root = env_wienroot
+        elif candidates:
+            default_root = candidates[0]
+        else:
+            default_root = ""
+        
+        wienroot = Prompt.ask(
+            "WIENROOT path",
+            default=default_root,
             console=console
         )
-        if choice != "0":
-            idx = int(choice) - 1
-            if 0 <= idx < len(backends):
-                set_backend(backends[idx])
-                current_name = backends[idx].value
-                console.print(f"✅ Switched to [bold]{current_name}[/bold]")
+        while wienroot and not validate_wienroot(wienroot):
+            console.print(f"[red]✗ Invalid WIENROOT:[/] {wienroot} (no run_lapw or siteconfig_lapw found)")
+            wienroot = Prompt.ask(
+                "WIENROOT path",
+                default=default_root,
+                console=console
+            )
+
+    # 0.2 Scratch Path Detection & Health Check
+    if profile_values.get("scratch_path"):
+        scratch_path = profile_values["scratch_path"]
+        console.print(f"[bold cyan]SCRATCH from profile:[/bold cyan] [green]{scratch_path}[/green]")
+    else:
+        env_scratch = os.environ.get("SCRATCH", os.environ.get("TMPDIR", "/tmp"))
+        scratch_path = Prompt.ask(
+            "SCRATCH path",
+            default=env_scratch,
+            console=console
+        )
+    
+    health = check_scratch_health(scratch_path)
+    if health["valid"]:
+        fs_type = health["fs_type"]
+        free_gb = health["free_gb"]
+        console.print(f"[bold cyan]Scratch Health:[/bold cyan] {free_gb:.1f} GB free, fs=[bold]{fs_type}[/bold]")
+        if fs_type in ("nfs", "nfs4"):
+            console.print("[yellow]⚠ WARNING: Scratch on NFS (slow). Consider local SSD or /dev/shm for I/O-heavy jobs.[/yellow]")
+        if free_gb < 10:
+            console.print(f"[yellow]⚠ WARNING: Low disk space on scratch ({free_gb:.1f} GB). Less than 10 GB recommended.[/yellow]")
+    else:
+        console.print(f"[red]✗ Scratch health check failed: {health.get('warning', 'Unknown error')}[/red]")
+
+    # 1. Backend Selection
+    profile_backend = profile_values.get("backend") or profile_values.get("backend_code")
+    if profile_backend:
+        try:
+            backend_code = BackendCode(profile_backend)
+            set_backend(backend_code)
+            console.print(f"[bold cyan]Backend from profile:[/bold cyan] [green]{profile_backend}[/green]")
+            current_name = profile_backend
+        except ValueError:
+            pass
+    
+    if not profile_backend:
+        backends = list_backends()
+        current_backend = get_backend()
+        current_name = current_backend.__class__.__name__.replace("Backend", "").lower()
+        console.print(f"Current backend: [bold]{current_name}[/bold]")
+
+        if backends:
+            backend_choices = [str(i) for i in range(1, len(backends) + 1)] + ["0"]
+            choice = Prompt.ask(
+                "Select Backend (0 to keep current)",
+                choices=backend_choices,
+                default="0",
+                console=console
+            )
+            if choice != "0":
+                idx = int(choice) - 1
+                if 0 <= idx < len(backends):
+                    set_backend(backends[idx])
+                    current_name = backends[idx].value
+                    console.print(f"✅ Switched to [bold]{current_name}[/bold]")
     backend_name = current_name
 
     # 2. Optimization Strategy
     console.print("\n[bold cyan]Step 2: Optimization Strategy[/bold cyan]")
     console.print(Rule(style="dim"))
     
-    target_str = Prompt.ask(
-        "Optimization Target",
-        choices=["time", "memory", "balanced", "cost"],
-        default="balanced",
-        console=console
-    )
-    target = OptimizationTarget(target_str)
+    profile_target = profile_values.get("optimization_target") or profile_values.get("target")
+    if profile_target:
+        try:
+            target = OptimizationTarget(profile_target)
+            console.print(f"[bold cyan]Target from profile:[/bold cyan] [green]{profile_target}[/green]")
+        except ValueError:
+            profile_target = None
     
-    max_cores = IntPrompt.ask(
-        "Maximum Cores to Utilize (0 for auto)",
-        default=0,
-        console=console
-    )
+    if not profile_target:
+        target_str = Prompt.ask(
+            "Optimization Target",
+            choices=["time", "memory", "balanced", "cost"],
+            default="balanced",
+            console=console
+        )
+        target = OptimizationTarget(target_str)
+    
+    profile_max_cores = profile_values.get("max_cores") or profile_values.get("recommended_total_cores")
+    if profile_max_cores is not None:
+        max_cores = profile_max_cores
+        console.print(f"[bold cyan]Max Cores from profile:[/bold cyan] [green]{max_cores}[/green]")
+    else:
+        max_cores = IntPrompt.ask(
+            "Maximum Cores to Utilize (0 for auto)",
+            default=0,
+            console=console
+        )
     max_cores = max_cores if max_cores > 0 else None
     
-    memory_limit = FloatPrompt.ask(
-        "Memory Limit per Node in GB (0 for auto)",
-        default=0.0,
-        console=console
-    )
-    memory_limit = memory_limit if memory_limit > 0.0 else None
+    profile_mem = profile_values.get("memory_limit") or profile_values.get("memory_limit_gb")
+    if profile_mem is not None:
+        memory_limit = float(profile_mem) if profile_mem is not None else None
+        console.print(f"[bold cyan]Memory Limit from profile:[/bold cyan] [green]{memory_limit} GB[/green]")
+    else:
+        memory_limit = FloatPrompt.ask(
+            "Memory Limit per Node in GB (0 for auto)",
+            default=0.0,
+            console=console
+        )
+        memory_limit = memory_limit if memory_limit > 0.0 else None
 
     # 3. Resource Suggestion via Advisor
     with console.status("[bold cyan]Consulting Optimizer Advisor...", spinner="dots"):

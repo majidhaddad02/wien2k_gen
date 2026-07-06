@@ -26,7 +26,6 @@ import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 
-# Project imports (aligned with refactored architecture)
 from .config import load_config, get_config, AppConfig, ensure_dirs
 from .core.scheduler import detect as detect_topology
 from .submit.slurm import (
@@ -77,7 +76,6 @@ def create_sbatch_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    # Global flags
     parser.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity")
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress non-essential output")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Return results as JSON")
@@ -85,10 +83,8 @@ def create_sbatch_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=str, default=None, help="Path to custom config file")
     parser.add_argument("--log-file", type=str, default=None, help="Redirect logs to file")
 
-    # Subcommands
     sub = parser.add_subparsers(dest="action", required=True, help="SBATCH action to perform")
 
-    # 1. generate
     gen = sub.add_parser("generate", help="Generate SBATCH script from topology & config")
     gen.add_argument("--output", "-o", type=str, default="submit_job.sh", help="Output script path")
     gen.add_argument("--job-name", "-J", type=str, default="wien2k_job", help="SLURM job name")
@@ -105,17 +101,14 @@ def create_sbatch_parser() -> argparse.ArgumentParser:
     gen.add_argument("--backup", action="store_true", default=True, help="Rotate existing script")
     gen.add_argument("--preview", action="store_true", help="Preview script in terminal after generation")
 
-    # 2. validate
     val = sub.add_parser("validate", help="Check script syntax & resource constraints")
     val.add_argument("script_path", type=str, help="Path to SBATCH script to validate")
     val.add_argument("--strict", action="store_true", help="Fail on warnings, not just errors")
 
-    # 3. preview
     prev = sub.add_parser("preview", help="Render formatted script to stdout")
     prev.add_argument("script_path", type=str, help="Path to SBATCH script")
     prev.add_argument("--highlight", action="store_true", help="Apply syntax highlighting (if Rich available)")
 
-    # 4. submit
     sub_cmd = sub.add_parser("submit", help="Submit script to SLURM controller")
     sub_cmd.add_argument("script_path", type=str, help="Path to SBATCH script")
     sub_cmd.add_argument("--dry-run", action="store_true", help="Validate & print submission response only")
@@ -129,7 +122,7 @@ def create_sbatch_parser() -> argparse.ArgumentParser:
 # =============================================================================
 
 def _build_directives_from_args(args: argparse.Namespace) -> SlurmDirectives:
-    """Map CLI arguments to validated SlurmDirectives dictionary."""
+    """Map CLI arguments to validated SlurmDirectives dataclass."""
     if not _validate_time_format(args.time):
         raise ConfigurationError(f"Invalid walltime format: '{args.time}'. Use HH:MM:SS or D-HH:MM:SS.")
     if not _validate_memory_string(args.mem):
@@ -142,26 +135,26 @@ def _build_directives_from_args(args: argparse.Namespace) -> SlurmDirectives:
         if ntasks == 0:
             raise ConfigurationError("Cannot auto-calculate ntasks: topology detection returned 0 cores.")
 
-    return {
-        "job_name": args.job_name,
-        "partition": args.partition,
-        "nodes": args.nodes,
-        "ntasks": ntasks,
-        "cpus_per_task": args.cpus_per_task,
-        "mem_per_node": args.mem,
-        "time": args.time,
-        "dependency": args.dependency,
-        "qos": args.qos,
-        "gres": args.gres,
-        "output": "slurm-%j.out",
-        "error": "slurm-%j.err"
-    }
+    return SlurmDirectives(
+        job_name=args.job_name,
+        partition=args.partition or None,
+        nodes=args.nodes,
+        ntasks=ntasks,
+        cpus_per_task=args.cpus_per_task,
+        mem_per_node=args.mem,
+        time=args.time,
+        dependency=args.dependency or None,
+        qos=args.qos or None,
+        gres=args.gres or None,
+        output="slurm-%j.out",
+        error="slurm-%j.err",
+    )
 
 
 def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Generate, write, and optionally preview SBATCH script."""
     directives = _build_directives_from_args(args)
-    topo = detect_topology(max_cores=directives["ntasks"])
+    topo = detect_topology(max_cores=directives.ntasks or None)
     spec = SlurmJobSpec(
         topo=topo,
         exec_command="run_lapw -p",
@@ -175,7 +168,6 @@ def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
 
     target = Path(args.output).resolve()
 
-    # Backup existing
     if args.backup and target.exists():
         ts = time.strftime("%Y%m%d_%H%M%S")
         backup_path = target.parent / f"{target.name}.bak.{ts}"
@@ -185,7 +177,6 @@ def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         except Exception as e:
             logger.warning(f"Backup failed: {e}")
 
-    # Atomic write
     atomic_write(target, script_content, mode=0o755)
 
     result = {"status": "success", "path": str(target), "size_bytes": len(script_content.encode())}
@@ -205,13 +196,11 @@ def handle_validate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     errors = []
     warnings = []
 
-    # Basic syntax checks
     if not content.startswith("#!/bin/bash"):
         warnings.append("Missing #!/bin/bash shebang.")
     if "#SBATCH" not in content:
         errors.append("No #SBATCH directives found.")
 
-    # Extract & validate common directives
     directives = {}
     for match in re.finditer(r'#SBATCH\s+--([\w-]+)=?([^\s]*)', content):
         key, val = match.group(1), match.group(2) or "true"
@@ -261,7 +250,7 @@ def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     spec = SlurmJobSpec(
         topo=topo,
         exec_command=f"bash {script_path}",
-        directives={},
+        directives=SlurmDirectives(),
         working_dir=script_path.parent
     )
 
@@ -290,7 +279,6 @@ def run_sbatch_cli(argv: Optional[List[str]] = None) -> int:
     except SystemExit as e:
         return e.code if e.code is not None else 2
 
-    # 1. Initialize Config & Logging
     try:
         cfg = load_config(file_path=args.config, cli_override={
             "log_level": "DEBUG" if args.verbose > 0 else "ERROR" if args.quiet else None,
@@ -304,7 +292,6 @@ def run_sbatch_cli(argv: Optional[List[str]] = None) -> int:
         sys.stderr.write(f"Critical: Failed to initialize configuration/logging: {e}\n")
         return 2
 
-    # 2. Signal Handling
     def _signal_handler(sig: int, frame: Any) -> None:
         logger.warning(f"Received signal {sig}. Cleaning up...")
         sys.exit(130)
@@ -312,7 +299,6 @@ def run_sbatch_cli(argv: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # 3. Command Dispatch
     handlers = {
         "generate": lambda a: handle_generate(a, cfg),
         "validate": lambda a: handle_validate(a, cfg),

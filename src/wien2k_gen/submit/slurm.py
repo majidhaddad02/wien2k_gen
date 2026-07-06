@@ -37,25 +37,39 @@ logger = get_logger(__name__)
 # Type Definitions & Data Structures
 # =============================================================================
 
-class SlurmDirectives(TypedDict, total=False):
+@dataclass
+class SlurmDirectives:
     """Core SLURM job directives with type-safe defaults."""
-    job_name: str
-    partition: str
-    qos: str
-    nodes: int
-    ntasks: int
-    cpus_per_task: int
-    mem_per_node: str  # e.g., "64G"
-    time: str          # e.g., "24:00:00"
-    gres: str          # e.g., "gpu:a100:2"
-    constraint: str
-    array: str         # e.g., "1-100"
-    dependency: str    # e.g., "afterok:12345"
-    mail_user: str
-    mail_type: str
-    output: str
-    error: str
-    export: str
+    job_name: Optional[str] = None
+    partition: Optional[str] = None
+    qos: Optional[str] = None
+    nodes: Optional[int] = None
+    ntasks: Optional[int] = None
+    cpus_per_task: Optional[int] = None
+    mem_per_node: Optional[str] = None  # e.g., "64G"
+    time: Optional[str] = None          # e.g., "24:00:00"
+    gres: Optional[str] = None          # e.g., "gpu:a100:2"
+    constraint: Optional[str] = None
+    array: Optional[str] = None         # e.g., "1-100"
+    dependency: Optional[str] = None    # e.g., "afterok:12345"
+    mail_user: Optional[str] = None
+    mail_type: Optional[str] = None
+    output: Optional[str] = None
+    error: Optional[str] = None
+    export: Optional[str] = None
+    account: Optional[str] = None
+    preemption_grace_sec: Optional[int] = None
+
+    def to_dict(self) -> Dict:
+        result = {}
+        for key, val in self.__dict__.items():
+            if val is not None:
+                result[key] = val
+        return result
+
+    def get(self, key: str, default=None):
+        val = getattr(self, key, None)
+        return val if val is not None else default
 
 
 class SubmissionResult(TypedDict, total=False):
@@ -78,7 +92,7 @@ class SlurmJobSpec:
     """
     topo: Topology
     exec_command: str
-    directives: SlurmDirectives = field(default_factory=dict)
+    directives: SlurmDirectives = field(default_factory=SlurmDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
     modules_to_load: List[str] = field(default_factory=list)
     environment_vars: Dict[str, str] = field(default_factory=dict)
@@ -114,18 +128,15 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> List[str]:
     warnings_list = []
     directives = spec.directives
 
-    # Time format validation
-    if directives.get("time") and not _validate_time_format(directives["time"]):
-        warnings_list.append(f"Invalid time format: {directives['time']}. Expected MM:SS or HH:MM:SS.")
+    if directives.time and not _validate_time_format(directives.time):
+        warnings_list.append(f"Invalid time format: {directives.time}. Expected MM:SS or HH:MM:SS.")
 
-    # Memory validation
-    if directives.get("mem_per_node") and not _validate_memory_string(directives["mem_per_node"]):
-        warnings_list.append(f"Invalid memory format: {directives['mem_per_node']}. Expected e.g., 64G.")
+    if directives.mem_per_node and not _validate_memory_string(directives.mem_per_node):
+        warnings_list.append(f"Invalid memory format: {directives.mem_per_node}. Expected e.g., 64G.")
 
-    # Topology vs requested resources
-    requested_nodes = directives.get("nodes", 1)
-    requested_tasks = directives.get("ntasks", 0)
-    requested_cpus = directives.get("cpus_per_task", 1)
+    requested_nodes = directives.nodes or 1
+    requested_tasks = directives.ntasks or 0
+    requested_cpus = directives.cpus_per_task or 1
     total_requested_cores = requested_tasks * requested_cpus
 
     if spec.topo.total_cores > 0 and total_requested_cores > spec.topo.total_cores:
@@ -133,22 +144,20 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> List[str]:
             f"Requested cores ({total_requested_cores}) exceed available topology cores ({spec.topo.total_cores})."
         )
 
-    # Job limit awareness
     job_limit_mb = get_job_memory_limit_mb()
-    if job_limit_mb and directives.get("mem_per_node"):
-        mem_val = re.match(r'(\d+)', directives["mem_per_node"])
+    if job_limit_mb and directives.mem_per_node:
+        mem_val = re.match(r'(\d+)', directives.mem_per_node)
         if mem_val:
             req_mb = int(mem_val.group(1))
-            if "G" in directives["mem_per_node"]:
+            if "G" in directives.mem_per_node:
                 req_mb *= 1024
             if req_mb > job_limit_mb:
                 warnings_list.append(
-                    f"Requested memory per node ({directives['mem_per_node']}) exceeds job limit ({job_limit_mb} MB)."
+                    f"Requested memory per node ({directives.mem_per_node}) exceeds job limit ({job_limit_mb} MB)."
                 )
 
-    # Preemption grace vs walltime
-    if directives.get("time"):
-        parts = directives["time"].replace("-", ":").split(":")
+    if directives.time:
+        parts = directives.time.replace("-", ":").split(":")
         if len(parts) == 3:
             walltime_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
         elif len(parts) == 2:
@@ -169,56 +178,34 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> List[str]:
 def _format_sbatch_directives(directives: SlurmDirectives) -> str:
     """Format SLURM directives with proper spacing, comments, and fallback defaults."""
     lines = []
-    defaults = {
-        "job_name": "wien2k_gen_job",
-        "partition": "",
-        "qos": "",
-        "nodes": 1,
-        "ntasks": 1,
-        "cpus_per_task": 1,
-        "mem_per_node": "",
-        "time": "24:00:00",
-        "gres": "",
-        "constraint": "",
-        "array": "",
-        "dependency": "",
-        "mail_user": os.getenv("USER", ""),
-        "mail_type": "BEGIN,END,FAIL",
-        "output": "slurm-%j.out",
-        "error": "slurm-%j.err",
-        "export": "ALL",
-    }
-    # Merge user directives with defaults
-    merged = {**defaults, **directives}
+    user = os.getenv("USER", "")
 
-    # Generate #SBATCH lines
     sbatch_map = [
-        ("job_name", "--job-name={value}"),
-        ("partition", "--partition={value}"),
-        ("qos", "--qos={value}"),
-        ("nodes", "--nodes={value}"),
-        ("ntasks", "--ntasks={value}"),
-        ("cpus_per_task", "--cpus-per-task={value}"),
-        ("mem_per_node", "--mem-per-node={value}"),
-        ("time", "--time={value}"),
-        ("gres", "--gres={value}"),
-        ("constraint", "--constraint={value}"),
-        ("array", "--array={value}"),
-        ("dependency", "--dependency={value}"),
-        ("mail_user", "--mail-user={value}"),
-        ("mail_type", "--mail-type={value}"),
-        ("output", "--output={value}"),
-        ("error", "--error={value}"),
-        ("export", "--export={value}"),
+        ("job_name",      directives.job_name or "wien2k_gen_job",         "--job-name={value}"),
+        ("partition",     directives.partition or "",                      "--partition={value}"),
+        ("qos",           directives.qos or "",                            "--qos={value}"),
+        ("nodes",         directives.nodes if directives.nodes is not None else 1,          "--nodes={value}"),
+        ("ntasks",        directives.ntasks if directives.ntasks is not None else 1,        "--ntasks={value}"),
+        ("cpus_per_task", directives.cpus_per_task if directives.cpus_per_task is not None else 1, "--cpus-per-task={value}"),
+        ("mem_per_node",  directives.mem_per_node or "",                   "--mem-per-node={value}"),
+        ("time",          directives.time or "24:00:00",                   "--time={value}"),
+        ("gres",          directives.gres or "",                           "--gres={value}"),
+        ("constraint",    directives.constraint or "",                     "--constraint={value}"),
+        ("array",         directives.array or "",                          "--array={value}"),
+        ("dependency",    directives.dependency or "",                     "--dependency={value}"),
+        ("mail_user",     directives.mail_user or user,                    "--mail-user={value}"),
+        ("mail_type",     directives.mail_type or "BEGIN,END,FAIL",        "--mail-type={value}"),
+        ("output",        directives.output or "slurm-%j.out",             "--output={value}"),
+        ("error",         directives.error or "slurm-%j.err",              "--error={value}"),
+        ("export",        directives.export or "ALL",                      "--export={value}"),
     ]
 
-    for key, fmt in sbatch_map:
-        val = merged.get(key)
+    for key, val, fmt in sbatch_map:
         if val and str(val).strip():
             lines.append(f"#SBATCH {fmt.format(value=val)}")
 
-    # Preemption signal injection
-    lines.append(f"#SBATCH --signal=B:USR1@{merged.get('preemption_grace_sec', 60)}")
+    grace = directives.preemption_grace_sec if directives.preemption_grace_sec is not None else 60
+    lines.append(f"#SBATCH --signal=B:USR1@{grace}")
     lines.append("#SBATCH --signal=B:TERM@10")
 
     return "\n".join(lines)
@@ -253,7 +240,6 @@ def _inject_interconnect_env() -> str:
     else:
         exports.append("export UCX_TLS=auto")
 
-    # NUMA & SMT exclusion
     numa_nodes = get_numa_node_count()
     if numa_nodes > 1:
         exports.extend([
@@ -366,38 +352,31 @@ def _generate_sbatch_body(spec: SlurmJobSpec) -> str:
     """Construct the main execution body with module loading, env setup, and command."""
     lines = []
 
-    # Module loading
     if spec.modules_to_load:
         lines.append("# Load required modules")
         lines.append(f"module load {' '.join(spec.modules_to_load)}\n")
-        
-    # Environment variables
+
     if spec.environment_vars:
         lines.append("# Set job environment variables")
         for k, v in spec.environment_vars.items():
             lines.append(f'export {k}="{v}"')
         lines.append("")
-        
-    # Working directory setup
+
     lines.append(f"cd {spec.working_dir} || exit 1")
     lines.append('echo "[slurm_gen] Working directory: $(pwd)"')
     lines.append('echo "[slurm_gen] Host: $(hostname) | Cores: $SLURM_CPUS_ON_NODE | Nodes: $SLURM_NNODES"')
     lines.append("")
 
-    # Interconnect & NUMA tuning
     lines.append("# MPI & Interconnect Optimization")
     lines.append(_inject_interconnect_env())
     lines.append("")
 
-    # Scratch setup
     lines.append(_inject_scratch_sync())
     lines.append("")
 
-    # Preemption hooks
     lines.append(_inject_preemption_hooks(spec))
     lines.append("")
 
-    # Execution command
     lines.append("# Execute calculation")
     lines.append(f'exec {spec.exec_command} "$@"')
     lines.append("EXIT_CODE=$?")
@@ -446,7 +425,7 @@ def submit_slurm_job(
     Returns:
         SubmissionResult with job_id, path, content, and diagnostics.
     """
-    default_name = spec.directives.get("job_name", "job")
+    default_name = spec.directives.job_name or "job"
     result: SubmissionResult = {
         "success": False,
         "job_id": None,
@@ -457,7 +436,6 @@ def submit_slurm_job(
         "estimated_start_time": None
     }
 
-    # 1. Validation
     if spec.validate_constraints:
         result["warnings"].extend(_check_scheduler_limits(spec))
         if any(w.startswith("ERROR:") for w in result["warnings"]):
@@ -466,21 +444,18 @@ def submit_slurm_job(
             if result["errors"]:
                 return result
 
-    # 2. Generate script
     try:
         script_content = generate_sbatch_script(spec)
     except Exception as e:
         result["errors"].append(f"Script generation failed: {e}")
         return result
 
-    # 3. Dry-run mode
     if dry_run:
         result["dry_run_content"] = script_content
         result["success"] = True
         logger.info("SLURM script generated in dry-run mode. Review before submission.")
         return result
 
-    # 4. Backup & Atomic Write
     if backup and result["script_path"].exists():
         try:
             backup_path = result["script_path"].with_suffix(".sh.bak")
@@ -496,7 +471,6 @@ def submit_slurm_job(
         result["errors"].append(f"Failed to write script: {e}")
         return result
 
-    # 5. Submit job
     try:
         logger.info("Submitting job via sbatch...")
         proc = subprocess.run(
@@ -505,13 +479,11 @@ def submit_slurm_job(
         )
         
         if proc.returncode == 0:
-            # Parse job ID from output: "Submitted batch job 12345"
             match = re.search(r"Submitted batch job (\d+)", proc.stdout)
             result["job_id"] = int(match.group(1)) if match else None
             result["success"] = True
             logger.info(f"Job submitted successfully. Job ID: {result['job_id']}")
             
-            # Estimate start time (rough heuristic based on queue position)
             if result["job_id"]:
                 try:
                     squeue = subprocess.run(

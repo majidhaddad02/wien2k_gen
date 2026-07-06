@@ -9,7 +9,8 @@ Key Architecture Features:
 • Global configuration & logging initialization before command dispatch
 • Rich UI integration: Tables, Panels, and Progress Bars for human-readable output
 • Structured exception handling with machine-readable JSON fallback & graceful degradation
-• Seamless integration with refactored core, optimizer, submit, benchmark, and UI modules
+• Multi-scheduler support (SLURM, PBS, LSF) with auto-detection
+• Terminal-aware console detection (--plain / --no-color for dumb terminals)
 • Thread-safe execution context, signal-aware teardown, and non-blocking I/O
 • Comprehensive English documentation, type hints, and HPC-grade resilience patterns
 """
@@ -17,6 +18,7 @@ Key Architecture Features:
 import os
 import sys
 import json
+import time
 import argparse
 import signal
 from pathlib import Path
@@ -26,7 +28,6 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
-# Project imports (aligned with refactored architecture)
 from .config import load_config, get_config, AppConfig, ensure_dirs
 from .logging_config import setup_logging, get_logger, set_context
 from .backend_manager import get_backend, set_backend, list_backends, BackendManager
@@ -38,6 +39,8 @@ from .exceptions import (
 from .core.pipeline import run_pipeline
 from .core.scheduler import detect as detect_topology
 from .submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
+from .submit import SUBMIT_PROVIDERS
+from .ui.rich_ui import detect_terminal_capabilities, get_rich_console, get_plain_console
 from .benchmark.real import RealBenchmarkRunner
 from .utils.diagnostic import run_diagnostics, export_diagnostics_json
 from .ui.interactive import launch_app
@@ -45,6 +48,10 @@ from .ui.analysis import parse_scf_log, generate_report
 
 logger = get_logger(__name__)
 console = Console()
+
+_term = os.environ.get("TERM", "")
+_no_color = os.environ.get("NO_COLOR", "")
+_is_dumb = _term in ("dumb", "vt100", "") or _no_color
 
 
 # =============================================================================
@@ -59,14 +66,13 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  wien2k_gen generate --backend wien2k --cores 64 --target memory --dry-run\n"
-            "  wien2k_gen submit --partition gpu --time 48:00:00 --mem 64G\n"
+            "  wien2k_gen submit --partition gpu --time 48:00:00 --mem 64G --scheduler slurm\n"
             "  wien2k_gen diagnostics --export report.json --full\n"
             "  wien2k_gen tui\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    # Global flags
     global_group = parser.add_argument_group("Global Options")
     global_group.add_argument("-v", "--verbose", action="count", default=0, help="Increase verbosity (-v, -vv)")
     global_group.add_argument("-q", "--quiet", action="store_true", help="Suppress console output")
@@ -75,11 +81,11 @@ def create_parser() -> argparse.ArgumentParser:
     global_group.add_argument("--backend", type=str, choices=[b.value for b in BackendCode], help="Override auto-detected backend")
     global_group.add_argument("--log-file", type=str, default=None, help="Redirect logs to file")
     global_group.add_argument("--version", action="version", version="wien2k_gen v9.8.0")
+    global_group.add_argument("--plain", action="store_true", help="Use plain output (no Rich formatting, for dumb terminals)")
+    global_group.add_argument("--no-color", action="store_true", dest="no_color", help="Disable colored output")
 
-    # Subcommands
     subparsers = parser.add_subparsers(dest="command", help="Available workflow commands", required=True)
 
-    # 1. generate
     gen_p = subparsers.add_parser("generate", help="Generate parallel configuration files")
     gen_p.add_argument("--nodes", type=int, default=None, help="Number of compute nodes")
     gen_p.add_argument("--cores", type=int, default=None, help="Total MPI cores to allocate")
@@ -91,9 +97,12 @@ def create_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--dry-run", action="store_true", help="Generate config without writing to disk")
     gen_p.add_argument("--export", type=str, default=None, help="Export configuration summary to path")
     gen_p.add_argument("--overwrite", action="store_true", help="Overwrite existing .machines/INCAR without prompt")
+    gen_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler for job scripts (default: auto-detect)")
+    gen_p.add_argument("--gpu", action="store_true", help="Enable GPU-aware configuration")
+    gen_p.add_argument("--gpu-mixed-precision", action="store_true", help="Enable FP32/FP16 mixed precision")
 
-    # 2. submit
-    sub_p = subparsers.add_parser("submit", help="Submit job to SLURM/scheduler")
+    sub_p = subparsers.add_parser("submit", help="Submit job to scheduler")
+    sub_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler (default: auto-detect)")
     sub_p.add_argument("--partition", type=str, default="", help="Scheduler partition/queue")
     sub_p.add_argument("--nodes", type=int, default=1, help="Number of nodes")
     sub_p.add_argument("--ntasks", type=int, default=0, help="Total tasks (0 = auto from topology)")
@@ -102,32 +111,83 @@ def create_parser() -> argparse.ArgumentParser:
     sub_p.add_argument("--job-name", type=str, default="wien2k_job", help="Job identifier")
     sub_p.add_argument("--dependency", type=str, default="", help="Job dependency (e.g., afterok:123)")
     sub_p.add_argument("--dry-run", action="store_true", help="Generate script only, do not submit")
-    sub_p.add_argument("--export", type=str, default=None, help="Export SBATCH script to path")
+    sub_p.add_argument("--export", type=str, default=None, help="Export script to path")
 
-    # 3. benchmark
     bench_p = subparsers.add_parser("benchmark", help="Run empirical or synthetic benchmarks")
     bench_p.add_argument("--type", choices=["real", "synthetic"], default="real", help="Benchmark type")
     bench_p.add_argument("--max-cores", type=int, default=None, help="Maximum cores for scaling suite")
     bench_p.add_argument("--walltime", type=str, default="02:00:00", help="Max runtime per run")
     bench_p.add_argument("--output", type=str, default=None, help="Save results to JSON path")
     bench_p.add_argument("--skip-cleanup", action="store_true", help="Retain temporary benchmark directories")
+    bench_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler (default: auto-detect)")
 
-    # 4. diagnostics
     diag_p = subparsers.add_parser("diagnostics", help="Collect system & environment health report")
     diag_p.add_argument("--export", type=str, default=None, help="Save diagnostic report to path")
     diag_p.add_argument("--full", action="store_true", help="Include verbose library & interconnect checks")
 
-    # 5. analyze
     ana_p = subparsers.add_parser("analyze", help="Parse SCF logs & generate performance reports")
     ana_p.add_argument("--log", type=str, required=True, help="Path to SCF/output log file")
     ana_p.add_argument("--code", type=str, choices=["wien2k", "vasp", "qe"], default=None, help="Force DFT code parser")
     ana_p.add_argument("--export", type=str, default=None, help="Export analysis report to JSON")
 
-    # 6. tui
     tui_p = subparsers.add_parser("tui", help="Launch interactive terminal UI")
     tui_p.add_argument("--compact", action="store_true", help="Enable compact UI layout")
 
+    mon_p = subparsers.add_parser("monitor", help="Monitor SCF convergence in real-time")
+    mon_p.add_argument("--case", type=str, required=True, help="Case name / path to monitor")
+    mon_p.add_argument("--output", type=str, default=None, help="SCF output file to parse")
+    mon_p.add_argument("--interval", type=int, default=10, help="Polling interval in seconds (default: 10)")
+
+    conv_p = subparsers.add_parser("converge", help="Run automated convergence tests")
+    conv_p.add_argument("--case", type=str, required=True, help="Case name")
+    conv_p.add_argument("--mode", type=str, choices=["kpoints", "rkmax", "both"], default="both", help="Parameter to converge (default: both)")
+    conv_p.add_argument("--tolerance", type=float, default=0.001, help="Energy tolerance in Ry (default: 0.001)")
+
+    hist_p = subparsers.add_parser("history", help="Query execution history database")
+    hist_p.add_argument("--list", action="store_true", help="List past runs")
+    hist_p.add_argument("--show", type=str, default=None, help="Show details of run ID")
+    hist_p.add_argument("--similar-to", type=str, default=None, help="Find similar past cases by case path")
+    hist_p.add_argument("--limit", type=int, default=10, help="Max results to display")
+
+    bands_p = subparsers.add_parser("analyze-bands", help="Extract band structure and DOS data")
+    bands_p.add_argument("--case", type=str, required=True, help="Case name")
+    bands_p.add_argument("--output", type=str, default=None, help="Output file for band data (JSON)")
+    bands_p.add_argument("--dos", action="store_true", help="Also parse DOS data")
+
     return parser
+
+
+# =============================================================================
+# Scheduler Detection Helpers
+# =============================================================================
+
+def _detect_scheduler() -> str:
+    """Auto-detect available scheduler from environment."""
+    if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):
+        return "slurm"
+    if os.environ.get("PBS_JOBID"):
+        return "pbs"
+    if os.environ.get("LSB_JOBID") or os.environ.get("LSF_JOBID"):
+        return "lsf"
+
+    for cmd in ["sbatch", "sinfo"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "slurm"
+    for cmd in ["qsub", "pbsnodes"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "pbs"
+    for cmd in ["bsub", "bjobs"]:
+        if os.path.exists(f"/usr/bin/{cmd}"):
+            return "lsf"
+
+    return "slurm"
+
+
+def _resolve_scheduler(flag: str) -> str:
+    """Resolve --scheduler flag or auto-detect."""
+    if flag and flag != "auto":
+        return flag
+    return _detect_scheduler()
 
 
 # =============================================================================
@@ -148,6 +208,22 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     if args.memory_limit:
         suggestion["memory_limit_gb"] = args.memory_limit
 
+    if args.gpu or args.gpu_mixed_precision:
+        try:
+            from .backends.gpu_backend import detect_gpu, get_gpu_recommendation, get_mixed_precision_recommendation
+            gpus = detect_gpu()
+            if gpus:
+                gpu_rec = get_gpu_recommendation(topo, nmat=5000, nkpt=8, mode=suggestion.get("mode", "mpi"))
+                suggestion["gpu_recommendation"] = gpu_rec
+                if args.gpu_mixed_precision:
+                    fp_rec = get_mixed_precision_recommendation(topo, nmat=5000)
+                    suggestion["mixed_precision"] = fp_rec
+                console.print(f"[green]GPU detection: {len(gpus)} device(s) found.[/green]")
+            else:
+                console.print("[yellow]No GPUs detected. Proceeding without GPU configuration.[/yellow]")
+        except ImportError as e:
+            console.print(f"[yellow]GPU backend not available: {e}[/yellow]")
+
     result: PipelineResult = run_pipeline(
         topo=topo,
         user_suggestion=suggestion,
@@ -160,12 +236,10 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 
     if result.success:
         if args.dry_run and result.dry_run_content:
-            # Rich Table for Dry-Run Summary
             table = Table(title="Configuration Preview", border_style="cyan")
             table.add_column("Parameter", style="cyan", no_wrap=True)
             table.add_column("Value", style="green")
             
-            # Extract some mock/real metrics from result if available
             table.add_row("Mode", str(suggestion.get("mode", "auto")))
             table.add_row("Total Cores", str(suggestion.get("recommended_total_cores", topo.total_cores)))
             table.add_row("Dry-Run Content", f"[dim]{len(result.dry_run_content)} bytes generated[/dim]")
@@ -176,7 +250,7 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
             console.print(Panel(f"[green]✓ Configuration generated successfully.[/]\nPath: [cyan]{result.config_path}[/]", border_style="green"))
             
         if result.warnings:
-            warn_table = Table(title="⚠ Warnings", show_header=False, box=None)
+            warn_table = Table(title="Warnings", show_header=False, box=None)
             for w in result.warnings:
                 warn_table.add_row("[yellow]•[/]", f"[dim]{w}[/dim]")
             console.print(warn_table)
@@ -187,39 +261,69 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 
 
 def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
-    """Execute job submission to scheduler."""
+    """Execute job submission to scheduler with multi-scheduler support."""
+    scheduler = _resolve_scheduler(getattr(args, "scheduler", "auto"))
     topo = detect_topology(max_cores=args.ntasks or None)
-    directives = SlurmDirectives(
-        job_name=args.job_name,
-        partition=args.partition,
-        nodes=args.nodes,
-        ntasks=args.ntasks or topo.total_cores,
-        cpus_per_task=1,
-        mem_per_node=args.mem,
-        time=args.time,
-        dependency=args.dependency
-    )
-    spec = SlurmJobSpec(
-        topo=topo,
-        exec_command="run_lapw -p",
-        directives=directives,
-        working_dir=Path.cwd()
-    )
 
-    res = submit_slurm_job(spec=spec, dry_run=args.dry_run, script_path=Path(args.export) if args.export else None)
+    if scheduler == "slurm":
+        directives = SlurmDirectives(
+            job_name=args.job_name,
+            partition=args.partition,
+            nodes=args.nodes,
+            ntasks=args.ntasks or topo.total_cores,
+            cpus_per_task=1,
+            mem_per_node=args.mem,
+            time=args.time,
+            dependency=args.dependency or None
+        )
+        spec = SlurmJobSpec(
+            topo=topo,
+            exec_command="run_lapw -p",
+            directives=directives,
+            working_dir=Path.cwd()
+        )
+        res = submit_slurm_job(spec=spec, dry_run=args.dry_run, script_path=Path(args.export) if args.export else None)
 
-    if args.json_output:
-        return res
-        
-    if res.get("success"):
-        if args.dry_run:
-            console.print(Panel(res.get("dry_run_content", "Script content not available"), title="SBATCH Preview", border_style="cyan"))
+        if args.json_output:
+            return res
+            
+        if res.get("success"):
+            if args.dry_run:
+                console.print(Panel(res.get("dry_run_content", "Script content not available"), title="SBATCH Preview", border_style="cyan"))
+            else:
+                console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{res.get('job_id')}[/]\nScript: [dim]{res.get('script_path')}[/]", border_style="green"))
         else:
-            console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{res.get('job_id')}[/]\nScript: [dim]{res.get('script_path')}[/]", border_style="green"))
-    else:
-        console.print(Panel(f"[red]✗ Submission failed: {res.get('errors')}[/]", border_style="red"))
-        
-    return {"success": res.get("success"), "job_id": res.get("job_id"), "path": str(res.get("script_path", ""))}
+            console.print(Panel(f"[red]✗ Submission failed: {res.get('errors')}[/]", border_style="red"))
+        return {"success": res.get("success"), "job_id": res.get("job_id"), "path": str(res.get("script_path", ""))}
+
+    elif scheduler in ("pbs", "lsf"):
+        provider_cls = SUBMIT_PROVIDERS.get(scheduler)
+        if provider_cls:
+            provider = provider_cls()
+            res = provider.submit(
+                topo=topo,
+                exec_command="run_lapw -p",
+                directives={
+                    "job_name": args.job_name,
+                    "queue" if scheduler == "pbs" else "queue": args.partition,
+                    "nodes": args.nodes,
+                    "walltime": args.time,
+                    "mem" if scheduler == "pbs" else "memory": args.mem,
+                },
+                script_path=Path(args.export) if args.export else None,
+                dry_run=args.dry_run,
+            )
+            if args.json_output:
+                return res
+            if res.get("success"):
+                console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{res.get('job_id')}[/]\nScript: [dim]{res.get('script_path')}[/]", border_style="green"))
+            else:
+                console.print(Panel(f"[red]✗ Submission failed: {res.get('errors')}[/]", border_style="red"))
+            return {"success": res.get("success"), "job_id": res.get("job_id"), "path": str(res.get("script_path", ""))}
+        else:
+            return {"success": False, "errors": [f"Scheduler provider '{scheduler}' not available."]}
+
+    return {"success": False, "errors": [f"Unknown scheduler: {scheduler}"]}
 
 
 def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
@@ -262,7 +366,6 @@ def _handle_diagnostics(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, A
     if args.json_output:
         return report
         
-    # Rich summary for diagnostics
     table = Table(title="System Diagnostics Summary", border_style="blue")
     table.add_column("Metric", style="cyan")
     table.add_column("Value", style="green")
@@ -306,6 +409,192 @@ def _handle_tui(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     return {"status": "tui_exited"}
 
 
+def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Monitor SCF convergence in real-time."""
+    try:
+        from .optimizer.monitor import start_monitoring, get_monitor_status, stop_monitoring
+        from .core.scheduler import detect as detect_topology
+    except ImportError as e:
+        return {"error": f"Monitor module dependencies not available: {e}"}
+
+    topo = detect_topology()
+    console.print(Panel(f"[cyan]Starting SCF Monitor[/]\nCase: [bold]{args.case}[/]\nInterval: {args.interval}s", border_style="blue"))
+
+    output_path = args.output or f"{args.case}.scf"
+    os.environ["WIEN2K_SCF_LOG"] = output_path
+    
+    try:
+        start_monitoring(topo, check_interval=args.interval, daemon=False)
+        while True:
+            status = get_monitor_status()
+            if not status.get("running"):
+                break
+            if status.get("events"):
+                last_events = status.get("events", [])[-5:]
+                for evt in last_events:
+                    console.print(f"[dim]{evt}[/dim]")
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        stop_monitoring()
+        console.print("[yellow]Monitoring stopped by user.[/yellow]")
+    
+    return {"status": "monitoring_ended", "case": args.case}
+
+
+def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Run automated convergence testing."""
+    try:
+        from .optimizer.convergence import (
+            run_kpoint_convergence, run_rkmax_convergence,
+            find_converged_parameters, generate_convergence_report
+        )
+    except ImportError as e:
+        return {"error": f"Convergence module dependencies not available: {e}"}
+
+    console.print(Panel(
+        f"[cyan]Convergence Study[/]\nCase: [bold]{args.case}[/]\nMode: [bold]{args.mode}[/]\nTolerance: [bold]{args.tolerance} Ry[/]",
+        border_style="blue"
+    ))
+
+    wien2k_cmd = {"run_lapw": "run_lapw", "lapw0": "lapw0", "lapw1": "lapw1", "lapw2": "lapw2"}
+    results = {}
+
+    if args.mode in ("kpoints", "both"):
+        kpoint_grids = [(2, 2, 2), (4, 4, 4), (6, 6, 6), (8, 8, 8), (10, 10, 10)]
+        console.print("[bold]Running k-point convergence...[/bold]")
+        results["kpoints"] = run_kpoint_convergence(args.case, kpoint_grids, wien2k_cmd)
+
+    if args.mode in ("rkmax", "both"):
+        rkmax_values = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        console.print("[bold]Running RKmax convergence...[/bold]")
+        results["rkmax"] = run_rkmax_convergence(args.case, rkmax_values, wien2k_cmd)
+
+    for key, data in results.items():
+        converged = find_converged_parameters(data, tolerance=args.tolerance * 1000.0)
+        console.print(f"[green]{key}: converged at {converged.get('converged_value')}[/green]")
+
+    report = generate_convergence_report({"results": list(results.values())})
+    console.print(Panel(report, title="Convergence Report", border_style="green"))
+
+    return {"status": "completed", "results": {k: v for k, v in results.items()}}
+
+
+def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Query execution history database."""
+    try:
+        from .optimizer.history import ExecutionHistory, ExecutionRecord
+    except ImportError as e:
+        return {"error": f"History module dependencies not available: {e}"}
+
+    with ExecutionHistory() as history:
+        if args.show:
+            records = history.query({"run_id": args.show})
+            if not records:
+                console.print(f"[red]No record found for run_id: {args.show}[/red]")
+                return {"found": False, "run_id": args.show}
+            rec = records[0]
+            table = Table(title=f"Run {args.show}", border_style="cyan")
+            table.add_column("Field", style="cyan")
+            table.add_column("Value", style="green")
+            table.add_row("Backend", rec.backend)
+            table.add_row("Mode", rec.mode)
+            table.add_row("Cores", str(rec.total_cores))
+            table.add_row("Walltime", f"{rec.walltime_sec:.1f}s")
+            table.add_row("Success", str(rec.success))
+            table.add_row("NMAT", str(rec.nmat))
+            table.add_row("k-points", str(rec.nkpt))
+            console.print(table)
+            return rec.to_dict() if hasattr(rec, 'to_dict') else {"run_id": rec.run_id}
+
+        if args.similar_to:
+            case_path = Path(args.similar_to)
+            if case_path.exists() and case_path.suffix == ".struct":
+                recs = history.get_similar(nmat=5000, nkpt=4, backend=cfg.backend or "wien2k", limit=args.limit)
+            else:
+                recs = history.query(limit=args.limit)
+            if recs:
+                table = Table(title=f"Similar Runs (limit={args.limit})", border_style="cyan")
+                table.add_column("Run ID", style="cyan")
+                table.add_column("Backend", style="green")
+                table.add_column("Cores", style="green")
+                table.add_column("Walltime", style="green")
+                table.add_column("Success")
+                for r in recs:
+                    table.add_row(r.run_id[:8], r.backend, str(r.total_cores), f"{r.walltime_sec:.1f}s", "✓" if r.success else "✗")
+                console.print(table)
+            else:
+                console.print("[yellow]No similar runs found.[/yellow]")
+            return {"count": len(recs)}
+
+        recs = history.query(limit=args.limit)
+        if recs:
+            table = Table(title="Execution History", border_style="cyan")
+            table.add_column("Run ID", style="cyan")
+            table.add_column("Backend")
+            table.add_column("Cores")
+            table.add_column("Walltime")
+            table.add_column("Date")
+            table.add_column("Status")
+            for r in recs:
+                ts = r.timestamp[:10] if r.timestamp else "?"
+                table.add_row(r.run_id[:8], r.backend, str(r.total_cores), f"{r.walltime_sec:.1f}s", ts, "✓" if r.success else "✗")
+            console.print(table)
+        else:
+            console.print("[yellow]No execution history found.[/yellow]")
+
+        return {"records": len(recs)}
+
+
+def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Extract band structure and DOS data from WIEN2k output."""
+    try:
+        from .core.electronic_structure import parse_band_structure, parse_dos, compute_band_gap
+    except ImportError as e:
+        return {"error": f"Electronic structure module dependencies not available: {e}"}
+
+    case_path = Path(args.case)
+    if case_path.is_dir():
+        base_path = str(case_path)
+        case_name = args.case
+    else:
+        base_path = str(case_path.parent) if case_path.parent != Path() else "."
+        case_name = case_path.stem
+
+    console.print(f"[cyan]Analyzing bands for case: [bold]{case_name}[/bold] in {base_path}[/cyan]")
+
+    band_data = parse_band_structure(case_name, base_path)
+    gap_info = compute_band_gap(case_name, base_path)
+
+    table = Table(title="Band Structure Summary", border_style="cyan")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("k-points", str(band_data.get("nkpt", 0)))
+    table.add_row("Bands", str(band_data.get("nbnd", 0)))
+    table.add_row("Spin-polarized", "Yes" if band_data.get("nspin", 1) > 1 else "No")
+    table.add_row("Fermi energy", f"{band_data.get('fermi', 0):.4f} eV")
+    table.add_row("Band gap", f"{gap_info.get('gap_ev', 0):.4f} eV")
+    table.add_row("Direct gap", f"{gap_info.get('direct_gap_ev', 0):.4f} eV")
+    console.print(table)
+
+    result = {"case": case_name, "nkpt": band_data.get("nkpt"), "nbnd": band_data.get("nbnd"), "fermi_ev": band_data.get("fermi"), "gap_ev": gap_info.get("gap_ev")}
+
+    if args.dos:
+        dos_data = parse_dos(case_name, base_path)
+        result["dos_n_energy"] = len(dos_data.get("energies", []))
+        console.print(f"[green]DOS: {result['dos_n_energy']} energy points parsed.[/green]")
+
+    if args.output:
+        export_data = {
+            "band_structure": {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in band_data.items() if k not in ("k_points", "eigenvalues")},
+            "gap": gap_info,
+        }
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, indent=2, default=str)
+        console.print(f"[green]Exported to {args.output}[/green]")
+
+    return result
+
+
 # =============================================================================
 # CLI Execution Engine
 # =============================================================================
@@ -315,13 +604,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     CLI entry point with structured setup, dispatch, and error handling.
     Returns OS exit code: 0 (success), 1 (app error), 2 (CLI syntax error).
     """
+    global console
+
     parser = create_parser()
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
         return e.code if e.code is not None else 2
 
-    # 1. Initialize Config & Logging
+    plain_mode = getattr(args, "plain", False) or getattr(args, "no_color", False)
+    caps = detect_terminal_capabilities()
+
+    if plain_mode or not caps.supports_color or _is_dumb:
+        console = get_plain_console()
+    else:
+        console = get_rich_console()
+
     try:
         cfg = load_config(file_path=args.config, cli_override={
             "log_level": "DEBUG" if args.verbose > 0 else "ERROR" if args.quiet else None,
@@ -335,7 +633,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         sys.stderr.write(f"Critical: Failed to initialize configuration/logging: {e}\n")
         return 2
 
-    # 2. Signal Handling for Graceful Teardown
     def _signal_handler(sig: int, frame: Any) -> None:
         logger.warning(f"Received signal {sig}. Cleaning up...")
         BackendManager.instance().reset()
@@ -344,14 +641,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     signal.signal(signal.SIGINT, _signal_handler)
     signal.signal(signal.SIGTERM, _signal_handler)
 
-    # 3. Command Dispatch
     handlers = {
         "generate": _handle_generate,
         "submit": _handle_submit,
         "benchmark": _handle_benchmark,
         "diagnostics": _handle_diagnostics,
         "analyze": _handle_analyze,
-        "tui": _handle_tui
+        "tui": _handle_tui,
+        "monitor": _handle_monitor,
+        "converge": _handle_converge,
+        "history": _handle_history,
+        "analyze-bands": _handle_analyze_bands,
     }
 
     handler = handlers.get(args.command)
@@ -377,7 +677,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.json_output:
             print(json.dumps({"error": e.to_dict()}, indent=2))
         else:
-            # Graceful degradation: Rich-formatted error with hint
             console.print(Panel(format_error_for_ui(e), title="Error", border_style="red"))
         return 1
         
@@ -397,6 +696,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 __all__ = [
     "main",
     "create_parser",
+    "_detect_scheduler",
+    "_resolve_scheduler",
 ]
 
 if __name__ == "__main__":
