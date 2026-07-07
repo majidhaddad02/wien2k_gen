@@ -37,7 +37,7 @@ from .exceptions import (
     MissingInputError, BackendError, ConfigurationError
 )
 from .core.pipeline import run_pipeline
-from .core.scheduler import detect as detect_topology
+from .core.scheduler import detect as detect_topology, _detect_scheduler, auto_detect_memory
 from .submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
 from .submit import SUBMIT_PROVIDERS
 from .ui.rich_ui import detect_terminal_capabilities, get_rich_console, get_plain_console
@@ -142,6 +142,8 @@ def create_parser() -> argparse.ArgumentParser:
     conv_p.add_argument("--case", type=str, required=True, help="Case name")
     conv_p.add_argument("--mode", type=str, choices=["kpoints", "rkmax", "both"], default="both", help="Parameter to converge (default: both)")
     conv_p.add_argument("--tolerance", type=float, default=0.001, help="Energy tolerance in Ry (default: 0.001)")
+    conv_p.add_argument("--kpoints", type=str, default="2,2,2 4,4,4 6,6,6 8,8,8 10,10,10", help="Space-separated k-point grids (default: '2,2,2 4,4,4 6,6,6 8,8,8 10,10,10')")
+    conv_p.add_argument("--rkmax", type=str, default="5,6,7,8,9,10", help="Comma-separated RKmax values (default: '5,6,7,8,9,10')")
 
     hist_p = subparsers.add_parser("history", help="Query execution history database")
     hist_p.add_argument("--list", action="store_true", help="List past runs")
@@ -435,13 +437,13 @@ def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     results = {}
 
     if args.mode in ("kpoints", "both"):
-        kpoint_grids = [(2, 2, 2), (4, 4, 4), (6, 6, 6), (8, 8, 8), (10, 10, 10)]
-        console.print("[bold]Running k-point convergence...[/bold]")
+        kpoint_grids = [tuple(int(x) for x in g.split(",")) for g in args.kpoints.split()]
+        console.print(f"[bold]Running k-point convergence with grids: {kpoint_grids}...[/bold]")
         results["kpoints"] = run_kpoint_convergence(args.case, kpoint_grids, wien2k_cmd)
 
     if args.mode in ("rkmax", "both"):
-        rkmax_values = [5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
-        console.print("[bold]Running RKmax convergence...[/bold]")
+        rkmax_values = [float(x) for x in args.rkmax.split(",")]
+        console.print(f"[bold]Running RKmax convergence with values: {rkmax_values}...[/bold]")
         results["rkmax"] = run_rkmax_convergence(args.case, rkmax_values, wien2k_cmd)
 
     for key, data in results.items():
