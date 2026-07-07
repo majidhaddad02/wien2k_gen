@@ -19,8 +19,10 @@ import os
 import sys
 import json
 import time
+import shutil
 import argparse
 import signal
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -100,6 +102,7 @@ def create_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler for job scripts (default: auto-detect)")
     gen_p.add_argument("--gpu", action="store_true", help="Enable GPU-aware configuration")
     gen_p.add_argument("--gpu-mixed-precision", action="store_true", help="Enable FP32/FP16 mixed precision")
+    gen_p.add_argument("--manual", action="store_true", help="After auto-generation, open .machines in $EDITOR for manual review/edit")
 
     sub_p = subparsers.add_parser("submit", help="Submit job to scheduler")
     sub_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler (default: auto-detect)")
@@ -170,6 +173,30 @@ def _resolve_scheduler(flag: str) -> str:
 # Command Handlers
 # =============================================================================
 
+def _open_editor_for_manual_review(filepath: Path) -> None:
+    """Open a file in $EDITOR (or nano/vi fallback) for manual review."""
+    editor = os.environ.get("EDITOR", os.environ.get("VISUAL", ""))
+    if not editor:
+        for fallback in ("nano", "vim", "vi"):
+            if shutil.which(fallback):
+                editor = fallback
+                break
+    if not editor:
+        console.print("[yellow]No editor found ($EDITOR unset, nano/vim not in PATH). "
+                       f"Edit manually: {filepath}[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Opening {filepath.name} in {editor} for manual review...[/bold cyan]")
+    console.print("[dim](Save and exit to continue, or :q! to discard)[/dim]")
+    try:
+        subprocess.run([editor, str(filepath)], check=False)
+        console.print(f"[green]✓ Editor closed. Final config: {filepath}[/green]")
+    except FileNotFoundError:
+        console.print(f"[yellow]Editor '{editor}' not found. Edit manually: {filepath}[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]Editor error: {e}. Edit manually: {filepath}[/yellow]")
+
+
 def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Execute pipeline configuration generation with Rich UI output."""
     topo = detect_topology(max_cores=args.max_cores)
@@ -215,15 +242,32 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
             table = Table(title="Configuration Preview", border_style="cyan")
             table.add_column("Parameter", style="cyan", no_wrap=True)
             table.add_column("Value", style="green")
-            
+
             table.add_row("Mode", str(suggestion.get("mode", "auto")))
             table.add_row("Total Cores", str(suggestion.get("recommended_total_cores", topo.total_cores)))
+
+            max_eff = suggestion.get("max_efficient_cores")
+            if max_eff:
+                table.add_row("Max Efficient Cores", f"[yellow]{max_eff}[/yellow]")
+
+            sat_data = suggestion.get("saturation_data", {})
+            if sat_data:
+                eff = sat_data.get("efficiency_pct")
+                if eff is not None:
+                    table.add_row("Est. Efficiency", f"[dim]{eff:.0f}%[/dim]")
+                sf = sat_data.get("serial_fraction")
+                if sf is not None:
+                    table.add_row("Serial Fraction (Amdahl)", f"[dim]s={sf:.3f}[/dim]")
+
             table.add_row("Dry-Run Content", f"[dim]{len(result.dry_run_content)} bytes generated[/dim]")
-            
+
             console.print(table)
             console.print(Panel(result.dry_run_content, title="Generated Config", border_style="dim"))
         else:
             console.print(Panel(f"[green]✓ Configuration generated successfully.[/]\nPath: [cyan]{result.config_path}[/]", border_style="green"))
+
+            if getattr(args, "manual", False) and result.config_path:
+                _open_editor_for_manual_review(Path(result.config_path))
             
         if result.warnings:
             warn_table = Table(title="Warnings", show_header=False, box=None)

@@ -13,6 +13,7 @@ from wien2k_gen.core.topology import Topology
 from wien2k_gen.optimizer.advisor import (
     suggest_optimal_resources,
     estimate_memory_footprint_gb,
+    estimate_amdahl_saturation,
     _get_current_backend,
 )
 
@@ -153,3 +154,134 @@ class TestMemoryEstimation:
     def test_memory_zero_nmat(self):
         gb = estimate_memory_footprint_gb(nmat=0)
         assert gb == 2.0  # Fallback
+
+
+class TestAmdahlSaturation:
+    """Tests for Amdahl's Law saturation detection.
+
+    References:
+    - Amdahl, G.M. (1967). AFIPS Conf. Proc. 30, 483-485.
+    - Hager & Wellein (2010). "Introduction to HPC". CRC Press. §4.2.
+    - HPC Wiki: "Scaling" — CG speedup peaks at 128 cores, drops at 256.
+    """
+
+    def test_small_atoms_gives_high_serial_fraction(self):
+        """Tiny systems (atoms<4): lapw0 is serial → high serial fraction."""
+        result = estimate_amdahl_saturation(
+            kpoints=8, nmat=500, atoms=2,
+            total_cores_available=64, num_nodes=1,
+        )
+        assert result["serial_fraction"] >= 0.15
+        assert result["max_speedup_amdahl"] <= 6.7  # 1/0.15
+
+    def test_large_system_low_serial_fraction(self):
+        """Large supercell: lapw0 amortized → low serial fraction."""
+        result = estimate_amdahl_saturation(
+            kpoints=64, nmat=20000, atoms=150,
+            total_cores_available=64, num_nodes=1,
+        )
+        assert result["serial_fraction"] <= 0.05
+        assert result["max_speedup_amdahl"] > 20
+
+    def test_kpoint_saturation_warning(self):
+        """When cores exceed k-point count, expect saturation warning."""
+        result = estimate_amdahl_saturation(
+            kpoints=4, nmat=2000, atoms=10,
+            total_cores_available=64, num_nodes=1,
+        )
+        assert result["is_saturated"]
+        warnings = result["saturation_warnings"]
+        assert any("k-point" in w.lower() for w in warnings)
+
+    def test_within_kpoint_limit_no_saturation(self):
+        """When cores ≤ k-point count, no saturation for moderate system."""
+        result = estimate_amdahl_saturation(
+            kpoints=64, nmat=5000, atoms=100,
+            total_cores_available=16, num_nodes=1,
+        )
+        assert not result["is_saturated"]
+
+    def test_multinode_increases_serial_fraction(self):
+        """More nodes → communication overhead → higher serial fraction."""
+        single = estimate_amdahl_saturation(
+            kpoints=32, nmat=5000, atoms=20,
+            total_cores_available=64, num_nodes=1,
+        )
+        multi = estimate_amdahl_saturation(
+            kpoints=32, nmat=5000, atoms=20,
+            total_cores_available=64, num_nodes=8,
+        )
+        assert multi["serial_fraction"] > single["serial_fraction"]
+
+    def test_sweet_spot_never_exceeds_max_efficient(self):
+        """Sweet spot ≤ max efficient cores."""
+        result = estimate_amdahl_saturation(
+            kpoints=16, nmat=3000, atoms=10,
+            total_cores_available=128, num_nodes=2,
+        )
+        assert result["sweet_spot_cores"] <= result["max_efficient_cores"]
+
+    def test_severe_saturation_detected(self):
+        """2× over max efficient → severe saturation."""
+        result = estimate_amdahl_saturation(
+            kpoints=4, nmat=500, atoms=2,
+            total_cores_available=256, num_nodes=8,
+        )
+        assert result["is_saturated"]
+        warnings = result["saturation_warnings"]
+        assert any("severe" in w.lower() for w in warnings)
+
+    def test_speedup_realistic_range(self):
+        """Speedup should be 1 ≤ speedup ≤ max theoretical."""
+        result = estimate_amdahl_saturation(
+            kpoints=16, nmat=3000, atoms=20,
+            total_cores_available=32, num_nodes=1,
+        )
+        assert 1.0 <= result["speedup_at_cores"] <= result["max_speedup_amdahl"]
+
+    def test_efficiency_declines_with_more_cores(self):
+        """Efficiency should drop as cores increase."""
+        low = estimate_amdahl_saturation(
+            kpoints=32, nmat=3000, atoms=20,
+            total_cores_available=8, num_nodes=1,
+        )
+        high = estimate_amdahl_saturation(
+            kpoints=32, nmat=3000, atoms=20,
+            total_cores_available=128, num_nodes=1,
+        )
+        assert high["efficiency_at_cores"] < low["efficiency_at_cores"]
+
+    def test_big_nmat_reduces_serial_fraction(self):
+        """Large matrix → more parallelizable → lower serial fraction."""
+        small = estimate_amdahl_saturation(
+            kpoints=16, nmat=500, atoms=20,
+            total_cores_available=32, num_nodes=1,
+        )
+        large = estimate_amdahl_saturation(
+            kpoints=16, nmat=25000, atoms=20,
+            total_cores_available=32, num_nodes=1,
+        )
+        assert large["serial_fraction"] < small["serial_fraction"]
+
+    def test_max_efficient_bounded(self):
+        """max_efficient_cores bounded by Amdahl, k-points, and bandwidth."""
+        result = estimate_amdahl_saturation(
+            kpoints=4, nmat=500, atoms=3,
+            total_cores_available=512, num_nodes=16,
+        )
+        assert 1 <= result["max_efficient_cores"] <= 512
+        # With 4 k-points and small system, max efficient << 512
+        assert result["max_efficient_cores"] < 512
+
+    def test_all_fields_present(self):
+        """Ensure all expected keys are in the result dict."""
+        result = estimate_amdahl_saturation(
+            kpoints=8, nmat=2000, atoms=10,
+            total_cores_available=32, num_nodes=1,
+        )
+        expected_keys = {
+            "serial_fraction", "max_speedup_amdahl", "speedup_at_cores",
+            "efficiency_at_cores", "max_efficient_cores", "sweet_spot_cores",
+            "is_saturated", "kpoint_limit", "saturation_warnings",
+        }
+        assert expected_keys <= set(result.keys())

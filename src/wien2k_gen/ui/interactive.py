@@ -132,6 +132,7 @@ class Wien2kGenApp(App):
 
                 with Collapsible(title="Parallel Directives (.machines / INCAR / QE)", id="parallel_directives"):
                     yield TextArea(id="manual_editor", language="toml", soft_wrap=True)
+                    yield Button("Save Manual Edits to .machines", id="save_manual_btn", variant="warning")
                 with Collapsible(title="Preview & Generated Config", id="preview_panel"):
                     yield TextArea(id="preview", read_only=True, soft_wrap=True)
 
@@ -180,6 +181,30 @@ class Wien2kGenApp(App):
     @on(Button.Pressed, "#submit_btn")
     def on_submit_pressed(self) -> None:
         self.action_submit_job()
+
+    @on(Button.Pressed, "#save_manual_btn")
+    def on_save_manual_edits(self) -> None:
+        """Save user-edited content from manual_editor to .machines file."""
+        try:
+            editor = self.query_one("#manual_editor", TextArea)
+            content = editor.text
+            if not content or content.strip() == "":
+                self.notify("Manual editor is empty. Generate config first.", severity="warning")
+                return
+
+            machines_path = Path(".machines")
+            if machines_path.exists():
+                backup = machines_path.with_suffix(".machines.bak")
+                machines_path.rename(backup)
+
+            from ..utils.atomic_write import atomic_write
+            atomic_write(machines_path, content, mode=0o644)
+            self.notify("✓ .machines saved with manual edits.", severity="success")
+            self.config_content = content
+            self.query_one("#preview", TextArea).update(content)
+        except Exception as e:
+            self.notify(f"Failed to save .machines: {e}", severity="error")
+            self.last_errors.append(str(e))
 
     @on(Button.Pressed, "#toggle_terminal_btn")
     def on_toggle_terminal_pressed(self) -> None:

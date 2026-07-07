@@ -177,6 +177,8 @@ class ResourceSuggestion:
     estimated_time_minutes: Optional[float] = None
     estimated_memory_gb: Optional[float] = None
     confidence_score: float = 1.0
+    max_efficient_cores: Optional[int] = None
+    saturation_data: Optional[Dict[str, Any]] = None
 
     # Stage-specific overrides
     lapw0_cfg: StageConfig = field(default_factory=StageConfig)
@@ -480,6 +482,158 @@ def estimate_max_kp_cores_roofline(
     # Enforce practical guardrails
     return max(1, min(max_cores_from_roofline, cores_available, 128))
 
+def estimate_amdahl_saturation(
+    kpoints: int,
+    nmat: int,
+    atoms: int,
+    total_cores_available: int,
+    num_nodes: int = 1,
+    mode: str = "kpoint",
+) -> Dict[str, Any]:
+    """
+    Estimate Amdahl's Law saturation point for WIEN2k parallel execution.
+
+    Amdahl's Law: Speedup ≤ 1/(s + p/N)
+    where s = serial fraction, p = parallel fraction, N = processors.
+
+    WIEN2k serial fraction sources:
+    - lapw0: overlap matrix (serial for atoms<4, I/O-bound for larger)
+    - lapw1 setup/teardown + mixer + I/O: inherently serial sections
+    - Communication overhead: O(√P) for FFT collectives, O(log P) for all-to-all
+
+    References:
+    - Amdahl, G.M. (1967). "Validity of the single processor approach to achieving
+      large scale computing capabilities". AFIPS Conf. Proc. 30, 483–485.
+    - Hager, G. & Wellein, G. (2010). "Introduction to HPC for Scientists and
+      Engineers". CRC Press. §4.2 (Amdahl's Law), §5.3 (scaling limits).
+    - HPC Wiki: "Scaling" — CG code speedup peaks at 128 cores then drops to
+      45× at 256 cores (worse than 64-core run). Key insight: more nodes can
+      slow down due to communication overhead.
+    - VASP Wiki: "Performance issues, try NCORE, KPAR" — KPAR saturates at
+      k-point count; bad process placement → internode FFTs → slowdown.
+    - Blaha, P. et al. (2020). "WIEN2k Usersguide" §4.5.
+    """
+    # Step 1: Serial fraction estimation from problem characteristics
+    # ----------------------------------------------------------------
+    # lapw0 contribution (serial or low-parallel):
+    if atoms < 4:
+        s_base = 0.20   # lapw0 dominates total runtime
+    elif atoms < 20:
+        s_base = 0.08
+    elif atoms < 100:
+        s_base = 0.05
+    else:
+        s_base = 0.03   # supercell, lapw0 amortized
+
+    # nmat contribution: large matrices → more parallelizable diagonalization
+    if nmat > 20000:
+        s_base = max(0.01, s_base - 0.02)
+    elif nmat < 1000:
+        s_base = min(0.25, s_base + 0.05)
+
+    # Multi-node MPI communication overhead (2 % per extra node)
+    if num_nodes > 1:
+        comm_overhead = 0.02 * (num_nodes - 1)
+        s_base = min(0.35, s_base + comm_overhead)
+
+    s = max(0.01, min(0.40, s_base))
+    p = 1.0 - s
+
+    # Step 2: Theoretical maximum speedup
+    # ------------------------------------
+    # limit as N→∞: speedup → 1/s
+    max_speedup_amdahl = 1.0 / s
+
+    # Step 3: Speedup and efficiency at requested core count
+    # -------------------------------------------------------
+    def _speedup(n_cores: int) -> float:
+        return 1.0 / (s + p / max(1, n_cores))
+
+    def _efficiency(n_cores: int) -> float:
+        return 1.0 / (s * max(1, n_cores) + p)
+
+    speedup_now = _speedup(total_cores_available)
+    efficiency_now = _efficiency(total_cores_available)
+
+    # Step 4: Maximum efficient cores (50 % efficiency threshold)
+    # -----------------------------------------------------------
+    # Solve 1/(s·N + p) = 0.50 → N = (1/0.50 - p)/s = (2 - p)/s
+    # But p ≈ 1-s, so N ≈ (1+s)/s ≈ 1/s = max_speedup_amdahl
+    # More precise: N = (1/efficiency - p) / s
+    EFF_THRESHOLD = 0.50
+    max_efficient_amdahl = max(1, int((1.0 / EFF_THRESHOLD - p) / s))
+
+    # K-point parallelism cap (primary WIEN2k scaling axis)
+    max_efficient_kp = kpoints if kpoints > 0 else total_cores_available
+
+    # Bandwidth constraint (memory-bound scaling ceiling)
+    if nmat > 10000:
+        max_efficient_bw = total_cores_available
+    elif nmat > 5000:
+        max_efficient_bw = min(total_cores_available, 80)
+    elif nmat > 2000:
+        max_efficient_bw = min(total_cores_available, 48)
+    else:
+        max_efficient_bw = min(total_cores_available, 24)
+
+    max_efficient_cores = max(1, min(
+        max_efficient_amdahl,
+        max_efficient_kp,
+        max_efficient_bw,
+    ))
+
+    # Step 5: Sweet spot (knee of the speedup curve, ~75 % of max efficient)
+    # -----------------------------------------------------------------------
+    # At sweet spot, marginal speedup gain per core is still worthwhile
+    sweet_spot_cores = max(1, int(max_efficient_cores * 0.75))
+
+    # Step 6: Saturation warnings
+    # ----------------------------
+    is_saturated = total_cores_available > max_efficient_cores * 1.5
+    warnings: List[str] = []
+
+    if total_cores_available >= max_efficient_cores * 2.0:
+        warnings.append(
+            f"SEVERE SATURATION: {total_cores_available} cores requested but only "
+            f"~{max_efficient_cores} can be used efficiently (Amdahl serial fraction "
+            f"s={s:.2f}, max theoretical speedup ≈ {max_speedup_amdahl:.0f}×). "
+            f"Extra cores waste resources with marginal speedup."
+        )
+    elif is_saturated:
+        warnings.append(
+            f"Moderate saturation: {total_cores_available} cores exceeds efficient "
+            f"maximum (~{max_efficient_cores}). Marginal speedup from additional "
+            f"cores is <10 % (Amdahl s={s:.2f})."
+        )
+
+    if kpoints > 0 and total_cores_available > kpoints:
+        warnings.append(
+            f"K-point saturation: {total_cores_available} cores requested but only "
+            f"{kpoints} k-points available. Beyond {kpoints} cores, parallelism "
+            f"switches to fine-grain ScaLAPACK with reduced efficiency. "
+            f"(Ref: VASP Wiki KPAR, HPC Wiki Scaling §Strong Scaling)"
+        )
+
+    if num_nodes > 4 and total_cores_available > 64:
+        warnings.append(
+            "Multi-node communication overheads (FFT collectives, all-to-all) "
+            "may dominate beyond 4 nodes. Consider node-local parallelism first. "
+            "(Ref: HPC Wiki Scaling §Strong Scaling, sweet-spot 4 nodes)"
+        )
+
+    return {
+        "serial_fraction": round(s, 3),
+        "max_speedup_amdahl": round(max_speedup_amdahl, 1),
+        "speedup_at_cores": round(speedup_now, 2),
+        "efficiency_at_cores": round(efficiency_now * 100, 1),
+        "max_efficient_cores": max_efficient_cores,
+        "sweet_spot_cores": sweet_spot_cores,
+        "is_saturated": is_saturated,
+        "kpoint_limit": kpoints if kpoints > 0 else None,
+        "saturation_warnings": warnings,
+    }
+
+
 def distribute_cores_heterogeneous(total_cores: int, topo: Topology) -> List[int]:
     """
     Distribute cores across potentially heterogeneous nodes.
@@ -773,6 +927,20 @@ def suggest_optimal_resources(
             f"algorithmic/hardware limits."
         )
 
+    # === Amdahl's Law saturation analysis ===
+    # Warns user when requested cores exceed useful maximum for their problem.
+    # Based on Amdahl, G.M. (1967) + Hager & Wellein (2010) + HPC Wiki scaling
+    # benchmarks showing peak speedup at 4 nodes declining with more hardware.
+    saturation = estimate_amdahl_saturation(
+        kpoints=nk,
+        nmat=nmat,
+        atoms=atoms,
+        total_cores_available=total_cores_available,
+        num_nodes=len(topo.nodes),
+        mode=mode,
+    )
+    warnings_list.extend(saturation["saturation_warnings"])
+
     # === Confidence score calculation ===
     confidence = 1.0
     if not hw_profile["elpa"] and nmat > 10000:
@@ -799,6 +967,15 @@ def suggest_optimal_resources(
         warnings=warnings_list,
         estimated_memory_gb=estimated_mem_gb,
         confidence_score=confidence,
+        max_efficient_cores=saturation["max_efficient_cores"],
+        saturation_data={
+            "serial_fraction": saturation["serial_fraction"],
+            "max_speedup_amdahl": saturation["max_speedup_amdahl"],
+            "speedup_at_cores": saturation["speedup_at_cores"],
+            "efficiency_pct": saturation["efficiency_at_cores"],
+            "sweet_spot_cores": saturation["sweet_spot_cores"],
+            "kpoint_limit": saturation["kpoint_limit"],
+        },
         # Stage-specific configs aligned with WIEN2k parallel execution guide
         lapw0_cfg=StageConfig(
             max_ranks=1,  # lapw0 is serial/OpenMP-only

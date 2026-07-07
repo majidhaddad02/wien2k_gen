@@ -16,6 +16,7 @@ from .advisor import (
     estimate_memory_footprint_gb,
     roofline_crossover_analysis,
     estimate_arithmetic_intensity,
+    estimate_amdahl_saturation,
     get_optimization_report,
     BACKEND_OPERATIONAL_INTENSITY,
 )
@@ -65,6 +66,7 @@ __all__ = [
     "estimate_memory_footprint_gb",
     "roofline_crossover_analysis",
     "estimate_arithmetic_intensity",
+    "estimate_amdahl_saturation",
     "get_optimization_report",
     "BACKEND_OPERATIONAL_INTENSITY",
     # Monitor

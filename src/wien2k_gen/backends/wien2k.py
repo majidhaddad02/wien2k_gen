@@ -275,9 +275,30 @@ class Wien2kBackend(Backend):
         - lapw1: diagonalization, CPU-bound, parallel over k-points. Gets priority.
         - lapw2: vector ops. Can exploit vector_split for excess cores.
         - Cores beyond k-point saturation use granularity + vector_split, not wasted.
+        - Amdahl's Law cap: warns when user requests more cores than useful.
+          (Ref: Amdahl 1967; Hager & Wellein 2010; HPC Wiki Scaling)
 
-        Returns dict with per-processor core counts, kpar, and reason.
+        Returns dict with per-processor core counts, kpar, reason, and warnings.
         """
+        # Step 0: Amdahl's Law saturation check
+        saturation_warnings: List[str] = []
+        max_efficient = total_cores
+        saturation = {}
+        try:
+            from ..optimizer.advisor import estimate_amdahl_saturation
+            saturation = estimate_amdahl_saturation(
+                kpoints=kpoints,
+                nmat=nmat,
+                atoms=atoms,
+                total_cores_available=total_cores,
+                num_nodes=num_nodes,
+                mode=mode,
+            )
+            max_efficient = saturation.get("max_efficient_cores", total_cores)
+            saturation_warnings = saturation.get("saturation_warnings", [])
+        except ImportError:
+            pass
+
         # Step 1: lapw0 allocation
         lapw0_cores = self._get_optimal_lapw0_cores(total_cores, atoms)
         remaining = total_cores - lapw0_cores
@@ -315,6 +336,8 @@ class Wien2kBackend(Backend):
             reason_parts.append("[kp-saturated]")
         if atoms < 4 and lapw0_cores == 1:
             reason_parts.append("[lapw0:serial]")
+        if saturation.get("is_saturated"):
+            reason_parts.append(f"[amdahl:max_eff={max_efficient}]")
         total_used = lapw0_cores + lapw1_cores + lapw2_cores
         if total_used < total_cores:
             reason_parts.append(f"[granularity:{total_cores-total_used}c]")
@@ -325,6 +348,8 @@ class Wien2kBackend(Backend):
             "lapw2_cores": lapw2_cores,
             "kpar": kpar,
             "reason": " | ".join(reason_parts),
+            "max_efficient_cores": max_efficient,
+            "saturation_warnings": saturation_warnings,
         }
 
     def _get_optimal_mkl_threads(self, omp_threads: int, mode: str, nmat: int, is_soc: bool) -> int:
@@ -918,6 +943,10 @@ class Wien2kBackend(Backend):
             nmat=nmat, mode=mode, num_nodes=len(nodes)
         )
         lines.append(f"# Allocation: {allocation['reason']}")
+
+        # Amdahl saturation warnings
+        for w in allocation.get("saturation_warnings", []):
+            lines.append(f"# SATURATION: {w}")
 
         # lapw0: always first node, capped at optimal count
         lapw0_cores = allocation["lapw0_cores"]

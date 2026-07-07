@@ -126,6 +126,28 @@ def check_scratch_health(path: str) -> Dict[str, Any]:
 # Wizard Logic
 # =============================================================================
 
+def _open_editor_for_manual_review(filepath: Path) -> None:
+    """Open a file in $EDITOR (or nano/vi fallback) for manual review."""
+    editor = os.environ.get("EDITOR", os.environ.get("VISUAL", ""))
+    if not editor:
+        for fallback in ("nano", "vim", "vi"):
+            if shutil.which(fallback):
+                editor = fallback
+                break
+    if not editor:
+        console.print(f"[yellow]No editor found. Edit manually: {filepath}[/yellow]")
+        return
+
+    console.print(f"[bold cyan]Opening {filepath.name} in {editor} for manual review...[/bold cyan]")
+    try:
+        subprocess.run([editor, str(filepath)], check=False)
+        console.print(f"[green]✓ Manual review complete. Final config: {filepath}[/green]")
+    except FileNotFoundError:
+        console.print(f"[yellow]Editor '{editor}' not found. Edit manually: {filepath}[/yellow]")
+    except Exception as e:
+        console.print(f"[yellow]Editor error: {e}. Edit manually: {filepath}[/yellow]")
+
+
 def run_wizard(topo=None) -> None:
     """
     Step-by-step interactive configuration with automatic and manual modes,
@@ -393,7 +415,14 @@ def run_wizard(topo=None) -> None:
                 raise ConfigurationError(build_result.error_message or "Build failed")
                 
             console.print("[green]✅ .machines and parallel_options generated successfully![/green]")
-            
+
+            # 5.5 Manual review/edit step
+            if Confirm.ask(
+                "Review and manually edit .machines before finalizing?",
+                console=console, default=False
+            ):
+                _open_editor_for_manual_review(Path(".machines"))
+
             # 6. Save as Profile
             if Confirm.ask("Save this configuration as a reusable profile?", console=console, default=False):
                 name = Prompt.ask("Profile name", console=console)
