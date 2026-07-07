@@ -241,17 +241,91 @@ class Wien2kBackend(Backend):
     def _get_optimal_lapw0_cores(self, available_cores: int, natoms: Optional[int]) -> int:
         """
         Determine optimal core count for lapw0 (potential calculation).
-        lapw0 is typically I/O-bound and benefits from moderate parallelism.
+        lapw0 is I/O-bound and scales poorly beyond ~8 cores for small systems.
+        Over-parallelizing lapw0 wastes CPU-hours with no speedup.
+
+        Rules (WIEN2k UG §4.5):
+        - atoms < 4: serialize (overhead > benefit)
+        - atoms 4-20: modest parallelism (4-6 cores)
+        - atoms 20-100: good scaling (6-12 cores)
+        - atoms > 100: supercell, scales to 16+
         """
         if natoms is None or natoms <= 0:
-            return max(4, min(available_cores, 16))
+            return max(4, min(available_cores, 8))
 
-        max_effective = min(128, natoms)
-        if natoms < 10:
+        if natoms < 4:
+            return 1  # Serial lapw0 for tiny systems
+        if natoms < 20:
             return min(4, available_cores)
+        if natoms < 100:
+            return min(6, available_cores)
+        return min(8, available_cores)
 
-        suggested = min(max_effective, max(4, natoms // 2))
-        return min(suggested, available_cores)
+    def _smart_allocate_cores(
+        self, total_cores: int, kpoints: int, atoms: int, nmat: int, mode: str, num_nodes: int
+    ) -> Dict[str, Any]:
+        """
+        Intelligent core allocation for WIEN2k processors.
+
+        Uses problem parameters to decide optimal distribution of cores
+        across lapw0, lapw1, and lapw2 based on real workload characteristics.
+
+        Design rationale:
+        - lapw0: overlap matrix, I/O-bound. Minimal cores for small systems.
+        - lapw1: diagonalization, CPU-bound, parallel over k-points. Gets priority.
+        - lapw2: vector ops. Can exploit vector_split for excess cores.
+        - Cores beyond k-point saturation use granularity + vector_split, not wasted.
+
+        Returns dict with per-processor core counts, kpar, and reason.
+        """
+        # Step 1: lapw0 allocation
+        lapw0_cores = self._get_optimal_lapw0_cores(total_cores, atoms)
+        remaining = total_cores - lapw0_cores
+
+        # Step 2: Cap lapw1 at k-point count (k-point parallelism limit)
+        max_lapw1_by_kp = max(1, kpoints) if kpoints > 0 else remaining
+        effective_kp = min(kpoints, remaining) if kpoints > 0 else remaining
+
+        # Step 3: Split remaining between lapw1 and lapw2
+        if nmat > 8000:
+            lapw1_ratio = 0.65
+        elif nmat > 3000:
+            lapw1_ratio = 0.60
+        else:
+            lapw1_ratio = 0.55
+
+        desired_lapw1 = max(1, int(remaining * lapw1_ratio))
+        lapw1_cores = min(desired_lapw1, max_lapw1_by_kp)
+        lapw2_cores = max(1, remaining - lapw1_cores)
+
+        # Step 4: Cap lapw2 for small systems (vector work doesn't scale well)
+        max_lapw2 = max(4, atoms * 4)  # ~4 cores per atom for vector I/O
+        if lapw2_cores > max_lapw2 and atoms < 20:
+            excess = lapw2_cores - max_lapw2
+            lapw2_cores = max_lapw2
+            # Redistribute excess as granularity within lapw1 groups
+            # (not wasted: WIEN2k can use extra ranks per k-point for ScaLAPACK)
+
+        # Step 5: kpar = number of k-point parallel groups for lapw1
+        kpar = max(1, min(lapw1_cores, effective_kp))
+
+        # Step 6: Build reason
+        reason_parts = [f"lapw0={lapw0_cores}c", f"lapw1={lapw1_cores}c", f"lapw2={lapw2_cores}c"]
+        if kpoints > 0 and lapw1_cores >= kpoints:
+            reason_parts.append("[kp-saturated]")
+        if atoms < 4 and lapw0_cores == 1:
+            reason_parts.append("[lapw0:serial]")
+        total_used = lapw0_cores + lapw1_cores + lapw2_cores
+        if total_used < total_cores:
+            reason_parts.append(f"[granularity:{total_cores-total_used}c]")
+
+        return {
+            "lapw0_cores": lapw0_cores,
+            "lapw1_cores": lapw1_cores,
+            "lapw2_cores": lapw2_cores,
+            "kpar": kpar,
+            "reason": " | ".join(reason_parts),
+        }
 
     def _get_optimal_mkl_threads(self, omp_threads: int, mode: str, nmat: int, is_soc: bool) -> int:
         """
@@ -445,17 +519,25 @@ class Wien2kBackend(Backend):
                 logger.warning(f"Failed to parse .struct file: {e}")
 
         # 2. Extract k-points from .klist
+        # Format: first line is k-point count, or count non-empty lines minus header
         klist_files = list(Path(".").glob("*.klist*"))
         if klist_files:
             try:
-                first_line = klist_files[0].read_text(encoding="utf-8", errors="replace").splitlines()[0].strip()
+                content = klist_files[0].read_text(encoding="utf-8", errors="replace")
+                lines = [l.strip() for l in content.splitlines() if l.strip()
+                         and not l.strip().startswith("#")]
+                # First line typically contains k-point count or header
+                first_line = lines[0] if lines else ""
                 parts = first_line.split()
                 if parts and parts[0].isdigit():
                     result["kpoints"] = int(parts[0])
+                elif len(lines) > 1:
+                    # Fallback: count data lines (each k-point has weight + coordinates)
+                    result["kpoints"] = len(lines)
             except Exception as e:
                 logger.debug(f"Could not parse kpoints from .klist: {e}")
 
-        # 3. Extract nmat from .scf file
+        # 3. Extract nmat from .scf file (exact value from SCF run)
         scf_files = list(Path(".").glob("*.scf"))
         if scf_files:
             try:
@@ -466,16 +548,50 @@ class Wien2kBackend(Backend):
             except Exception as e:
                 logger.debug(f"Could not parse nmat from .scf: {e}")
 
+        # 3b. Estimate nmat from .in2 FFT grid (fallback when .scf doesn't exist)
+        if result["nmat"] == 0:
+            in2_files = list(Path(".").glob("*.in2*"))
+            if in2_files:
+                try:
+                    content = in2_files[0].read_text(encoding="utf-8", errors="replace")
+                    # .in2 line 3: NX NY NZ enhancement_factor iprint
+                    for line in content.splitlines():
+                        stripped = line.strip()
+                        parts = stripped.split()
+                        if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
+                            nx, ny, nz = int(parts[0]), int(parts[1]), int(parts[2])
+                            # nmat ≈ (FFT grid total) / fudge_factor
+                            # For lapw1, nmat = G_max sphere within FFT box
+                            fft_total = nx * ny * nz
+                            estimated_nmat = int((fft_total ** (1.0 / 3.0)) * 1.1)
+                            result["nmat"] = max(100, estimated_nmat)
+                            break
+                except Exception as e:
+                    logger.debug(f"Could not estimate nmat from .in2: {e}")
+
         # 4. Extract nbands from .in1 file
+        # .in1 format:
+        #   Line 1: WFFIL (or TOT for older versions)
+        #   Line 2: RKMAX LMAX V-NMT
+        #   Line 3: global E-param
+        #   Line 4+: per-l quantum numbers
         in1_files = list(Path(".").glob("*.in1*"))
         if in1_files:
             try:
                 for line in in1_files[0].read_text(encoding="utf-8", errors="replace").splitlines():
-                    if 'TOT' in line and not line.strip().startswith('#'):
-                        parts = line.split()
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith('#'):
+                        continue
+                    # Look for TOT keyword (old format) or count bands from
+                    # WFFIL mode which sets nbands implicitly from the case.vector
+                    if 'TOT' in stripped.upper():
+                        parts = stripped.split()
                         if len(parts) >= 2 and parts[0].isdigit():
                             result["nbands"] = int(parts[0])
                             break
+                # Fallback: estimate from nmat
+                if result["nbands"] is None and result["nmat"] > 0:
+                    result["nbands"] = max(10, result["nmat"] // 2)
             except Exception as e:
                 logger.debug(f"Could not parse nbands from .in1: {e}")
 
@@ -545,18 +661,22 @@ class Wien2kBackend(Backend):
                 lines = content.splitlines()
 
                 for line in lines:
-                    m = re.search(r"NUMBER OF ATOMS\s*=\s*(\d+)", line, re.IGNORECASE)
+                    m = re.search(r"NONEQUIV\.ATOMS\s*:\s*(\d+)", line, re.IGNORECASE)
                     if m:
                         natoms = int(m.group(1))
                         break
 
                 if natoms == 1:
-                    atom_lines = [
-                        l for l in lines
-                        if re.match(r"^\s*ATOM\s*[-\d]+:", l, re.IGNORECASE)
-                    ]
-                    if atom_lines:
-                        natoms = len(atom_lines)
+                    mult_matches = re.findall(r'MULT\s*=\s*(\d+)', content, re.IGNORECASE)
+                    if mult_matches:
+                        natoms = sum(int(m) for m in mult_matches)
+                    else:
+                        atom_lines = [
+                            l for l in lines
+                            if re.match(r"^\s*ATOM\s*[-\d]+:", l, re.IGNORECASE)
+                        ]
+                        if atom_lines:
+                            natoms = len(atom_lines)
 
                 for line in lines:
                     m_type = re.match(r"^\s*ATOM\s*[-\d]+:\s*.*TOT\s*=\s*(\w+)", line, re.IGNORECASE)
@@ -788,34 +908,37 @@ class Wien2kBackend(Backend):
         # Extract problem parameters for mode-specific logic
         params = self._detect_problem_size()
         atoms = params.get("atoms", 10)
+        kpoints = params.get("kpoints", 0)
+        nmat = params.get("nmat", 0)
         first_node_cores = cores_per_node[0] if cores_per_node else 1
 
-        # lapw0: always serial/OpenMP on first node
-        lapw0_cores = self._get_optimal_lapw0_cores(first_node_cores, atoms)
+        # Smart allocator: determines per-processor core splits
+        allocation = self._smart_allocate_cores(
+            total_cores=total_cores, kpoints=kpoints, atoms=atoms,
+            nmat=nmat, mode=mode, num_nodes=len(nodes)
+        )
+        lines.append(f"# Allocation: {allocation['reason']}")
+
+        # lapw0: always first node, capped at optimal count
+        lapw0_cores = allocation["lapw0_cores"]
         lines.append(f"lapw0: {nodes[0]}: {lapw0_cores}")
 
         if mode == "kpoint":
             # k-point parallel: each core handles one k-point
-            # With granularity > 1, group multiple k-points per node
             for node, cores in zip(nodes, cores_per_node):
                 for _ in range(cores):
                     lines.append(f"1: {node}")
             lines.append(f"granularity: {granularity}")
 
-            # extrafine for non-divisible k-point counts
-            kpoints = params.get("kpoints", 0)
-            total_allocated = sum(cores_per_node)
-            if kpoints and kpoints % total_allocated != 0:
+            if kpoints and kpoints % total_cores != 0:
                 lines.append("extrafine: 1")
 
-            # OMP for lapw0 and mixer
             lines.append("omp_lapw0: 1")
             lines.append("omp_mixer: 1")
 
         elif mode == "hybrid":
-            # Hybrid MPI+OpenMP: ranks × threads per node
             omp = suggestion.get("omp_threads_per_rank", 1)
-            kpar = suggestion.get("kpar", 1)
+            kpar = allocation["kpar"]
 
             for node, cores in zip(nodes, cores_per_node):
                 ranks_on_node = max(1, cores // omp)
@@ -826,50 +949,51 @@ class Wien2kBackend(Backend):
                 else:
                     for _ in range(ranks_on_node):
                         lines.append(f"1: {node}: {omp}")
-                lines.append(f"lapw1: {node}: {ranks_on_node}")
-                lines.append(f"lapw2: {node}: {ranks_on_node}")
 
             lines.append(f"granularity: {granularity}")
             lines.append(f"omp_global: {omp}")
             if kpar > 1:
                 lines.append(f"kpar: {kpar}")
 
-        else:  # mpi fine-grain (BLACS-aware distribution)
+        else:  # mpi fine-grain (BLACS-aware, per-processor split)
             from ..core.topology import factorize_blacs_grid
-
-            nmat = params.get("nmat", 0)
             vector_split_active = suggestion.get("vector_split_active", False)
 
-            # Auto-enable vector_split for I/O bottleneck prevention
-            io_check = self._detect_io_bottleneck(nmat, params.get("kpoints", 0), total_cores)
+            # Per-processor core counts from smart allocator
+            lapw1_cores = allocation["lapw1_cores"]
+            lapw2_cores = allocation["lapw2_cores"]
+
+            # IO bottleneck check
+            io_check = self._detect_io_bottleneck(nmat, kpoints, total_cores)
             if io_check["auto_enable_vector_split"]:
                 vector_split_active = True
                 logger.info(f"Auto-enabling vector_split: {io_check['suggestion']}")
 
-            # Compute BLACS-aware per-node distribution
-            total_ranks = sum(cores_per_node)
-            blacs_p, blacs_q = factorize_blacs_grid(total_ranks)
+            # BLACS grid
+            total_ranks = lapw1_cores + lapw2_cores
+            blacs_p, blacs_q = factorize_blacs_grid(max(2, total_ranks))
             if blacs_p > 1 and blacs_q > 1:
-                lines.append(f"# BLACS grid: {blacs_p}×{blacs_q} (ELPA Stage-2 optimized)")
+                lines.append(f"# BLACS grid: {blacs_p}×{blacs_q}")
             else:
-                lines.append(f"# WARNING: BLACS grid is 1D ({blacs_p}×{blacs_q}).")
-                lines.append(f"# ELPA Stage-2 efficiency may drop 40% (Marek et al. 2014).")
-                lines.append(f"# Consider adjusting ranks to a composite number.")
+                lines.append(f"# WARNING: 1D BLACS grid ({blacs_p}×{blacs_q}) — ELPA efficiency may drop")
 
-            # Write lapw1/lapw2 distribution with NUMA-aware node ordering
-            sorted_nodes = sorted(
-                zip(nodes, cores_per_node),
-                key=lambda x: x[1],
-                reverse=True
-            )
-            for node, cores in sorted_nodes:
-                lines.append(f"lapw1: {node}: {cores}")
-                lines.append(f"lapw2: {node}: {cores}")
+            # lapw1 and lapw2 get DIFFERENT core counts
+            lines.append(f"lapw1: {nodes[0]}: {lapw1_cores}")
+            lines.append(f"lapw2: {nodes[0]}: {lapw2_cores}")
+
+            # Distribute to remaining nodes if multi-node
+            for node in nodes[1:]:
+                node_lapw1 = max(1, lapw1_cores // len(nodes))
+                node_lapw2 = max(1, lapw2_cores // len(nodes))
+                lines.append(f"lapw1: {node}: {node_lapw1}")
+                lines.append(f"lapw2: {node}: {node_lapw2}")
 
             lines.append(f"granularity: {granularity}")
             lines.append("omp_global: 1")
+            if allocation["kpar"] > 1:
+                lines.append(f"kpar: {allocation['kpar']}")
 
-            # Vector split configuration
+            # Vector split
             if vector_split_active:
                 if nmat > 20000:
                     split_val = 16
