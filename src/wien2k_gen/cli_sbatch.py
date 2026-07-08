@@ -151,13 +151,24 @@ def _build_directives_from_args(args: argparse.Namespace) -> SlurmDirectives:
     )
 
 
+def _get_exec_command() -> str:
+    """Auto-detect the correct WIEN2k execution command from input files."""
+    try:
+        from .backend_manager import get_current_backend as _gcb
+        backend = _gcb()
+        params = backend.detect_problem_size()
+        return params.get("exec_command", "run_lapw -p")
+    except Exception:
+        return "run_lapw -p"
+
+
 def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Generate, write, and optionally preview SBATCH script."""
     directives = _build_directives_from_args(args)
     topo = detect_topology(max_cores=directives.ntasks or None)
     spec = SlurmJobSpec(
         topo=topo,
-        exec_command="run_lapw -p",
+        exec_command=_get_exec_command(),
         directives=directives
     )
 

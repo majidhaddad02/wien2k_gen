@@ -277,8 +277,14 @@ def get_config() -> AppConfig:
     return ConfigManager().get_config()
 
 def load_config(**kwargs: Any) -> AppConfig:
-    """Explicitly load/refresh configuration with overrides."""
-    return ConfigManager().load(cli_override=kwargs)
+    """Explicitly load/refresh configuration with overrides.
+    
+    Accepts named arguments that are forwarded to ConfigManager.load():
+        file_path: Optional path to a config JSON/TOML file
+        cli_override: Dict of CLI-level overrides
+        env_override: Dict of environment-level overrides
+    """
+    return ConfigManager().load(**kwargs)
 
 def validate_config() -> List[str]:
     """Return validation errors from the current configuration."""

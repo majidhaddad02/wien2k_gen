@@ -88,6 +88,16 @@ from .energy import (
 from .constants import RYDBERG_TO_EV, HARTREE_TO_EV, BOHR_TO_ANGSTROM
 
 # =============================================================================
+# Case File Parser
+# =============================================================================
+from .case_parser import (
+    CaseData,
+    LDAUData,
+    CaseFileParser,
+    parse_case_directory,
+)
+
+# =============================================================================
 # Workflow Provenance
 # =============================================================================
 from .workflow import (
@@ -173,4 +183,10 @@ __all__ = [
     "create_wien2k_workflow",
     "create_convergence_workflow",
     "create_band_structure_workflow",
+
+    # Case File Parser
+    "CaseData",
+    "LDAUData",
+    "CaseFileParser",
+    "parse_case_directory",
 ]

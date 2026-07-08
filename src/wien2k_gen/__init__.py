@@ -14,7 +14,7 @@ Package Structure:
 • api/: REST API server and web dashboard for monitoring and job management
 """
 
-__version__ = "9.8.0"
+__version__ = "0.1.0"
 __author__ = "HPC Workflow Team"
 __license__ = "MIT"
 
@@ -132,6 +132,15 @@ def __getattr__(name: str) -> Any:
     if name == "OptimizationTarget":
         from .types import OptimizationTarget
         return OptimizationTarget
+    if name == "CalculationType":
+        from .types import CalculationType
+        return CalculationType
+    if name == "Wien2kVersion":
+        from .types import Wien2kVersion
+        return Wien2kVersion
+    if name == "Wien2kFlags":
+        from .types import Wien2kFlags
+        return Wien2kFlags
 
     # History & Bayesian optimization
     if name == "ExecutionHistory":
@@ -160,6 +169,7 @@ def __dir__() -> List[str]:
         "get_config", "load_config",
         "PipelineResult", "ResourceSuggestion", "TopologyData",
         "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
+        "CalculationType", "Wien2kVersion", "Wien2kFlags",
         "ExecutionHistory", "BayesianOptimizer", "suggest_from_history",
         "__version__"
     ]

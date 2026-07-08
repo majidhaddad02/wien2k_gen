@@ -176,7 +176,7 @@ class PBSSubmitProvider(SubmitProvider):
         """Generate the script header with metadata."""
         return f"""#!/bin/bash
 # ==============================================================================
-# Auto-generated PBS Submission Script (wien2k_gen v9.8.0)
+# Auto-generated PBS Submission Script (wien2k_gen v0.1.0)
 # Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}Z
 # Backend: {spec.topo.env_type.upper()} | Topology: {spec.topo.total_cores} cores
 # Scheduler: PBS/Torque

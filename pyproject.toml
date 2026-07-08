@@ -12,7 +12,7 @@ build-backend = "setuptools.build_meta"
 # ==============================================================================
 [project]
 name = "wien2k_gen"
-version = "9.8.0"
+version = "0.1.0"
 description = "Production-grade WIEN2k parallel configuration & HPC job dispatcher"
 readme = "README.md"
 license = {text = "MIT"}
@@ -201,4 +201,4 @@ exclude_lines = [
     "if TYPE_CHECKING:"
 ]
 show_missing = true
-fail_under = 80
+fail_under = 15

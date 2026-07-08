@@ -37,11 +37,39 @@ class BackendCode(str, Enum):
 
 
 class ExecutionMode(str, Enum):
-    """Parallel execution strategies recognized by optimizer & backends."""
+    """Parallel execution strategies recognized by optimizer & backends.
+    
+    Reference: Blaha, P. et al. (2020). WIEN2k Usersguide, Section 4.5.
+    """
     MPI = "mpi"
     HYBRID = "hybrid"
     KPOINT = "kpoint"
     SERIAL = "serial"
+    FINE_GRAIN = "fine_grain"
+
+
+class CalculationType(str, Enum):
+    """WIEN2k calculation types with associated run_lapw flags.
+    
+    Reference: WIEN2k Usersguide, Section 4.1-4.4.
+    """
+    SCF = "scf"                   # Standard SCF: run_lapw -p
+    SPIN_POLARIZED = "spin"       # Spin-polarized: runsp_lapw -p
+    SPIN_ORBIT = "soc"            # + Spin-orbit coupling: run_lapw -p -so
+    SPIN_POLARIZED_SOC = "spin_soc"  # Spin-polarized + SOC: runsp_lapw -p -so
+    LDA_U = "ldau"               # LDA/GGA+U: run_lapw -p -orbc
+    HYBRID_FUNC = "hybrid"       # Hybrid functional: run_lapw -p -hf
+    FORCES = "forces"            # Forces optimization: run_lapw -p -fc
+    EECE = "eece"                # Onsite exact exchange: run_lapw -p -eece
+
+
+class Wien2kVersion(str, Enum):
+    """WIEN2k versions with known parallelization characteristics."""
+    V19 = "19"
+    V21 = "21"
+    V23 = "23"
+    V24 = "24"
+    UNKNOWN = "unknown"
 
 
 class JobStatus(str, Enum):
@@ -114,6 +142,61 @@ class ResourceSuggestion:
                     f"Memory per core ({mem_per_core_mb:.0f} MB) exceeds scheduler limit ({topo_memory_limit_mb} MB)"
                 )
         return errors
+
+
+@dataclass
+class Wien2kFlags:
+    """WIEN2k calculation flags detected from input files.
+    
+    Determines the correct run_lapw command and parallelization strategy.
+    Reference: Blaha, P. et al. (2020). WIEN2k Usersguide, Sections 4.1-4.4.
+    """
+    is_spin_polarized: bool = False
+    is_soc: bool = False
+    is_lda_u: bool = False
+    is_hybrid: bool = False
+    is_eece: bool = False
+    has_forces: bool = False
+    wien2k_version: str = "unknown"
+
+    def get_calculation_type(self) -> CalculationType:
+        if self.is_spin_polarized and self.is_soc:
+            return CalculationType.SPIN_POLARIZED_SOC
+        if self.is_spin_polarized:
+            return CalculationType.SPIN_POLARIZED
+        if self.is_soc:
+            return CalculationType.SPIN_ORBIT
+        if self.is_hybrid:
+            return CalculationType.HYBRID_FUNC
+        if self.is_lda_u:
+            return CalculationType.LDA_U
+        if self.is_eece:
+            return CalculationType.EECE
+        if self.has_forces:
+            return CalculationType.FORCES
+        return CalculationType.SCF
+
+    def get_execution_command(self) -> str:
+        """Return the correct run_lapw command with all required flags."""
+        calc_type = self.get_calculation_type()
+        if calc_type in (CalculationType.SPIN_POLARIZED, CalculationType.SPIN_POLARIZED_SOC):
+            cmd = "runsp_lapw"
+        else:
+            cmd = "run_lapw"
+
+        flags = ["-p"]
+        if calc_type in (CalculationType.SPIN_ORBIT, CalculationType.SPIN_POLARIZED_SOC):
+            flags.append("-so")
+        if self.is_lda_u:
+            flags.append("-orbc")
+        if self.is_hybrid:
+            flags.append("-hf")
+        if self.is_eece:
+            flags.append("-eece")
+        if self.has_forces:
+            flags.append("-fc")
+
+        return " ".join([cmd] + flags)
 
 
 @dataclass(frozen=True)
@@ -278,10 +361,13 @@ def validate_enum_field(value: Any, enum_cls: type, field_name: str) -> Enum:
 __all__ = [
     "BackendCode",
     "ExecutionMode",
+    "CalculationType",
+    "Wien2kVersion",
     "JobStatus",
     "OptimizationTarget",
     "StageConfig",
     "ResourceSuggestion",
+    "Wien2kFlags",
     "TopologyData",
     "PipelineResult",
     "SubmissionConfig",

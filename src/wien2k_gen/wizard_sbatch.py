@@ -46,6 +46,17 @@ logger = get_logger(__name__)
 console = Console()
 
 
+def _get_exec_command_for_wizard() -> str:
+    """Auto-detect the correct WIEN2k execution command from input files."""
+    try:
+        from .backend_manager import get_current_backend as _gcb
+        backend = _gcb()
+        params = backend.detect_problem_size()
+        return params.get("exec_command", "run_lapw -p")
+    except Exception:
+        return "run_lapw -p"
+
+
 # =============================================================================
 # Input Validation Helpers
 # =============================================================================
@@ -275,7 +286,7 @@ class ReviewStep(WizardStep):
                 topo = self.wizard.data.get('topo')
                 spec = SlurmJobSpec(
                     topo=topo,
-                    exec_command="run_lapw -p",
+                    exec_command=_get_exec_command_for_wizard(),
                     directives=directives
                 )
                 self.wizard.script_content = generate_sbatch_script(spec)
@@ -288,7 +299,7 @@ class ReviewStep(WizardStep):
                 topo = self.wizard.data.get('topo')
                 self.wizard.script_content = provider.generate_submit_script(
                     topo=topo,
-                    exec_command="run_lapw -p",
+                    exec_command=_get_exec_command_for_wizard(),
                     directives={
                         "job_name": self.wizard.data['job_name'],
                         "queue": self.wizard.data.get('partition', ''),

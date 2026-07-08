@@ -1,13 +1,42 @@
 # ==============================================================================
-# Default parallel_options for WIEN2k (wien2k_gen v9.8.0)
+# Default parallel_options for WIEN2k (wien2k_gen v0.1.0)
 # Auto-generated safe defaults for modern HPC clusters.
+# References:
+#   Blaha, P. et al. (2020). WIEN2k Usersguide, Section 4.5.8.
+#   Cebrian, J.M. et al. (2015). Comput. Phys. Commun. 201, 85-99.
 # ==============================================================================
 
-export USE_REMOTE="0"      # Disable SSH/rsh; use srun/mpirun
-export MPI_REMOTE="0"      # Disable legacy MPI remote spawning
-export TASKSET="no"        # Let MPI/OpenMP manage CPU affinity natively
-export DELAY="0.1"         # Prevent metadata storms on shared filesystems
-export SLEEPY="1"          # Reduce CPU spin-wait during I/O sync
-export OMP_GLOBAL="1"      # Default: MPI-only (override in UI if hybrid)
-export KPAR="0"            # Auto-detect k-point parallelism
-# export WIEN_MPIRUN="srun --hint=nomultithread --cpu-bind=core"
+# ---- Remote execution control ----
+export USE_REMOTE="0"       # Disable SSH/rsh; use srun/mpirun
+export MPI_REMOTE="0"       # Disable legacy MPI remote spawning
+
+# ---- CPU affinity & threading ----
+export TASKSET="no"         # Let MPI/OpenMP manage CPU affinity natively
+export OMP_NUM_THREADS="1"  # Default: MPI-only (override for hybrid OpenMP)
+export MKL_NUM_THREADS="1"  # Intel MKL threading (scales poorly in lapw1 diagonalization)
+
+# ---- MPI launcher (REQUIRED for parallel execution) ----
+# Template: _NP_ = number of processes, _HOSTS_ = machinefile
+# Auto-detected at runtime; uncomment to hardcode:
+# export WIEN_MPIRUN="mpirun -np _NP_ -machinefile _HOSTS_ _EXEC_"
+# For SLURM without .machines file:
+# export WIEN_MPIRUN="srun --mpi=pmix --hint=nomultithread --cpu-bind=core"
+
+# ---- Synchronization & I/O ----
+export DELAY="0.1"          # Prevent metadata storms on shared filesystems
+export SLEEPY="1"           # Reduce CPU spin-wait during I/O sync
+
+# ---- Parallelism granularity ----
+export OMP_GLOBAL="1"       # OpenMP threads for non-k-point-parallel stages
+export KPAR="0"             # Auto-detect k-point parallelism (0 = automatic)
+export WIEN_GRANULARITY="1" # Fine-grain parallelism granularity (1 = per-rank)
+
+# ---- Debugging (set to 1-3 for verbose MPI output) ----
+export WIEN_DBGLVL="0"
+
+# ---- ELPA eigensolver (requires WIEN2k compiled with ELPA support) ----
+# export USE_ELPA="1"
+# export ELPA_KERNEL="ELPA2"
+
+# ---- GPU acceleration (WIEN2k_24+) ----
+# export WIEN_GPU="0"       # Set to 1 for GPU-accelerated lapw1

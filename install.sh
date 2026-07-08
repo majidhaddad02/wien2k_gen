@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Wien2kGen Installer (v9.8.0) – Production-Grade HPC Setup Script
+# Wien2kGen Installer (v0.1.0) – Production-Grade HPC Setup Script
 # Supports root/user installation, online/offline modes, safe cleanup,
 # automatic verification, and seamless integration with pyproject.toml
 # ==============================================================================
@@ -8,7 +8,7 @@ set -euo pipefail
 
 # Configuration
 APP_NAME="wien2k_gen"
-APP_VERSION="9.8.0"
+APP_VERSION="0.1.0"
 OFFLINE_DIR="offline_packages"
 BINARIES=("wien2k_gen" "wien2k_sbatch" "wien2k_wizard")
 

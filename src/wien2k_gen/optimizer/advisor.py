@@ -797,6 +797,9 @@ def suggest_optimal_resources(
     }
 
     total_cores_available = topo.total_cores
+    if hw_profile.get("ht_active"):
+        physical = get_physical_cores()
+        total_cores_available = min(total_cores_available, physical)
     if user_max_cores and user_max_cores < total_cores_available:
         total_cores_available = user_max_cores
 
@@ -905,7 +908,11 @@ def suggest_optimal_resources(
     if mode == "hybrid" and not hw_profile["mkl"]:
         warnings_list.append("Optimized BLAS (MKL) not detected; reduce OMP_NUM_THREADS to 4 or less.")
     if hw_profile["ht_active"]:
-        warnings_list.append("Hyper-Threading active. DFT codes perform best on physical cores only.")
+        warnings_list.append(
+            "Hyper-Threading active. DFT codes perform best on physical cores only. "
+            "Use --hint=nomultithread (Slurm) or OMP_PLACES=cores (OpenMP) "
+            "to avoid oversubscription. Source: Blaha et al. (2020) Sec. 6.4."
+        )
     if hw_profile["scratch_fs"] in ["nfs", "lustre"]:
         warnings_list.append(
             f"SCRATCH on {hw_profile['scratch_fs']} may cause I/O bottleneck. "
@@ -946,7 +953,7 @@ def suggest_optimal_resources(
     if not hw_profile["elpa"] and nmat > 10000:
         confidence -= 0.2
     if hw_profile["ht_active"]:
-        confidence -= 0.1
+        confidence -= 0.15 if mode == "mpi" else 0.10
     if hw_profile["scratch_fs"] in ["nfs", "lustre"]:
         confidence -= 0.15
     confidence = max(0.0, min(1.0, confidence))

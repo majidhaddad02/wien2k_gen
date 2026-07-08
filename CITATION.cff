@@ -12,7 +12,7 @@ authors:
   - given-names: Saed
     family-names: Jalali Asadabadi
     affiliation: University of Isfahan
-version: 9.8.0
+version: 0.1.0
 date-released: '2025-07-03'
 url: 'https://github.com/majidhaddad02/wien2k_gen'
 repository-code: 'https://github.com/majidhaddad02/wien2k_gen'

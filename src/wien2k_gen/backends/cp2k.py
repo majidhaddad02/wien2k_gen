@@ -711,7 +711,7 @@ class CP2KBackend(Backend):
 
         script = f"""#!/bin/bash
 # ==============================================================================
-# Auto-generated CP2K Runner Script (wien2k_gen v9.8.0)
+# Auto-generated CP2K Runner Script (wien2k_gen v0.1.0)
 # Mode: {mode.upper()} | Total Cores: {total_cores} | OMP: {omp} | MPI Ranks: {mpi_ranks}
 # Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}Z
 # Binary: {binary}

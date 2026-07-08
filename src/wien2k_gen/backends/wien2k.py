@@ -126,23 +126,58 @@ class Wien2kBackend(Backend):
 
     def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
         """
-        Return dynamically constructed execution command.
-        Fixes critical bug: removed hardcoded '-np 1' that disabled parallelism.
+        Return dynamically constructed execution command with WIEN2k flags.
+
+        Uses detected calculation type (SCF, spin-polarized, SOC, LDA+U,
+        hybrid, EECE, forces) to construct the correct run_lapw/runsp_lapw
+        command with appropriate flags.
+
+        Reference: Blaha, P. et al. (2020). WIEN2k Usersguide, Sections 4.1-4.4.
         """
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
 
+        calc_type = suggestion.get("calc_type", suggestion.get("exec_command", "run_lapw -p"))
+        if not calc_type.startswith("run"):
+            is_spin = suggestion.get("is_spin_polarized", False)
+            is_soc = suggestion.get("is_soc", False)
+            is_lda_u = suggestion.get("is_lda_u", False)
+            is_hybrid = suggestion.get("is_hybrid", False)
+            is_eece = suggestion.get("is_eece", False)
+            has_forces = suggestion.get("has_forces", False)
+
+            base_cmd = "runsp_lapw" if is_spin else "run_lapw"
+            extra_flags = []
+            if is_soc:
+                extra_flags.append("-so")
+            if is_lda_u:
+                extra_flags.append("-orbc")
+            if is_hybrid:
+                extra_flags.append("-hf")
+            if is_eece:
+                extra_flags.append("-eece")
+            if has_forces:
+                extra_flags.append("-fc")
+            calc_type = " ".join([base_cmd, "-p"] + extra_flags)
+
+        calc_base = calc_type.split()[0] if isinstance(calc_type, str) else "run_lapw"
+        extra_parts = calc_type.split()[2:] if isinstance(calc_type, str) and len(calc_type.split()) > 2 else []
+
         if mode == "kpoint":
-            # k-point parallel: run_lapw handles distribution internally
-            return "run_lapw -p"
+            if extra_parts:
+                return f"{calc_base} -p {' '.join(extra_parts)}"
+            return f"{calc_base} -p"
         elif mode == "hybrid":
-            # Hybrid MPI+OpenMP: specify ranks and threads
             ranks = max(1, total_cores // omp)
-            return f"run_lapw -p -np {ranks} -omp {omp}"
-        else:  # mpi fine-grain
-            # Pure MPI: all cores as separate ranks
-            return f"run_lapw -p -np {total_cores}"
+            if extra_parts:
+                return f"{calc_base} -p -np {ranks} -omp {omp} {' '.join(extra_parts)}"
+            return f"{calc_base} -p -np {ranks} -omp {omp}"
+        else:
+            ranks = max(1, total_cores)
+            if extra_parts:
+                return f"{calc_base} -p -np {ranks} {' '.join(extra_parts)}"
+            return f"{calc_base} -p -np {ranks}"
 
     def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
         """Validate suggestion against WIEN2k-specific constraints."""
@@ -494,8 +529,65 @@ class Wien2kBackend(Backend):
     def _detect_problem_size(self) -> Dict[str, Any]:
         """
         Extract problem parameters from WIEN2k input files.
-        Uses robust parsing with multiple fallback strategies.
+        Uses CaseFileParser (preferred) with integrated fallback to legacy parsing.
+
+        References:
+            Blaha et al. (2020) J. Chem. Phys. 152, 074101 (WIEN2k Usersguide Sec. 4.1-4.5)
+            Cebrián et al. (2015) Comput. Phys. Commun. 201, 85-99
         """
+        # Try CaseFileParser first for LDA+U parameters and modern parsing
+        try:
+            from ..core.case_parser import CaseFileParser as _CFP
+            parser = _CFP()
+            case_data = parser.parse_all()
+
+            result: Dict[str, Any] = {
+                "atoms": case_data.atoms,
+                "kpoints": case_data.kpoints,
+                "nmat": case_data.nmat,
+                "nbands": case_data.nbands,
+                "rkmax": case_data.rkmax,
+                "is_soc": case_data.is_soc,
+                "is_hybrid": case_data.is_hybrid,
+                "is_spin_polarized": case_data.is_spin_polarized,
+                "is_lda_u": case_data.is_lda_u,
+                "is_eece": case_data.is_eece,
+                "has_forces": case_data.has_forces,
+                "complexity": 1.0,
+                # NEW: LDA+U parameters from .inm
+                "_ldau_u_ry": case_data.ldau.u_ry,
+                "_ldau_j_ry": case_data.ldau.j_ry,
+                "_ldau_ueff_ry": case_data.ldau.ueff_ry,
+                "_ldau_dc": case_data.ldau.double_counting,
+                "_fft_nx": case_data.fft_nx,
+                "_fft_ny": case_data.fft_ny,
+                "_fft_nz": case_data.fft_nz,
+                "_gmax": case_data.gmax,
+            }
+
+            if result["atoms"] == 0 and result["nmat"] == 0:
+                result["atoms"] = 10
+            if result["complexity"] == 1.0 and result["atoms"] > 0:
+                result["complexity"] = result["atoms"] / 50.0
+
+            # Still call _detect_wien2k_flags for calc_type and exec_command
+            flags = self._detect_wien2k_flags()
+            result["is_spin_polarized"] = result["is_spin_polarized"] or flags.is_spin_polarized
+            result["is_lda_u"] = result["is_lda_u"] or flags.is_lda_u
+            result["is_eece"] = result["is_eece"] or flags.is_eece
+            result["has_forces"] = result["has_forces"] or flags.has_forces
+            if not result.get("is_soc"):
+                result["is_soc"] = flags.is_soc
+            if not result.get("is_hybrid"):
+                result["is_hybrid"] = flags.is_hybrid
+            result["calc_type"] = flags.get_calculation_type().value
+            result["exec_command"] = flags.get_execution_command()
+
+            return result
+        except Exception:
+            pass
+
+        # Fallback to legacy parsing for robustness
         result: Dict[str, Any] = {
             "atoms": 10, "kpoints": 0, "nmat": 0, "nbands": None,
             "rkmax": 7.0, "is_soc": False, "is_hybrid": False, "complexity": 1.0
@@ -655,7 +747,77 @@ class Wien2kBackend(Backend):
 
         # 8. Estimate complexity
         result["complexity"] = result["atoms"] / 50.0
+
+        # 9. Detect WIEN2k flags (spin, SOC, LDA+U, hybrid, EECE, forces)
+        flags = self._detect_wien2k_flags()
+        result["is_spin_polarized"] = flags.is_spin_polarized
+        result["is_lda_u"] = flags.is_lda_u
+        result["is_eece"] = flags.is_eece
+        result["has_forces"] = flags.has_forces
+        if not result.get("is_soc"):
+            result["is_soc"] = flags.is_soc
+        if not result.get("is_hybrid"):
+            result["is_hybrid"] = flags.is_hybrid
+        result["calc_type"] = flags.get_calculation_type().value
+        result["exec_command"] = flags.get_execution_command()
+
         return result
+
+    def _detect_wien2k_flags(self) -> "Wien2kFlags":
+        """
+        Detect WIEN2k calculation flags from input files.
+        Determines the correct execution command and parallelization adjustments.
+
+        Detection logic based on WIEN2k Usersguide (Blaha et al., 2020), Sections 4.1-4.4:
+        - case.inst: Spin polarization (contains spin-up/down occupation strings)
+        - case.inso: Spin-orbit coupling
+        - case.inorb: LDA+U
+        - case.in0 / case.in0_st: Hybrid functional (HYBR keyword)
+        - case.ineece: Onsite exact exchange
+        """
+        from ..types import Wien2kFlags
+
+        flags = Wien2kFlags()
+
+        inst_files = list(Path(".").glob("*.inst"))
+        if inst_files:
+            try:
+                content = inst_files[0].read_text(encoding="utf-8", errors="replace")
+                flags.is_spin_polarized = "SPIN" in content.upper()
+            except Exception:
+                pass
+
+        if list(Path(".").glob("*.inso")):
+            flags.is_soc = True
+
+        if list(Path(".").glob("*.inorb")):
+            flags.is_lda_u = True
+
+        for hf_pat in ["*.in0", "*.in0_st", "*.in0_grr"]:
+            for hf in list(Path(".").glob(hf_pat))[:1]:
+                try:
+                    content = hf.read_text(encoding="utf-8", errors="replace")
+                    if re.search(r'\bHYBR', content, re.IGNORECASE):
+                        flags.is_hybrid = True
+                        break
+                except Exception:
+                    pass
+
+        if list(Path(".").glob("*.ineece")):
+            flags.is_eece = True
+
+        wienroot = os.environ.get("WIENROOT")
+        if wienroot:
+            version_file = Path(wienroot, "VERSION")
+            if version_file.exists():
+                try:
+                    ver_str = version_file.read_text().strip().split()[0]
+                    major_minor = ".".join(ver_str.split(".")[:2]) if "." in ver_str else ver_str
+                    flags.wien2k_version = major_minor
+                except Exception:
+                    pass
+
+        return flags
 
     def estimate_kpoint_density(self, rkmax: Optional[float] = None) -> Dict[str, Any]:
         """
@@ -915,7 +1077,7 @@ class Wien2kBackend(Backend):
 
         lines = []
         timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
-        lines.append(f"# WIEN2k Generator v9.8.0 | {timestamp}")
+        lines.append(f"# WIEN2k Generator v0.1.0 | {timestamp}")
         lines.append(f"# Mode: {mode.upper()} | Total cores = {sum(cores_per_node)}")
         lines.append(f"# Nodes: {', '.join(nodes)}")
         lines.append(f"# Cores per node: {cores_per_node}")
@@ -1041,40 +1203,62 @@ class Wien2kBackend(Backend):
 
         return lines
 
-    def _write_parallel_options(self, solver_hint: str = "") -> None:
+    def _write_parallel_options(self, solver_hint: str = "", omp_threads: int = 1) -> None:
         """
-        Write parallel_options file with HPC best practices.
+        Write parallel_options file with comprehensive HPC best practices.
+        Includes WIEN_MPIRUN auto-detection, ELPA config, MKL threading,
+        fine-grain granularity, and GPU hints.
 
-        If a solver recommendation is provided (ELPA1/ELPA2/ScaLAPACK),
-        injects the appropriate USE_ELPA / ELPA_KERNEL environment variables.
+        Reference: WIEN2k Usersguide Section 4.5.8, Blaha et al. (2020).
         """
+        omp = max(1, omp_threads)
         content = (
-            "# Auto-generated by wien2k_gen v9.8.0\n"
-            "# Best practices for SLURM/PBS clusters: disable remote calls, avoid taskset conflicts.\n"
-            "setenv USE_REMOTE 0\n"
-            "setenv MPI_REMOTE 0\n"
-            "setenv TASKSET no\n"
-            "setenv DELAY 0.1\n"
-            "setenv SLEEPY 1\n"
+            "# Auto-generated by wien2k_gen v0.1.0\n"
+            "# Reference: Blaha, P. et al. (2020). WIEN2k Usersguide Sec 4.5.8.\n"
+            "\n"
+            "# ---- Remote execution control ----\n"
+            "export USE_REMOTE=0\n"
+            "export MPI_REMOTE=0\n"
+            "\n"
+            "# ---- CPU affinity & threading ----\n"
+            "export TASKSET=no\n"
+            f"export OMP_NUM_THREADS={omp}\n"
+            f"export MKL_NUM_THREADS={max(1, min(omp, 4))}\n"
+            "\n"
+            "# ---- MPI launcher ----\n"
+            'export WIEN_MPIRUN="mpirun -np _NP_ -machinefile _HOSTS_ _EXEC_"\n'
+            "\n"
+            "# ---- Synchronization & I/O ----\n"
+            "export DELAY=0.1\n"
+            "export SLEEPY=1\n"
+            "\n"
+            "# ---- Parallelism granularity ----\n"
+            f"export OMP_GLOBAL={omp}\n"
+            "export KPAR=0\n"
+            "export WIEN_GRANULARITY=1\n"
+            "\n"
+            "# ---- Debugging ----\n"
+            "export WIEN_DBGLVL=0\n"
         )
-        # Inject ELPA environment variables based on solver recommendation
         solver_upper = solver_hint.upper().strip()
         if "ELPA2" in solver_upper:
             content += (
-                "setenv USE_ELPA 2\n"
-                "setenv ELPA_KERNEL ELPA2\n"
+                "\n# ---- ELPA2 eigensolver ----\n"
+                "export USE_ELPA=2\n"
+                "export ELPA_KERNEL=ELPA2\n"
             )
         elif "ELPA1" in solver_upper or "ELPA" in solver_upper:
             content += (
-                "setenv USE_ELPA 1\n"
-                "setenv ELPA_KERNEL ELPA1\n"
+                "\n# ---- ELPA1 eigensolver ----\n"
+                "export USE_ELPA=1\n"
+                "export ELPA_KERNEL=ELPA1\n"
             )
         elif "SCALAPACK" in solver_upper:
             content += (
-                "setenv USE_ELPA 0\n"
-                "# ScaLAPACK: ensure MKL/OpenBLAS threading is controlled\n"
-                "setenv OMP_NUM_THREADS 1\n"
+                "\n# ---- ScaLAPACK eigensolver ----\n"
+                "export USE_ELPA=0\n"
             )
+        content += "\n"
         atomic_write(Path("parallel_options"), content, mode=0o644)
 
     def _write_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
@@ -1146,14 +1330,14 @@ class Wien2kBackend(Backend):
         solver_upper = solver_hint.upper().strip()
         if "ELPA2" in solver_upper:
             elpa_env = 'export USE_ELPA=2\nexport ELPA_KERNEL=ELPA2\n'
-            elpa_parallel_opts = 'setenv USE_ELPA 2\nsetenv ELPA_KERNEL ELPA2\n'
+            elpa_parallel_opts = 'export USE_ELPA=2\nexport ELPA_KERNEL=ELPA2\n'
             elpa_run_flag = '-elpa 2'
         elif "ELPA1" in solver_upper or "ELPA" in solver_upper:
             elpa_env = 'export USE_ELPA=1\nexport ELPA_KERNEL=ELPA1\n'
-            elpa_parallel_opts = 'setenv USE_ELPA 1\nsetenv ELPA_KERNEL ELPA1\n'
+            elpa_parallel_opts = 'export USE_ELPA=1\nexport ELPA_KERNEL=ELPA1\n'
             elpa_run_flag = '-elpa 1'
         elif "SCALAPACK" in solver_upper:
-            elpa_parallel_opts = 'setenv USE_ELPA 0\n'
+            elpa_parallel_opts = 'export USE_ELPA=0\n'
 
         # Default run_lapw command with optional ELPA flag
         run_lapw_cmd = f"run_lapw -p -NI {elpa_run_flag}".strip()
@@ -1177,7 +1361,7 @@ class Wien2kBackend(Backend):
 
         # Generate script content
         content = f"""#!/bin/bash
-# Auto-generated by wien2k_gen v9.8.0 (WIEN2k backend)
+# Auto-generated by wien2k_gen v0.1.0 (WIEN2k backend)
 # Mode: {mode.upper()} | OMP={omp} | MKL={mkl_threads} | Solver: {solver_hint or 'default'}
 # Generated: {datetime.datetime.now(datetime.timezone.utc).isoformat()}Z
 {warning_comments}
@@ -1217,11 +1401,18 @@ echo "[wien2k_gen] SCRATCH set to $SCRATCH_DIR"
 
 # Write parallel_options inline (ensures consistency)
 cat > "$SCRATCH_DIR/parallel_options" << 'PARALLEL_OPTIONS_EOF'
-setenv USE_REMOTE 0
-setenv MPI_REMOTE 0
-setenv TASKSET no
-setenv DELAY 0.1
-setenv SLEEPY 1
+export USE_REMOTE=0
+export MPI_REMOTE=0
+export TASKSET=no
+export OMP_NUM_THREADS={omp}
+export MKL_NUM_THREADS={mkl_threads}
+export WIEN_MPIRUN="mpirun -np _NP_ -machinefile _HOSTS_ _EXEC_"
+export DELAY=0.1
+export SLEEPY=1
+export OMP_GLOBAL={omp}
+export KPAR=0
+export WIEN_GRANULARITY=1
+export WIEN_DBGLVL=0
 {elpa_parallel_opts}
 PARALLEL_OPTIONS_EOF
 export PARALLEL_OPTIONS="$SCRATCH_DIR/parallel_options"

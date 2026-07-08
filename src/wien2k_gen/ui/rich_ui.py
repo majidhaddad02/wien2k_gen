@@ -176,7 +176,7 @@ console = _cli_manager.console
 # Layout & Formatting Utilities
 # =============================================================================
 
-def print_banner(version: str = "9.8.0", title: str = "WIEN2k Generator") -> None:
+def print_banner(version: str = "0.1.0", title: str = "WIEN2k Generator") -> None:
     """Display project ASCII/Rich banner with version & environment info."""
     banner_text = Text()
     banner_text.append(f"\n  🧬 {title}  ", style="bold cyan")

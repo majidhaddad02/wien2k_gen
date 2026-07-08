@@ -403,16 +403,20 @@ def run_wizard(topo=None) -> None:
             if max_cores and max_cores < topo.total_cores:
                 topo_final = detect_topology(max_cores=max_cores)
                 
-            build_result = build_auto(
-                topo=topo_final,
-                suggestion=sug_dict,
-                backup=True,
-                dry_run=False,
-                validate=True
-            )
-            
-            if not build_result.success:
-                raise ConfigurationError(build_result.error_message or "Build failed")
+                build_result = build_auto(
+                    topo=topo_final,
+                    suggestion=sug_dict,
+                    backup=True,
+                    dry_run=False,
+                    validate=True
+                )
+
+                if not build_result.success:
+                    if hasattr(build_result, 'error_message') and build_result.error_message:
+                        raise ConfigurationError(build_result.error_message)
+                    raise ConfigurationError(
+                        "Build failed. Check input files and topology."  # Generic error for edge cases
+                    )
                 
             console.print("[green]✅ .machines and parallel_options generated successfully![/green]")
 

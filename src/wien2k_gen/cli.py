@@ -82,7 +82,7 @@ def create_parser() -> argparse.ArgumentParser:
     global_group.add_argument("--config", type=str, default=None, help="Path to custom config file")
     global_group.add_argument("--backend", type=str, choices=[b.value for b in BackendCode], help="Override auto-detected backend")
     global_group.add_argument("--log-file", type=str, default=None, help="Redirect logs to file")
-    global_group.add_argument("--version", action="version", version="wien2k_gen v9.8.0")
+    global_group.add_argument("--version", action="version", version="wien2k_gen v0.1.0")
     global_group.add_argument("--plain", action="store_true", help="Use plain output (no Rich formatting, for dumb terminals)")
     global_group.add_argument("--no-color", action="store_true", dest="no_color", help="Disable colored output")
 
@@ -197,6 +197,17 @@ def _open_editor_for_manual_review(filepath: Path) -> None:
         console.print(f"[yellow]Editor error: {e}. Edit manually: {filepath}[/yellow]")
 
 
+def _get_exec_command() -> str:
+    """Auto-detect the correct WIEN2k execution command from input files."""
+    try:
+        from .backend_manager import get_current_backend
+        backend = get_current_backend()
+        params = backend.detect_problem_size()
+        return params.get("exec_command", "run_lapw -p")
+    except Exception:
+        return "run_lapw -p"
+
+
 def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Execute pipeline configuration generation with Rich UI output."""
     topo = detect_topology(max_cores=args.max_cores)
@@ -298,7 +309,7 @@ def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         )
         spec = SlurmJobSpec(
             topo=topo,
-            exec_command="run_lapw -p",
+            exec_command=_get_exec_command(),
             directives=directives,
             working_dir=Path.cwd()
         )

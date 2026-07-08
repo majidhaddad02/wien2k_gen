@@ -68,7 +68,7 @@ class Wien2kGenApp(App):
     and SLURM job dispatch with real-time UI feedback.
     """
     CSS_PATH = "interactive.tcss"
-    TITLE = "WIEN2k Generator v9.8.0"
+    TITLE = "WIEN2k Generator v0.1.0"
     SUB_TITLE = "HPC Parallel Configuration & Job Dispatcher"
     
     BINDINGS = [
