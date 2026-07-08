@@ -14,10 +14,10 @@ Submodules:
 # =============================================================================
 # Tab Component Exports
 # =============================================================================
+from .advanced_tab import AdvancedTab
 from .resources_tab import ResourcesTab
 from .settings_tab import SettingsTab
 from .submit_tab import SubmitTab
-from .advanced_tab import AdvancedTab
 
 # =============================================================================
 # Explicit Public API Declaration
@@ -25,8 +25,8 @@ from .advanced_tab import AdvancedTab
 # Controls `from wien2k_gen.ui.tabs import *` and provides clear IDE auto-completion boundaries.
 # Only exports production-ready tab classes; internal helpers remain encapsulated.
 __all__ = [
+    "AdvancedTab",
     "ResourcesTab",
     "SettingsTab",
     "SubmitTab",
-    "AdvancedTab",
 ]

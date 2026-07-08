@@ -17,19 +17,16 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
-import logging
-import threading
 import json
-import datetime
+import logging
+import sys
+import threading
 from pathlib import Path
-from typing import Optional, Dict, Any, Union, List, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 # Avoid circular import: only import types at type-checking time
 if TYPE_CHECKING:
     from .config import AppConfig
-    from .exceptions import Wien2kGenError
 
 # Runtime imports will be done lazily inside functions that need them
 
@@ -78,10 +75,9 @@ class StructuredFormatter(logging.Formatter):
         # Check for structured error metadata
         if record.exc_info and record.exc_info[0] is not None:
             exc = record.exc_info[1]
-            if is_wien2k_error(exc):
-                # Append structured hint if available
-                if getattr(exc, 'hint', None):
-                    msg += f"\n   HINT: {exc.hint}"
+            if isinstance(exc, Exception) and is_wien2k_error(exc):
+                if getattr(exc, "hint", None):
+                    msg += f"\n   HINT: {exc.hint}"  # type: ignore[attr-defined]
         
         return msg
 
@@ -111,7 +107,7 @@ class JsonFormatter(logging.Formatter):
         # Exception handling
         if record.exc_info:
             exc = record.exc_info[1]
-            if is_wien2k_error(exc):
+            if isinstance(exc, Exception) and is_wien2k_error(exc):
                 log_obj["error_code"] = getattr(exc, 'error_code', 'UNKNOWN')
                 log_obj["error_domain"] = getattr(exc, 'domain', 'UNKNOWN')
             log_obj["exception"] = self.formatException(record.exc_info)
@@ -129,7 +125,7 @@ class LogManager:
     """
     _instance: Optional["LogManager"] = None
     _lock = threading.Lock()
-    _logger: Optional[logging.Logger] = None
+    _logger: logging.Logger = logging.getLogger("wien2k_gen")
     _handler_ids: Dict[str, logging.Handler] = {}
 
     def __new__(cls) -> "LogManager":
@@ -282,10 +278,10 @@ def get_logger(name: str = __name__) -> logging.Logger:
 # =============================================================================
 __all__ = [
     "ContextFilter",
-    "StructuredFormatter",
     "JsonFormatter",
     "LogManager",
-    "setup_logging",
-    "set_context",
+    "StructuredFormatter",
     "get_logger",
+    "set_context",
+    "setup_logging",
 ]

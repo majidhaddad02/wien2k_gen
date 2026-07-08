@@ -16,24 +16,16 @@ Key Features:
 • Comprehensive English documentation, type hints, and HPC-grade error handling
 """
 
-import os
-import re
 import datetime
+import re
 import shutil
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .base import Backend, ProblemSize, ResourceEstimate
 from ..core.topology import Topology
-from ..core.hardware import (
-    get_physical_cores,
-    get_total_mem_kb,
-    get_job_memory_limit_mb,
-    is_containerized,
-    get_scratch_filesystem_type,
-)
-from ..utils.atomic_write import atomic_write
 from ..logging_config import get_logger
+from ..utils.atomic_write import atomic_write
+from .base import Backend, ProblemSize, ResourceEstimate
 
 logger = get_logger(__name__)
 

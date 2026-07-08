@@ -13,22 +13,20 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
-import re
-import json
-import time
-import math
-import signal
-import hashlib
-import platform
 import asyncio
+import hashlib
+import json
+import math
+import os
+import platform
+import signal
 import statistics
 import threading
-from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional, Callable, Union
-from dataclasses import dataclass, field, asdict
+import time
 from contextlib import asynccontextmanager
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 from ..core.topology import Topology
 
@@ -51,14 +49,12 @@ def _get_current_backend():
     return _get_current_backend_fn()
 
 from ..core.hardware import (
-    get_physical_cores,
-    get_total_mem_kb,
-    get_cpu_architecture,
-    get_numa_node_count,
-    get_job_memory_limit_mb,
-    get_memory_bandwidth_gb_s,
     calculate_peak_fp64_gflops,
+    get_cpu_architecture,
     get_interconnect_info,
+    get_job_memory_limit_mb,
+    get_numa_node_count,
+    get_total_mem_kb,
 )
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
@@ -332,7 +328,7 @@ class AutoProfiler:
     def _get_current_rss_mb(self) -> int:
         """Read current process RSS in MB (Linux /proc/self/status)."""
         try:
-            with open("/proc/self/status", "r", encoding="utf-8") as f:
+            with open("/proc/self/status", encoding="utf-8") as f:
                 for line in f:
                     if line.startswith("VmRSS:"):
                         return int(line.split()[1]) // 1024
@@ -519,7 +515,7 @@ class AutoProfiler:
                     f"(success: {result.success_rate*100:.0f}%, mem: {result.peak_memory_mb}MB, outliers: {result.outlier_count})"
                 )
             else:
-                logger.warning(f"  ✗ All runs failed for this configuration")
+                logger.warning("  ✗ All runs failed for this configuration")
 
             if self.progress_callback:
                 self.progress_callback({

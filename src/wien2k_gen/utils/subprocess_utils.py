@@ -11,15 +11,14 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
+import asyncio
 import os
-import sys
 import shlex
 import signal
-import asyncio
-import logging
 import subprocess
+import sys
 from pathlib import Path
-from typing import List, Union, Optional, Dict, Any, Callable, Tuple
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -446,9 +445,9 @@ async def stream_command_output(
 
 __all__ = [
     "ProcessResult",
-    "run_command",
+    "force_kill_process_group",
     "run_async_command",
+    "run_command",
     "stream_command_output",
     "terminate_process_group",
-    "force_kill_process_group",
 ]

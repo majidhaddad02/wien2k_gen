@@ -15,28 +15,34 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import json
-import time
-import logging
+import os
 import threading
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Container, ScrollableContainer
-from textual.widgets import (
-    Button, Input, Label, Static, Select, Switch, Checkbox, Rule, DataTable, Collapsible
-)
-from textual.reactive import reactive
+from textual.containers import Container, Horizontal
 from textual.message import Message
+from textual.reactive import reactive
+from textual.widgets import (
+    Button,
+    Collapsible,
+    DataTable,
+    Input,
+    Label,
+    Select,
+    Static,
+    Switch,
+)
 
 # Project imports
-from ...backend_manager import get_current_backend, list_backends, set_backend
+from ...backend_manager import list_backends
 from ...core.hardware import get_scratch_filesystem_type
-from ...utils.atomic_write import atomic_write
 from ...logging_config import get_logger
-from ..widgets import ValidatedInput, ValidationMessage, LogPanel
+from ...utils.atomic_write import atomic_write
+from ..widgets import ValidatedInput, ValidationMessage
 
 logger = get_logger(__name__)
 
@@ -343,7 +349,7 @@ class SettingsTab(Container):
             elif not os.access(wien, os.R_OK | os.X_OK):
                 errors.append(f"Insufficient permissions for WIENROOT: {self.wienroot}")
             elif not (wien / "run_lapw").exists():
-                errors.append(f"run_lapw binary missing in WIENROOT. Path may be incorrect.")
+                errors.append("run_lapw binary missing in WIENROOT. Path may be incorrect.")
 
         scratch = Path(self.scratch_path)
         if self.scratch_path:
@@ -395,7 +401,7 @@ class SettingsTab(Container):
         loaded = {}
         for p in self.PROFILE_DIR.glob("*.json"):
             try:
-                with open(p, "r", encoding="utf-8") as f:
+                with open(p, encoding="utf-8") as f:
                     data = json.load(f)
                     loaded[p.stem] = data
             except Exception as e:
@@ -512,7 +518,7 @@ class SettingsTab(Container):
 # =============================================================================
 
 __all__ = [
-    "SettingsTab",
-    "SettingsChangedMessage",
     "ProfileLoadedMessage",
+    "SettingsChangedMessage",
+    "SettingsTab",
 ]

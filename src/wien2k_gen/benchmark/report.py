@@ -11,12 +11,10 @@ References:
     Gustafson 1988: Reevaluating Amdahl's Law (CACM 31(5), 532-533)
 """
 
-import os
-import json
-import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Union
 
 from ..logging_config import get_logger
 
@@ -336,7 +334,7 @@ def load_series_from_yaml(path: Union[str, Path]) -> List[ScalingSeries]:
     import yaml
 
     path = Path(path)
-    with open(path, "r") as f:
+    with open(path) as f:
         data = yaml.safe_load(f)
 
     series_list = []
@@ -397,8 +395,8 @@ def load_series_from_yaml(path: Union[str, Path]) -> List[ScalingSeries]:
 __all__ = [
     "ScalingDataPoint",
     "ScalingSeries",
-    "generate_text_report",
     "generate_charts",
     "generate_report",
+    "generate_text_report",
     "load_series_from_yaml",
 ]

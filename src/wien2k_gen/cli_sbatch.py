@@ -14,26 +14,20 @@ Key Architecture Features:
 • Comprehensive English documentation, type hints, and HPC-grade resilience patterns
 """
 
-import os
-import sys
-import json
-import shutil
 import argparse
-import logging
-import time
-import signal
+import json
+import os
 import re
+import shutil
+import signal
+import sys
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-from .config import load_config, get_config, AppConfig, ensure_dirs
-from .core.scheduler import detect as detect_topology, auto_detect_memory
-from .submit.slurm import (
-    generate_sbatch_script,
-    submit_slurm_job,
-    SlurmJobSpec,
-    SlurmDirectives,
-)
+from .config import AppConfig, ensure_dirs, load_config
+from .core.scheduler import auto_detect_memory
+from .core.scheduler import detect as detect_topology
 from .exceptions import (
     ConfigurationError,
     SchedulerError,
@@ -41,8 +35,14 @@ from .exceptions import (
     format_error_for_ui,
     log_exception_structured,
 )
+from .logging_config import get_logger, set_context, setup_logging
+from .submit.slurm import (
+    SlurmDirectives,
+    SlurmJobSpec,
+    generate_sbatch_script,
+    submit_slurm_job,
+)
 from .utils.atomic_write import atomic_write
-from .logging_config import get_logger, setup_logging, set_context
 
 logger = get_logger(__name__)
 
@@ -371,8 +371,8 @@ def run_sbatch_cli(argv: Optional[List[str]] = None) -> int:
 __all__ = [
     "create_sbatch_parser",
     "handle_generate",
-    "handle_validate",
     "handle_submit",
+    "handle_validate",
     "run_sbatch_cli",
 ]
 

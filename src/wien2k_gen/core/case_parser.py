@@ -24,12 +24,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 __all__ = [
     "CaseData",
-    "LDAUData",
     "CaseFileParser",
+    "LDAUData",
     "parse_case_directory",
 ]
 
@@ -121,8 +121,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in1(filepath: Path) -> Dict[str, object]:
-        result: Dict[str, object] = {
+    def parse_in1(filepath: Path) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
             "nbands": None, "rkmax": 7.0, "lmax": 10,
             "v_nmt": 4.0, "gmax": 12.0, "format_type": "unknown",
         }
@@ -184,9 +184,7 @@ class CaseFileParser:
             if len(parts) == 1:
                 try:
                     val = float(parts[0])
-                    if val >= 4.0 and qn_block_ended:
-                        gmax_candidates.append(val)
-                    elif val >= 4.0 and not in_qn_block:
+                    if (val >= 4.0 and qn_block_ended) or (val >= 4.0 and not in_qn_block):
                         gmax_candidates.append(val)
                 except ValueError:
                     pass
@@ -225,8 +223,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in2(filepath: Path) -> Dict[str, object]:
-        result: Dict[str, object] = {
+    def parse_in2(filepath: Path) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
             "fft_nx": 0, "fft_ny": 0, "fft_nz": 0,
             "gmax": 12.0, "tetra_method": False, "nmat_estimated": 0,
         }
@@ -386,8 +384,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_scf(filepath: Path) -> Dict[str, object]:
-        result: Dict[str, object] = {
+    def parse_scf(filepath: Path) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
             "nmat": 0, "fermi_energy_ry": 0.0,
             "total_energy_ry": 0.0, "scf_iterations": 0,
         }
@@ -429,8 +427,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_struct(filepath: Path) -> Dict[str, object]:
-        result: Dict[str, object] = {
+    def parse_struct(filepath: Path) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
             "atoms": 0, "atoms_inequiv": 0,
             "volume_bohr3": 0.0, "lattice_vectors": [],
             "spacegroup": "",
@@ -496,7 +494,7 @@ class CaseFileParser:
                 ca, cb, cg = math.cos(alpha_r), math.cos(beta_r), math.cos(gamma_r)
                 vol = a * b * c * math.sqrt(1 - ca*ca - cb*cb - cg*cg + 2*ca*cb*cg)
                 result["volume_bohr3"] = vol
-                result["lattice_vectors"] = [(a, 0.0, 0.0)]  # type: ignore[assignment]
+                result["lattice_vectors"] = [(a, 0.0, 0.0)]
         except Exception:
             pass
 
@@ -507,7 +505,7 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_klist(filepath: Path) -> Dict[str, int]:
+    def parse_klist(filepath: Path) -> Dict[str, Any]:
         result: Dict[str, int] = {"kpoints": 0}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -533,8 +531,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in0(filepath: Path) -> Dict[str, object]:
-        result: Dict[str, object] = {"rkmax": 7.0, "is_hybrid": False}
+    def parse_in0(filepath: Path) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"rkmax": 7.0, "is_hybrid": False}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
@@ -580,7 +578,7 @@ class CaseFileParser:
             data.atoms = int(s.get("atoms", 0) or 0)
             data.atoms_inequiv = int(s.get("atoms_inequiv", 0) or 0)
             data.volume_bohr3 = float(s.get("volume_bohr3", 0.0) or 0.0)
-            data.lattice_vectors = s.get("lattice_vectors", []) or []  # type: ignore[assignment]
+            data.lattice_vectors = s.get("lattice_vectors", []) or []
 
         # .klist
         r = self._read_optional("*.klist*")
@@ -699,10 +697,10 @@ class Vector:
         self.y = y
         self.z = z
 
-    def dot(self, other: "Vector") -> float:
+    def dot(self, other: Vector) -> float:
         return self.x * other.x + self.y * other.y + self.z * other.z
 
-    def cross(self, other: "Vector") -> "Vector":
+    def cross(self, other: Vector) -> Vector:
         return Vector(
             self.y * other.z - self.z * other.y,
             self.z * other.x - self.x * other.z,

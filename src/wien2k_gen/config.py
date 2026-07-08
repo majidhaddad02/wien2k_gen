@@ -17,16 +17,13 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import json
-import time
-import logging
+import os
 import threading
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List, TypedDict
-from dataclasses import dataclass, field, asdict, is_dataclass
+from typing import Any, Dict, List, Optional, Union
 
-from .exceptions import ConfigurationError
 
 # Lazy import for logger to avoid circular dependency
 def get_logger(name: str):
@@ -186,7 +183,7 @@ class ConfigManager:
     def _merge_file_config(self, base: AppConfig, path: Path) -> AppConfig:
         if path.exists():
             try:
-                with open(path, "r", encoding="utf-8") as f:
+                with open(path, encoding="utf-8") as f:
                     data = json.load(f)
                 return self._merge_dict_config(base, data)
             except Exception as e:
@@ -300,14 +297,14 @@ def ensure_dirs() -> None:
 # Explicit Public API Declaration
 # =============================================================================
 __all__ = [
+    "DEFAULT_CACHE_DIR",
+    "DEFAULT_CONFIG_DIR",
+    "DEFAULT_MAX_CORES",
+    "DEFAULT_TIMEOUT_SEC",
     "AppConfig",
     "ConfigManager",
+    "ensure_dirs",
     "get_config",
     "load_config",
     "validate_config",
-    "ensure_dirs",
-    "DEFAULT_CONFIG_DIR",
-    "DEFAULT_CACHE_DIR",
-    "DEFAULT_TIMEOUT_SEC",
-    "DEFAULT_MAX_CORES",
 ]

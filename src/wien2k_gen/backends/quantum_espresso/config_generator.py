@@ -17,9 +17,9 @@ Key constraints enforced:
 This module replaces heuristic skeletons with production-grade number-theoretic optimization.
 """
 
-import math
 import logging
-from typing import Dict, Any, Optional, List, Set
+import math
+from typing import Any, Dict, List, Optional, Set
 
 # Use module-level logger for consistency with project standards.
 logger = logging.getLogger(__name__)

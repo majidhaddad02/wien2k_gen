@@ -16,14 +16,11 @@ Key Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import re
-import time
 import shutil
-import logging
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, TypedDict, Union
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
 
 from ..logging_config import get_logger
 
@@ -403,10 +400,10 @@ def _rotate_backups(directory: Path, prefix: str, max_retention: int) -> None:
 # =============================================================================
 
 __all__ = [
-    "ValidationResult",
     "MachinesConfig",
+    "ValidationResult",
+    "_rotate_backups",
+    "backup_machines",
     "parse_machines_file",
     "validate_machines",
-    "backup_machines",
-    "_rotate_backups",
 ]

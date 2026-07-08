@@ -15,36 +15,42 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
-import json
-import time
-import signal
 import logging
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple, Callable, Iterator, ContextManager
-from dataclasses import dataclass, field
+import os
+import signal
+import sys
+import time
+from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Callable, ContextManager, Dict, List, Optional
+
+from rich.align import Align
 
 # Rich is a core dependency per pyproject.toml & offline_packages
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
-from rich.tree import Tree
-from rich.text import Text
-from rich.markdown import Markdown
 from rich.json import JSON
+from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.rule import Rule
-from rich.align import Align
-from rich.padding import Padding
+from rich.table import Table
+from rich.text import Text
+from rich.tree import Tree
+
+from ..core.pipeline import PipelineResult
 
 # Project imports (aligned with refactored modules)
 from ..core.topology import Topology
-from ..core.pipeline import PipelineResult
+from ..logging_config import get_logger
 from ..submit.slurm import SubmissionResult
 from ..utils.diagnostic import DiagnosticReport
-from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -474,25 +480,25 @@ def get_plain_console() -> Console:
 
 __all__ = [
     "CLIConfig",
+    "CLIWorkflowRunner",
     "ConsoleManager",
-    "console",
     "TerminalCapabilities",
+    "cli_progress",
+    "console",
     "detect_terminal_capabilities",
-    "get_rich_console",
     "get_plain_console",
+    "get_rich_console",
+    "launch_cli_mode",
     "print_banner",
+    "print_diagnostics",
+    "print_error_panel",
+    "print_pipeline_result",
     "print_section_header",
     "print_status_indicator",
-    "print_error_panel",
-    "print_warning_panel",
-    "print_topology",
-    "print_pipeline_result",
     "print_submission_result",
-    "print_diagnostics",
-    "cli_progress",
-    "CLIWorkflowRunner",
-    "launch_cli_mode",
-    "set_quiet_mode",
-    "set_json_output",
     "print_table_from_dict",
+    "print_topology",
+    "print_warning_panel",
+    "set_json_output",
+    "set_quiet_mode",
 ]

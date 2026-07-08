@@ -14,14 +14,12 @@ Endpoints:
 """
 
 import json
+import logging
 import os
-import re
 import signal
-import sys
 import time
 import uuid
-import logging
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
@@ -267,7 +265,7 @@ class Wien2kAPIHandler(BaseHTTPRequestHandler):
 
         # generate pseudo-convergence data from workflow metadata
         try:
-            from ..optimizer.convergence import ConvergenceResult, generate_convergence_report
+            from ..optimizer.convergence import generate_convergence_report
             results = wf.get("convergence_data", [])
             _json_response(self, {
                 "workflow_id": wf_id,

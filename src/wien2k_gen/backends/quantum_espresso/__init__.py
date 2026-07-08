@@ -21,8 +21,8 @@ from .backend import QuantumEspressoBackend
 # Configuration & Domain Decomposition Optimizer
 from .config_generator import (
     generate_qe_config,
-    optimal_npool,
     optimal_nband,
+    optimal_npool,
 )
 
 # Execution & Process Management
@@ -43,9 +43,9 @@ from .parser import (
 # and provides clear IDE auto-completion boundaries.
 __all__ = [
     "QuantumEspressoBackend",
-    "generate_qe_config",
-    "optimal_npool",
-    "optimal_nband",
     "execute_qe_calculation",
+    "generate_qe_config",
+    "optimal_nband",
+    "optimal_npool",
     "parse_qe_output",
 ]

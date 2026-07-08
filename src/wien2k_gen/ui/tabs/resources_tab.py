@@ -15,34 +15,23 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
-import logging
 import threading
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid, Container
-from textual.widgets import Button, Input, Label, Static, Checkbox, Select, Rule, Switch, Collapsible
-from textual.reactive import reactive
-from textual.message import Message
 from textual import on
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal
+from textual.message import Message
+from textual.reactive import reactive
+from textual.widgets import Button, Checkbox, Collapsible, Input, Label, Rule, Static, Switch
+
+from ...core.hardware import get_job_memory_limit_mb, get_physical_cores, get_total_mem_kb
+from ...core.scheduler import detect as detect_topology
 
 # Project imports
 from ...core.topology import Topology
-from ...core.scheduler import detect as detect_topology
-from ...core.hardware import get_physical_cores, get_job_memory_limit_mb, get_total_mem_kb
-from ...optimizer.advisor import suggest_optimal_resources
 from ...logging_config import get_logger
-from ..widgets import (
-    StatusIndicator,
-    LogPanel,
-    ResourceSummaryTable,
-    ValidatedInput,
-    HardwareInfoCard,
-    ValidationMessage
-)
+from ..widgets import HardwareInfoCard, ResourceSummaryTable, ValidatedInput, ValidationMessage
 
 logger = get_logger(__name__)
 
@@ -432,7 +421,7 @@ class ResourcesTab(Container):
 # =============================================================================
 
 __all__ = [
+    "AllocationChangedMessage",
     "ResourcesTab",
     "TopologyDetectedMessage",
-    "AllocationChangedMessage",
 ]

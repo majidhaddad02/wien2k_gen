@@ -13,38 +13,44 @@ Key Architecture Features:
 • Comprehensive English documentation, strict type hints, and HPC-grade resilience
 """
 
-import os
-import sys
 import time
-import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import List, Optional
 
+from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical, ScrollableContainer
-from textual.widgets import (
-    Header, Footer, Button, Static, TextArea, ProgressBar,
-    TabbedContent, TabPane, Collapsible, Rule
-)
+from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.reactive import reactive
-from textual import work, on
+from textual.widgets import (
+    Button,
+    Collapsible,
+    Footer,
+    Header,
+    ProgressBar,
+    Rule,
+    Static,
+    TabbedContent,
+    TabPane,
+    TextArea,
+)
+
+from ..core.pipeline import run_pipeline
+from ..core.scheduler import detect
 
 # Project imports (aligned with refactored architecture)
 from ..core.topology import Topology
-from ..core.scheduler import detect
-from ..core.pipeline import run_pipeline
-from ..optimizer.advisor import suggest_optimal_resources
-from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
-from ..submit import SUBMIT_PROVIDERS
-from ..utils.diagnostic import run_diagnostics
 from ..exceptions import Wien2kGenError, format_error_for_ui
 from ..logging_config import get_logger
+from ..optimizer.advisor import suggest_optimal_resources
+from ..submit import SUBMIT_PROVIDERS
+from ..submit.slurm import SlurmDirectives, SlurmJobSpec, submit_slurm_job
+from ..utils.diagnostic import run_diagnostics
+from .dialogs import HelpDialog, ReportDialog
+from .tabs import AdvancedTab, ResourcesTab, SettingsTab, SubmitTab
+from .tabs.settings_tab import SettingsChangedMessage
 
 # Local UI imports
 from .widgets import LogPanel, ResourceSummaryTable
-from .tabs import ResourcesTab, SettingsTab, SubmitTab, AdvancedTab
-from .tabs.settings_tab import SettingsChangedMessage
-from .dialogs import HelpDialog, ProfileDialog, ReportDialog
 
 logger = get_logger(__name__)
 
@@ -319,7 +325,7 @@ class Wien2kGenApp(App):
             self.call_later(lambda: self.last_errors.append(format_error_for_ui(e)))
             self.call_later(lambda: self.notify("Configuration generation failed.", severity="error"))
             logger.error("Pipeline worker failed: %s", e, exc_info=True)
-        except Exception as e:
+        except Exception:
             self.call_later(lambda: self.last_errors.append(f"Pipeline exception: {e}"))
             self.call_later(lambda: self.notify(f"Critical error: {e}", severity="error"))
             logger.error("Pipeline worker failed", exc_info=True)
@@ -384,10 +390,10 @@ class Wien2kGenApp(App):
                 self.call_later(lambda: setattr(self, "last_errors", errors))
                 self.call_later(lambda: self.notify("Submission failed.", severity="error"))
 
-        except Wien2kGenError as e:
+        except Wien2kGenError:
             self.call_later(lambda: self.last_errors.append(format_error_for_ui(e)))
             self.call_later(lambda: self.notify("Job submission failed.", severity="error"))
-        except Exception as e:
+        except Exception:
             self.call_later(lambda: self.last_errors.append(f"Submission error: {e}"))
             self.call_later(lambda: self.notify(f"Submission failed: {e}", severity="error"))
             logger.error("Submission worker failed", exc_info=True)
@@ -403,9 +409,9 @@ class Wien2kGenApp(App):
             self.call_later(lambda: self.notify("Diagnostics complete. Check Report dialog.", severity="success"))
             self.call_later(lambda: self.push_screen(ReportDialog(report)))
             self.call_later(lambda: setattr(self, "status_message", "Diagnostics finished."))
-        except Wien2kGenError as e:
+        except Wien2kGenError:
             self.call_later(lambda: self.notify(format_error_for_ui(e), severity="error"))
-        except Exception as e:
+        except Exception:
             self.call_later(lambda: self.notify(f"Diagnostics failed: {e}", severity="error"))
             logger.error("Diagnostics worker failed", exc_info=True)
             self.call_later(lambda: setattr(self, "status_message", "Diagnostics failed."))

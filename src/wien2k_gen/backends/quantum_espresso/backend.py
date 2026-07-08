@@ -18,34 +18,24 @@ Key Improvements Applied:
 - Maintained and expanded code volume with safety layers, logging, and resiliency hooks.
 """
 
+import datetime
+import math
 import os
 import re
-import math
-import json
 import shutil
-import signal
-import datetime
-import subprocess
-import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, Union, TypedDict
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, TypedDict
+
+from ...core.hardware import (
+    get_interconnect_info,
+    get_job_memory_limit_mb,
+)
+from ...core.topology import Topology
+from ...logging_config import get_logger
+from ...utils.atomic_write import atomic_write
 
 # Adjust imports to match project package structure
 from ..base import Backend, ProblemSize
-from ...core.topology import Topology
-from ...core.hardware import (
-    get_physical_cores,
-    get_total_mem_kb,
-    get_job_memory_limit_mb,
-    is_containerized,
-    get_scratch_filesystem_type,
-    get_numa_node_count,
-    get_interconnect_info,
-    check_mkl_available,
-)
-from ...utils.atomic_write import atomic_write
-from ...logging_config import get_logger
 
 logger = get_logger(__name__)
 

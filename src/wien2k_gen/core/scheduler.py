@@ -15,34 +15,25 @@ Key Improvements Applied:
 - Comprehensive English documentation, type hints, and HPC-grade error handling.
 """
 
+import hashlib
+import json
 import os
 import re
-import socket
-import json
-import hashlib
 import shutil
-import time
 import signal
-import subprocess
-import logging
+import socket
+import time
+from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from collections import Counter
-from typing import List, Optional, Dict, Any, Tuple, Callable
-from dataclasses import dataclass, field, asdict, is_dataclass
-from functools import lru_cache
+from typing import Any, Callable, Dict, List, Optional
 
-from .topology import Topology, NUMANode
-from .hardware import (
-    get_physical_cores,
-    get_logical_cores,
-    get_numa_topology_detailed,
-    get_interconnect_info,
-    get_job_memory_limit_mb,
-    is_containerized,
-    get_hardware_profile
-)
 from ..logging_config import get_logger
 from ..utils.filelock import FileLock
+from .hardware import (
+    get_interconnect_info,
+    get_physical_cores,
+)
+from .topology import Topology
 
 # Corrected logger initialization
 logger = get_logger(__name__)
@@ -107,7 +98,7 @@ def _load_cached_detection() -> Optional[Dict[str, Any]]:
             data.pop("env_hash", None)
             result = data.get("payload", data)
             return result
-    except (json.JSONDecodeError, OSError, IOError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         logger.debug(f"Cache load failed or lock unavailable: {e}")
         return None
 

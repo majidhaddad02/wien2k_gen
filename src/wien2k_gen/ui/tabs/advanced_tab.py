@@ -13,23 +13,15 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
-import logging
-import subprocess
 import threading
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Any, Dict, List
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Container, ScrollableContainer
-from textual.widgets import (
-    Button, Input, Label, Static, Select, Switch, Rule,
-    ProgressBar, Collapsible
-)
-from textual.reactive import reactive
-from textual.message import Message
 from textual import on, work
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.message import Message
+from textual.reactive import reactive
+from textual.widgets import Button, Collapsible, Input, Label, ProgressBar, Select, Static, Switch
 
 from ...logging_config import get_logger
 
@@ -362,7 +354,10 @@ class AdvancedTab(Container):
     def _apply_elpa_recommendation(self) -> None:
         def _apply() -> None:
             try:
-                from ...backends.elpa_selector import select_eigensolver, get_recommended_wien2k_compile_flags
+                from ...backends.elpa_selector import (
+                    get_recommended_wien2k_compile_flags,
+                    select_eigensolver,
+                )
 
                 gpu_avail = len(self._detect_gpus_lazy()) > 0
                 sel = select_eigensolver(
@@ -465,7 +460,7 @@ class AdvancedTab(Container):
 
 
 __all__ = [
-    "AdvancedTab",
     "AdvancedSettingsMessage",
+    "AdvancedTab",
     "ProfilingCompleteMessage",
 ]

@@ -11,16 +11,14 @@ Key Features:
 • Comprehensive type hints, English docstrings, and structured error handling
 """
 
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+import datetime
 import os
 import re
-import datetime
-import subprocess
 import shutil
-import logging
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -221,7 +219,7 @@ class PBSSubmitProvider(SubmitProvider):
 
         output = directives.output or "pbs-${PBS_JOBID}.out"
         if directives.join_output:
-            lines.append(f"#PBS -j oe")
+            lines.append("#PBS -j oe")
             lines.append(f"#PBS -o {output}")
         else:
             lines.append(f"#PBS -o {output}")

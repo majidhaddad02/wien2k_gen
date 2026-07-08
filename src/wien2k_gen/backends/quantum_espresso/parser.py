@@ -11,11 +11,9 @@ Production features:
 """
 
 import re
-import math
-import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple, TypedDict
-from dataclasses import dataclass, field
+from typing import List, Optional, Tuple, TypedDict
 
 from ...core.constants import RYDBERG_TO_EV
 from ...logging_config import get_logger

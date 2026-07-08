@@ -15,39 +15,41 @@ Key Architecture Features:
 • Comprehensive English documentation, type hints, and HPC-grade resilience patterns
 """
 
-import os
-import sys
-import json
-import time
-import shutil
 import argparse
+import json
+import os
+import shutil
 import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from .config import load_config, get_config, AppConfig, ensure_dirs
-from .logging_config import setup_logging, get_logger, set_context
-from .backend_manager import get_backend, set_backend, list_backends, BackendManager
-from .types import BackendCode, ExecutionMode, PipelineResult, TopologyData, OptimizationTarget
-from .exceptions import (
-    Wien2kGenError, format_error_for_ui, log_exception_structured,
-    MissingInputError, BackendError, ConfigurationError
-)
-from .core.pipeline import run_pipeline
-from .core.scheduler import detect as detect_topology, _detect_scheduler, auto_detect_memory
-from .core.hardware import get_physical_cores
-from .submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
-from .submit import SUBMIT_PROVIDERS
-from .ui.rich_ui import detect_terminal_capabilities, get_rich_console, get_plain_console
+from .backend_manager import BackendManager
 from .benchmark.real import RealBenchmarkRunner
-from .utils.diagnostic import run_diagnostics, export_diagnostics_json
+from .config import AppConfig, ensure_dirs, load_config
+from .core.hardware import get_physical_cores
+from .core.pipeline import run_pipeline
+from .core.scheduler import _detect_scheduler, auto_detect_memory
+from .core.scheduler import detect as detect_topology
+from .exceptions import (
+    Wien2kGenError,
+    format_error_for_ui,
+    log_exception_structured,
+)
+from .logging_config import get_logger, set_context, setup_logging
+from .submit import SUBMIT_PROVIDERS
+from .submit.slurm import SlurmDirectives, SlurmJobSpec, submit_slurm_job
+from .types import BackendCode, ExecutionMode, OptimizationTarget, PipelineResult
+from .ui.analysis import generate_report, parse_scf_log
 from .ui.interactive import launch_app
-from .ui.analysis import parse_scf_log, generate_report
+from .ui.rich_ui import detect_terminal_capabilities, get_plain_console, get_rich_console
+from .utils.diagnostic import export_diagnostics_json, run_diagnostics
 
 logger = get_logger(__name__)
 console = Console()
@@ -232,7 +234,11 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 
     if args.gpu or args.gpu_mixed_precision:
         try:
-            from .backends.gpu_backend import detect_gpu, get_gpu_recommendation, get_mixed_precision_recommendation
+            from .backends.gpu_backend import (
+                detect_gpu,
+                get_gpu_recommendation,
+                get_mixed_precision_recommendation,
+            )
             gpus = detect_gpu()
             if gpus:
                 gpu_rec = get_gpu_recommendation(topo, nmat=5000, nkpt=8, mode=suggestion.get("mode", "mpi"))
@@ -452,8 +458,8 @@ def _handle_tui(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
 def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Monitor SCF convergence in real-time."""
     try:
-        from .optimizer.monitor import start_monitoring, get_monitor_status, stop_monitoring
         from .core.scheduler import detect as detect_topology
+        from .optimizer.monitor import get_monitor_status, start_monitoring, stop_monitoring
     except ImportError as e:
         return {"error": f"Monitor module dependencies not available: {e}"}
 
@@ -485,8 +491,10 @@ def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     """Run automated convergence testing."""
     try:
         from .optimizer.convergence import (
-            run_kpoint_convergence, run_rkmax_convergence,
-            find_converged_parameters, generate_convergence_report
+            find_converged_parameters,
+            generate_convergence_report,
+            run_kpoint_convergence,
+            run_rkmax_convergence,
         )
     except ImportError as e:
         return {"error": f"Convergence module dependencies not available: {e}"}
@@ -522,7 +530,7 @@ def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Query execution history database."""
     try:
-        from .optimizer.history import ExecutionHistory, ExecutionRecord
+        from .optimizer.history import ExecutionHistory
     except ImportError as e:
         return {"error": f"History module dependencies not available: {e}"}
 
@@ -588,7 +596,7 @@ def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
 def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Extract band structure and DOS data from WIEN2k output."""
     try:
-        from .core.electronic_structure import parse_band_structure, parse_dos, compute_band_gap
+        from .core.electronic_structure import compute_band_gap, parse_band_structure, parse_dos
     except ImportError as e:
         return {"error": f"Electronic structure module dependencies not available: {e}"}
 
@@ -734,10 +742,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 # =============================================================================
 
 __all__ = [
-    "main",
-    "create_parser",
     "_detect_scheduler",
     "_resolve_scheduler",
+    "create_parser",
+    "main",
 ]
 
 if __name__ == "__main__":

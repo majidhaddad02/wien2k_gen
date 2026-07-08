@@ -15,17 +15,15 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import logging
-import threading
 import importlib
+import threading
 from pathlib import Path
-from typing import Dict, Type, Optional, List, Any, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
-from .types import BackendCode
-from .exceptions import BackendError, MissingInputError
 from .backends.base import Backend
+from .exceptions import BackendError, MissingInputError
 from .logging_config import get_logger
+from .types import BackendCode
 
 logger = get_logger(__name__)
 
@@ -244,6 +242,6 @@ __all__ = [
     "BackendManager",
     "get_backend",
     "get_backend_class",
-    "set_backend",
     "list_backends",
+    "set_backend",
 ]

@@ -13,17 +13,17 @@ Measurement methods (in priority order):
 All documentation and inline comments are in English per project standards.
 """
 
+import hashlib
+import json
 import os
 import re
-import json
-import time
-import hashlib
-import threading
 import subprocess
+import threading
+import time
+from datetime import datetime
+from functools import cache
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List, Any
-from functools import lru_cache
-from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from ..logging_config import get_logger
 
@@ -122,7 +122,7 @@ def _run_cmd_safe(cmd: List[str], timeout: int = 30) -> Optional[str]:
 # Hardware Fingerprint for Cache Invalidation
 # =============================================================================
 
-@lru_cache(maxsize=None)
+@cache
 def _hardware_fingerprint() -> str:
     """
     Generate a stable hash based on CPU model, core count, and NUMA topology.
@@ -292,7 +292,7 @@ class PerfCounterCache:
 # Frequency-Dependent Fallback Calculations
 # =============================================================================
 
-@lru_cache(maxsize=None)
+@cache
 def _get_cpu_freq_mhz() -> float:
     """Return current CPU frequency in MHz from sysfs or /proc/cpuinfo."""
     try:
@@ -302,7 +302,7 @@ def _get_cpu_freq_mhz() -> float:
     except Exception:
         pass
     try:
-        with open("/proc/cpuinfo", "r") as f:
+        with open("/proc/cpuinfo") as f:
             for line in f:
                 if "cpu MHz" in line:
                     return float(line.split(":")[1].strip())
@@ -835,11 +835,11 @@ def get_real_roofline_data(use_cache: bool = True) -> Dict[str, Any]:
 
 __all__ = [
     "HAS_PERF_COUNTERS",
-    "PerfCounterInterface",
     "PerfCounterCache",
+    "PerfCounterInterface",
+    "calculations_from_cpu_frequency",
+    "get_real_roofline_data",
+    "measure_cache_bandwidth",
     "measure_memory_bandwidth",
     "measure_peak_flops",
-    "measure_cache_bandwidth",
-    "get_real_roofline_data",
-    "calculations_from_cpu_frequency",
 ]

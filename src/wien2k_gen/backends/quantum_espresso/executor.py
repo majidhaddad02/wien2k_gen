@@ -12,19 +12,16 @@ Production features:
 """
 
 import os
-import sys
-import signal
-import time
-import subprocess
 import shutil
-import logging
+import signal
+import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Callable, Union, TypedDict
+from typing import Any, Callable, Dict, List, Optional, TypedDict
 
+from ...core.hardware import get_interconnect_info
 from ...core.topology import Topology
-from ...core.hardware import get_interconnect_info, get_scratch_filesystem_type
 from ...logging_config import get_logger
-from ...utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 

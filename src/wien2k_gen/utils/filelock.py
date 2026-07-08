@@ -11,15 +11,12 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
-import time
 import errno
 import fcntl
-import signal
-import logging
+import os
+import time
 from pathlib import Path
-from typing import Optional, Union, Any
+from typing import Any, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -118,7 +115,7 @@ class FileLock:
                 self._try_fcntl()
                 logger.debug(f"Lock acquired via fcntl: {self.lock_path} (attempt {attempt})")
                 return
-            except (OSError, IOError) as e:
+            except OSError as e:
                 # fcntl unavailable or not supported on this filesystem
                 if e.errno not in (errno.EACCES, errno.EAGAIN, errno.ENOLCK):
                     logger.debug(f"fcntl failed, trying fallback: {e}")
@@ -137,7 +134,7 @@ class FileLock:
             if self.cleanup_stale and self._is_fallback_stale():
                 try:
                     self._cleanup_fallback()
-                except Exception as e:
+                except Exception:
                     logger.info(f"Cleaned stale fallback lock: {self.lock_path}.d")
                     # Retry immediately after cleanup
                 continue
@@ -287,10 +284,10 @@ def file_lock(
 # =============================================================================
 
 __all__ = [
+    "DEFAULT_TIMEOUT",
+    "STALE_LOCK_THRESHOLD",
     "FileLock",
     "LockAcquisitionError",
     "LockTimeoutError",
     "file_lock",
-    "DEFAULT_TIMEOUT",
-    "STALE_LOCK_THRESHOLD",
 ]

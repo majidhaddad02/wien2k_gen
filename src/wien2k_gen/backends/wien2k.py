@@ -17,39 +17,26 @@ Key Improvements Applied:
 • Code volume preserved and expanded with safety layers, logging, and resiliency features.
 """
 
+import datetime
+import math
 import os
 import re
-import json
-import math
 import shutil
-import signal
-import datetime
-import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, TypedDict
-from dataclasses import dataclass, asdict
+from typing import Any, Dict, List, Optional, TypedDict
 
-from .base import Backend, ProblemSize
-from ..core.topology import Topology
 from ..core.hardware import (
-    get_physical_cores,
-    get_numa_topology_detailed,
-    get_job_memory_limit_mb,
-    get_total_mem_kb,
-    is_hyperthreading_active,
     check_elpa_available,
-    check_mkl_available,
-    get_memory_bandwidth_gb_s,
-    get_cpu_architecture,
-    get_numa_node_count,
-    get_scratch_filesystem_type,
     get_interconnect_info,
-    get_cpu_frequency_info,
-    calculate_peak_fp64_gflops,
-    get_fma_units_per_core,
+    get_job_memory_limit_mb,
+    get_numa_node_count,
+    get_physical_cores,
+    get_total_mem_kb,
 )
-from ..utils.atomic_write import atomic_write
+from ..core.topology import Topology
 from ..logging_config import get_logger
+from ..utils.atomic_write import atomic_write
+from .base import Backend, ProblemSize
 
 logger = get_logger(__name__)
 
@@ -107,7 +94,7 @@ class Wien2kBackend(Backend):
 
         if nmat > 2000:
             try:
-                from .elpa_selector import select_eigensolver, _check_elpa_runtime
+                from .elpa_selector import select_eigensolver
                 gpu_ok = bool(os.environ.get("CUDA_VISIBLE_DEVICES", ""))
                 solver_sel = select_eigensolver(nmat, nkpt, is_soc, gpu_ok, total_ranks=total_ranks)
                 suggestion["elpa_solver"] = solver_sel.recommended_solver
@@ -1082,7 +1069,7 @@ class Wien2kBackend(Backend):
         lines.append(f"# Nodes: {', '.join(nodes)}")
         lines.append(f"# Cores per node: {cores_per_node}")
         if is_hetero:
-            lines.append(f"# Heterogeneous cluster detected – ranks scaled to core ratio")
+            lines.append("# Heterogeneous cluster detected – ranks scaled to core ratio")
         lines.append("")
 
         # ELPA availability warning
@@ -1465,7 +1452,6 @@ def auto_detect_optimal_rkmax(
     Detects problem size from input files, estimates available system
     resources if not provided, and returns the recommended RKMAX value.
     """
-    from ..core.hardware import get_physical_cores, get_total_mem_kb
 
     if available_cores is None:
         available_cores = get_physical_cores()

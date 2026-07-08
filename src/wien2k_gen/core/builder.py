@@ -12,20 +12,19 @@ Key Improvements Applied:
 - Maintained full code volume with expanded safety checks, logging, and resiliency hooks.
 """
 
-import os
-import time
 import logging
-import warnings
 import shutil
+import time
+import warnings
+from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any, Union, List
-from dataclasses import dataclass, field, asdict, is_dataclass
+from typing import Any, Dict, List, Optional, Union
 
-from .topology import Topology
 from ..config import OUTPUT_FILE
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
-from ..utils.validation import validate_machines, backup_machines
+from ..utils.validation import validate_machines
+from .topology import Topology
 
 logger = get_logger(__name__)
 
@@ -43,7 +42,7 @@ def _get_current_backend():
 # Fallback Type Definitions (if centralized types.py is unavailable)
 # =============================================================================
 try:
-    from ..types import ResourceSuggestion, ProblemSize
+    from ..types import ProblemSize, ResourceSuggestion
 except ImportError:
     logger.debug("Centralized types module not found; using local fallback definitions.")
     

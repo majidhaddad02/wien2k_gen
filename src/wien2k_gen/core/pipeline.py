@@ -15,18 +15,17 @@ Key Improvements Applied:
 
 import os
 import time
-import logging
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 # =============================================================================
 # Type Definitions with Fallbacks (Ensures module works if types.py is missing)
 # =============================================================================
 try:
-    from ..types import ProblemSize, ResourceSuggestion, PipelineResult
+    from ..types import PipelineResult, ProblemSize, ResourceSuggestion
 except ImportError:
     from dataclasses import dataclass, field
-    from typing import List, Dict, Optional, Union, Any
+    from typing import Any, Dict, List, Optional, Union
 
     @dataclass
     class ProblemSize:
@@ -70,18 +69,19 @@ except ImportError:
 # =============================================================================
 # Core Imports
 # =============================================================================
-from .topology import Topology
-from .hardware import (
-    get_total_mem_kb,
-    get_job_memory_limit_mb,
-    is_containerized,
-    get_scratch_filesystem_type
-)
+from ..logging_config import get_logger
+from ..utils.export import export_config
+from ..utils.validation import validate_machines
+
 # Import build_auto from builder module to ensure correct single-source-of-truth logic
 from .builder import build_auto
-from ..utils.validation import validate_machines
-from ..utils.export import export_config
-from ..logging_config import get_logger
+from .hardware import (
+    get_job_memory_limit_mb,
+    get_scratch_filesystem_type,
+    get_total_mem_kb,
+    is_containerized,
+)
+from .topology import Topology
 
 _get_current_backend_fn = None
 def _get_current_backend():

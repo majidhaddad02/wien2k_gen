@@ -7,20 +7,31 @@ and analysis/worker modules. Designed for modular, type-safe integration with th
 # =============================================================================
 # Main TUI Application & CLI Fallbacks
 # =============================================================================
+# =============================================================================
+# Log Analysis & Scaling Engine
+# =============================================================================
+from .analysis import (
+    AnalysisReport,
+    ScalingMetrics,
+    SCFParseResult,
+    generate_report,
+    parse_scf_log,
+    visualize_scaling,
+)
 from .interactive import Wien2kGenApp, launch_app
 from .rich_ui import (
-    print_banner,
-    launch_cli_mode,
     CLIWorkflowRunner,
+    launch_cli_mode,
+    print_banner,
 )
 
 # =============================================================================
 # Reusable UI Components
 # =============================================================================
 from .widgets import (
-    StatusIndicator,
     LogPanel,
     ResourceSummaryTable,
+    StatusIndicator,
     ValidatedInput,
 )
 
@@ -28,24 +39,12 @@ from .widgets import (
 # Background Task Orchestrators
 # =============================================================================
 from .workers import (
-    HPCWorkerOrchestrator,
     BackgroundTask,
-    WorkerConfig,
-    WorkerStartedMessage,
+    HPCWorkerOrchestrator,
     WorkerCompletedMessage,
+    WorkerConfig,
     WorkerFailedMessage,
-)
-
-# =============================================================================
-# Log Analysis & Scaling Engine
-# =============================================================================
-from .analysis import (
-    parse_scf_log,
-    visualize_scaling,
-    generate_report,
-    SCFParseResult,
-    ScalingMetrics,
-    AnalysisReport,
+    WorkerStartedMessage,
 )
 
 # =============================================================================

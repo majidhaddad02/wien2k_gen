@@ -21,13 +21,13 @@ import json
 import sqlite3
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from collections import defaultdict, deque
+from collections.abc import Iterator
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Iterator, Tuple
-from collections import defaultdict, deque
+from typing import Any, Dict, List, Optional, Tuple
 
-from .constants import RYDBERG_TO_EV
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -109,7 +109,7 @@ class WorkflowNode:
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowNode":
+    def from_dict(cls, data: Dict[str, Any]) -> WorkflowNode:
         """Rehydrate a node from a dictionary (supports legacy fields)."""
         node = cls(
             node_id=data.get("node_id", ""),
@@ -289,7 +289,7 @@ class WorkflowDAG:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkflowDAG":
+    def from_dict(cls, data: Dict[str, Any]) -> WorkflowDAG:
         """Reconstruct a DAG from a serialized dictionary."""
         dag = cls(workflow_id=data.get("workflow_id"), name=data.get("name", ""))
         for node_data in data.get("nodes", []):
@@ -856,10 +856,10 @@ def _validate_node_exists(node_id: str, nodes: Dict[str, WorkflowNode]) -> None:
 
 __all__ = [
     "NodeStatus",
-    "WorkflowNode",
     "WorkflowDAG",
+    "WorkflowNode",
     "WorkflowStore",
-    "create_wien2k_workflow",
-    "create_convergence_workflow",
     "create_band_structure_workflow",
+    "create_convergence_workflow",
+    "create_wien2k_workflow",
 ]

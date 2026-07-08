@@ -15,26 +15,22 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import json
-import time
-import logging
 import threading
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union, Tuple
+from typing import Any, Dict
 
-from textual.screen import ModalScreen
-from textual.containers import ScrollableContainer, Horizontal, Vertical, Container
-from textual.widgets import Static, Button, RichLog, Rule, Label, DataTable
-from textual.reactive import reactive
-from textual.binding import Binding
-from textual.message import Message
-from rich.text import Text
 from rich.console import Console
-from rich.markdown import Markdown
+from textual.binding import Binding
+from textual.containers import Container, ScrollableContainer
+from textual.message import Message
+from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.widgets import Button, RichLog, Static
 
-from ...utils.atomic_write import atomic_write
 from ...logging_config import get_logger
+from ...utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 
@@ -348,6 +344,6 @@ class ReportDialog(ModalScreen):
 
 __all__ = [
     "ReportDialog",
-    "ReportExportedMessage",
     "ReportExportFailedMessage",
+    "ReportExportedMessage",
 ]

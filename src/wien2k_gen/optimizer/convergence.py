@@ -12,17 +12,14 @@ timing data, and generates formatted convergence reports.
 All documentation and inline comments are in English per project standards.
 """
 
+import dataclasses
+import logging
 import os
-import re
-import copy
-import json
-import time
 import shlex
 import shutil
-import logging
-import tempfile
 import subprocess
-import dataclasses
+import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -61,7 +58,7 @@ class ConvergenceResult:
 def _detect_progress_bar() -> Any:
     """Lazy-import progress-bar library; fall back to tqdm or plain text."""
     try:
-        from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+        from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
         return ("rich", Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn)
     except ImportError:
@@ -205,7 +202,7 @@ def _modify_incar(incar_path: Path, updates: Dict[str, str]) -> List[str]:
     """
     lines: List[str] = []
     if incar_path.exists():
-        with open(incar_path, "r") as fh:
+        with open(incar_path) as fh:
             lines = fh.readlines()
     else:
         return lines
@@ -666,7 +663,7 @@ def generate_convergence_report(results: Dict[str, Any]) -> str:
             ok = entry.success
 
         status = "OK" if ok else "FAIL"
-        lines.append(f"  {str(val):>12s}  {energy:>16.6f}  {delta:>12.3f}  {wall:>10.1f}  {n_iter:>5d}  {status:>6s}")
+        lines.append(f"  {val!s:>12s}  {energy:>16.6f}  {delta:>12.3f}  {wall:>10.1f}  {n_iter:>5d}  {status:>6s}")
 
     lines.append(f"  {'-' * 66}")
 
@@ -686,8 +683,8 @@ def generate_convergence_report(results: Dict[str, Any]) -> str:
 
 __all__ = [
     "ConvergenceResult",
-    "run_kpoint_convergence",
-    "run_rkmax_convergence",
     "find_converged_parameters",
     "generate_convergence_report",
+    "run_kpoint_convergence",
+    "run_rkmax_convergence",
 ]

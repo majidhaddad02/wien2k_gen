@@ -15,22 +15,13 @@ Designed for seamless integration with optimizer/profiler.py and analysis.py.
 # =============================================================================
 # Synthetic Simulation Engine
 # =============================================================================
-from .synthetic import (
-    SyntheticWorkloadParams,
-    BenchmarkResult,
-    SimulationConfig,
-    WorkloadSimulator,
-    generate_strong_scaling_suite,
-    generate_weak_scaling_suite,
-)
-
 # =============================================================================
 # Real-World Execution & Calibration
 # =============================================================================
 from .real import (
+    BenchmarkExecutionState,
     RealBenchmarkConfig,
     RealBenchmarkResult,
-    BenchmarkExecutionState,
     RealBenchmarkRunner,
     calibrate_real_vs_synthetic,
 )
@@ -41,10 +32,18 @@ from .real import (
 from .report import (
     ScalingDataPoint,
     ScalingSeries,
-    generate_text_report,
     generate_charts,
     generate_report,
+    generate_text_report,
     load_series_from_yaml,
+)
+from .synthetic import (
+    BenchmarkResult,
+    SimulationConfig,
+    SyntheticWorkloadParams,
+    WorkloadSimulator,
+    generate_strong_scaling_suite,
+    generate_weak_scaling_suite,
 )
 
 # =============================================================================

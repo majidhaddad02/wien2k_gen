@@ -11,13 +11,13 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
-from typing import Type, Dict, Optional, List
-from pathlib import Path
 import importlib
 import threading
+from pathlib import Path
+from typing import Dict, List, Optional, Type
 
-from .base import Backend
 from ..logging_config import get_logger
+from .base import Backend
 
 logger = get_logger(__name__)
 
@@ -121,7 +121,7 @@ def get_backend(code: Optional[str] = None) -> Type[Backend]:
         elif list(Path(".").glob("*.inp")):
             code = "cp2k"
         else:
-            available = ", ".join(k for k in _BACKENDS.keys() if not k.startswith("_"))
+            available = ", ".join(k for k in _BACKENDS if not k.startswith("_"))
             raise ValueError(
                 f"Could not auto-detect DFT code. Please specify code= one of: {available}. "
                 f"Or run in a directory with appropriate input files."
@@ -170,13 +170,13 @@ def is_backend_available(code: str) -> bool:
 # =============================================================================
 __all__ = [
     "Backend",
-    "Wien2kBackend",
+    "CP2KBackend",
     "QuantumEspressoBackend",
     "VaspBackend",
-    "CP2KBackend",
+    "Wien2kBackend",
     "get_backend",
-    "list_backends",
     "is_backend_available",
+    "list_backends",
 ]
 
 

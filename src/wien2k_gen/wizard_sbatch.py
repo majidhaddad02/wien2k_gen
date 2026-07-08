@@ -16,31 +16,30 @@ Key Architecture Features:
 """
 
 import os
-import sys
 import re
-import time
-import logging
 import subprocess
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.markdown import Markdown
-from rich.prompt import Prompt, IntPrompt, Confirm
-from rich.syntax import Syntax
-from rich.rule import Rule
 from rich.align import Align
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.rule import Rule
+from rich.syntax import Syntax
 
-from .core.scheduler import detect as detect_topology, _detect_scheduler, auto_detect_memory
-from .submit.slurm import (
-    generate_sbatch_script,
-    SlurmJobSpec,
-    SlurmDirectives,
-)
-from .submit import SUBMIT_PROVIDERS
-from .utils.atomic_write import atomic_write
+from .core.scheduler import _detect_scheduler, auto_detect_memory
+from .core.scheduler import detect as detect_topology
 from .logging_config import get_logger
+from .submit import SUBMIT_PROVIDERS
+from .submit.slurm import (
+    SlurmDirectives,
+    SlurmJobSpec,
+    generate_sbatch_script,
+)
+from .utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 console = Console()
@@ -449,8 +448,8 @@ def run_sbatch_wizard() -> bool:
 # =============================================================================
 
 __all__ = [
-    "run_sbatch_wizard",
     "SBATCHWizard",
+    "run_sbatch_wizard",
 ]
 
 if __name__ == "__main__":

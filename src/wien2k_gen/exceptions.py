@@ -16,21 +16,16 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
 import json
 import logging
 import traceback
-from typing import Dict, Any, List, Optional, Union, Tuple
-from dataclasses import dataclass, field, asdict
 from enum import Enum
-from pathlib import Path
 
 # Avoid circular import: use TYPE_CHECKING and lazy import for get_logger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 if TYPE_CHECKING:
-    from .logging_config import get_logger
+    pass
 
 
 # =============================================================================
@@ -346,7 +341,7 @@ def log_exception_structured(exc: Exception, level: int = logging.ERROR) -> None
     logger = get_logger(__name__)
     
     if is_wien2k_error(exc):
-        logger.log(level, "Structured error: %s", exc.to_dict())
+        logger.log(level, "Structured error: %s", exc.to_dict())  # type: ignore[attr-defined]
     else:
         logger.log(level, "Unhandled exception: %s", traceback.format_exc())
 

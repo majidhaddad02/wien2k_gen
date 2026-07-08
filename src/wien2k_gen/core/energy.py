@@ -10,14 +10,11 @@ Provides production-grade energy monitoring for HPC workloads:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
 import subprocess
-import threading
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any, List
-from dataclasses import dataclass, field
-from contextlib import contextmanager
+from typing import Any, Dict, List, Optional
 
 from ..logging_config import get_logger
 
@@ -526,16 +523,16 @@ def get_energy_profile() -> Dict[str, Any]:
 # =============================================================================
 
 __all__ = [
-    "HAS_RAPL",
     "HAS_NVIDIA_SMI",
+    "HAS_RAPL",
     "EnergyMeasurement",
-    "measure_energy_section",
+    "estimate_energy_per_scf_cycle",
+    "get_energy_profile",
+    "get_nvidia_power_watts",
+    "get_power_cap",
+    "get_rapl_core_energy_j",
+    "get_rapl_dram_energy_j",
     "get_rapl_energy_uj",
     "get_rapl_package_energy_j",
-    "get_rapl_dram_energy_j",
-    "get_rapl_core_energy_j",
-    "get_nvidia_power_watts",
-    "estimate_energy_per_scf_cycle",
-    "get_power_cap",
-    "get_energy_profile",
+    "measure_energy_section",
 ]

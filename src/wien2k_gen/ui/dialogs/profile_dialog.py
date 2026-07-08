@@ -15,26 +15,21 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import json
-import time
-import logging
 import threading
+import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Dict, Optional
 
-from textual.screen import ModalScreen
-from textual.containers import Horizontal, Vertical, Container, ScrollableContainer, Grid
-from textual.widgets import (
-    Static, Button, Input, DataTable, Rule, Label, Select, Switch
-)
-from textual.reactive import reactive
 from textual.binding import Binding
+from textual.containers import Container, Horizontal, ScrollableContainer
 from textual.message import Message
-from textual.events import Mount
+from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Label, Select, Static, Switch
 
-from ...utils.atomic_write import atomic_write
 from ...logging_config import get_logger
+from ...utils.atomic_write import atomic_write
 from ..widgets import ValidatedInput
 
 logger = get_logger(__name__)
@@ -261,7 +256,7 @@ class ProfileDialog(ModalScreen):
             profiles = {}
             try:
                 for p in self.PROFILE_DIR.glob("*.json"):
-                    with open(p, "r", encoding="utf-8") as f:
+                    with open(p, encoding="utf-8") as f:
                         profiles[p.stem] = json.load(f)
                 self.call_later(lambda: self._update_table(profiles))
             except Exception as e:
@@ -358,7 +353,7 @@ class ProfileDialog(ModalScreen):
             target.unlink()
             self.profiles.pop(self.selected_profile, None)
             self.selected_profile = None
-            self.notify(f"Deleted profile.", severity="warning")
+            self.notify("Deleted profile.", severity="warning")
             self.call_later(lambda: self._update_table(self.profiles))
 
     def action_close_dialog(self) -> None:

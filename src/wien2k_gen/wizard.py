@@ -13,34 +13,31 @@ Key Architecture Features:
 • Comprehensive English documentation and HPC-grade error resilience
 """
 
-import os
-import sys
 import json
-import time
-import logging
+import os
 import shutil
 import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
+from typing import Any, Dict, List
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
-from rich.prompt import Prompt, Confirm, IntPrompt, FloatPrompt
-from rich.table import Table
-from rich.text import Text
+from rich.panel import Panel
+from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.rule import Rule
-from rich.align import Align
+from rich.table import Table
 
-from .config import AppConfig, load_config, get_config, DEFAULT_CONFIG_DIR, ensure_dirs
-from .logging_config import get_logger, set_context
-from .types import BackendCode, ExecutionMode, OptimizationTarget
-from .utils.atomic_write import atomic_write
-from .core.scheduler import detect as detect_topology, _detect_scheduler
+from .backend_manager import get_backend, list_backends, set_backend
 from .core.builder import build_auto
+from .core.scheduler import _detect_scheduler
+from .core.scheduler import detect as detect_topology
+from .exceptions import ConfigurationError, Wien2kGenError
+from .logging_config import get_logger, set_context
 from .optimizer.advisor import suggest_optimal_resources
-from .backend_manager import list_backends, set_backend, get_backend
-from .exceptions import Wien2kGenError, ConfigurationError
+from .types import BackendCode, OptimizationTarget
+from .utils.atomic_write import atomic_write
 
 logger = get_logger(__name__)
 console = Console()
@@ -207,7 +204,7 @@ def run_wizard(topo=None) -> None:
                 prof_path = PROFILES_DIR / f"{name}.json"
                 if prof_path.exists():
                     try:
-                        with open(prof_path, "r", encoding="utf-8") as f:
+                        with open(prof_path, encoding="utf-8") as f:
                             profile_values = json.load(f)
                         console.print(f"[green]✅ Profile '{name}' loaded.[/green]")
                     except Exception as e:
@@ -449,10 +446,10 @@ def run_wizard(topo=None) -> None:
 # =============================================================================
 
 __all__ = [
-    "run_wizard",
-    "detect_wienroot_candidates",
-    "validate_wienroot",
     "check_scratch_health",
+    "detect_wienroot_candidates",
+    "run_wizard",
+    "validate_wienroot",
 ]
 
 if __name__ == "__main__":

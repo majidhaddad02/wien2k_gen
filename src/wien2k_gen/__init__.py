@@ -18,7 +18,7 @@ __version__ = "0.1.0"
 __author__ = "HPC Workflow Team"
 __license__ = "MIT"
 
-from typing import List, Any
+from typing import Any, List
 
 # =============================================================================
 # Lazy Import & API Exposure (PEP 562)

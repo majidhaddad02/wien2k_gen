@@ -90,7 +90,7 @@ def parse_cpu_list(cpu_list_str: str) -> List[int]:
     Parse CPU list string (e.g., '0-5,8,10-12') into a list of integers.
     Standard format used in sysfs (cpulist, shared_cpu_list).
     """
-    ids = []
+    ids: list[int] = []
     if not cpu_list_str or not cpu_list_str.strip():
         return ids
     for part in cpu_list_str.split(','):
@@ -204,6 +204,14 @@ class HardwareInfoProvider(ABC):
 
     @abstractmethod
     def get_cpu_architecture(self) -> str:
+        ...
+
+    @abstractmethod
+    def get_cpu_generation(self) -> str:
+        ...
+
+    @abstractmethod
+    def get_system_type(self) -> str:
         ...
 
     @abstractmethod
@@ -346,7 +354,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
     def get_fma_units_per_core(self) -> int:
         vector_info = self.get_vector_isa_and_width()
-        isa = vector_info["isa"]
+        isa = str(vector_info["isa"])
 
         if "avx512" in isa:
             return 2
@@ -379,8 +387,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             effective_freq = base_freq
 
         fma = self.get_fma_units_per_core()
-        vec_width = self.get_vector_isa_and_width()["width_bits"]
-        isa = self.get_vector_isa_and_width()["isa"]
+        vec_width = int(self.get_vector_isa_and_width()["width_bits"])
+        isa = str(self.get_vector_isa_and_width()["isa"])
         cpu_arch = self.get_cpu_architecture()
 
         ops_per_core_per_cycle = fma * (vec_width / 64.0) * 2.0
@@ -471,7 +479,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         nodes = []
         try:
             online_content = Path("/sys/devices/system/node/online").read_text().strip()
-            node_ids = []
+            node_ids: list[int] = []
             for part in online_content.split(","):
                 if "-" in part:
                     start, end = map(int, part.split("-"))
@@ -525,7 +533,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return nodes
 
     def get_cache_topology(self) -> List[CacheLevel]:
-        caches = []
+        caches: list[CacheLevel] = []
         base = Path("/sys/devices/system/cpu/cpu0/cache")
         if not base.exists():
             return caches
@@ -683,7 +691,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                         model_line = line.split(":", 1)[-1].strip()
                         break
             if not model_line:
-                model_line = (getattr(self, "_get_cpuinfo_model", lambda: "") or "")
+                model_line = getattr(self, "_get_cpuinfo_model", lambda: "")() or ""
 
             model_lower = model_line.lower()
 
@@ -952,11 +960,11 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             memory_channels=8 if "epyc" in cpu_arch else 6,
             memory_speed_mts=4800 if "epyc" in cpu_arch else 3200,
             cpu_arch=cpu_arch,
-            cpu_microarch=isa_info["isa"],
+            cpu_microarch=str(isa_info["isa"]),
             cpu_governor=self.get_cpu_governor(),
             cpu_freq_mhz=self.get_cpu_frequency_info(),
-            vector_isa=isa_info["isa"],
-            vector_width_bits=isa_info["width_bits"],
+            vector_isa=str(isa_info["isa"]),
+            vector_width_bits=int(isa_info["width_bits"]),
             fma_units_per_core=self.get_fma_units_per_core(),
             peak_fp64_gflops=peak_gflops,
             interconnect=self.get_interconnect_info(),

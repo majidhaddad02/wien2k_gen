@@ -17,17 +17,16 @@ Key Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import sys
 import json
-import time
-import shutil
+import os
 import platform
+import shutil
 import subprocess
-import logging
+import sys
+import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, List, Optional, TypedDict, Union
-from dataclasses import dataclass, field, asdict
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from ..logging_config import get_logger
 
@@ -453,11 +452,11 @@ def export_diagnostics_json(report: DiagnosticReport, path: Union[str, Path]) ->
 # =============================================================================
 
 __all__ = [
-    "DiagnosticReport",
     "DiagnosticConfig",
-    "run_diagnostics",
-    "export_diagnostics_json",
+    "DiagnosticReport",
+    "_check_libraries",
     "_detect_hardware",
     "_detect_mpi_omp",
-    "_check_libraries",
+    "export_diagnostics_json",
+    "run_diagnostics",
 ]

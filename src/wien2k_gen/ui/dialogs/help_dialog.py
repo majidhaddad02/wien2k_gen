@@ -15,20 +15,14 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
-import logging
-import threading
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any
 
-from textual.screen import ModalScreen
-from textual.containers import Horizontal, Vertical, Container, ScrollableContainer
-from textual.widgets import Static, Button, Input, Rule, Markdown, RichLog
-from textual.reactive import reactive
 from textual.binding import Binding
+from textual.containers import Container, ScrollableContainer
 from textual.message import Message
-from rich.console import Console
+from textual.reactive import reactive
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Markdown, Static
 
 from ...logging_config import get_logger
 

@@ -16,30 +16,25 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
-import time
-import logging
-import threading
 import concurrent.futures
-from pathlib import Path
-from typing import Dict, Any, Optional, Callable, Union, List, Tuple, TypeVar, Generic
-
+import threading
+import time
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Callable, Dict, Generic, List, Optional, TypeVar
 
-from textual.reactive import reactive
-from textual.message import Message
 from textual.app import App
-from textual.timer import Timer
+from textual.message import Message
+
+from ..core.pipeline import run_pipeline
+from ..core.scheduler import detect
 
 # Project imports (aligned with refactored core modules)
 from ..core.topology import Topology
-from ..core.scheduler import detect
-from ..core.pipeline import run_pipeline
-from ..optimizer.advisor import suggest_optimal_resources
-from ..submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
-from ..utils.diagnostic import run_diagnostics
 from ..logging_config import get_logger
+from ..optimizer.advisor import suggest_optimal_resources
+from ..submit.slurm import SlurmJobSpec, submit_slurm_job
+from ..utils.diagnostic import run_diagnostics
 
 logger = get_logger(__name__)
 
@@ -437,17 +432,17 @@ class HPCWorkerOrchestrator:
 # =============================================================================
 
 __all__ = [
-    "TaskStatus",
-    "TaskResult",
-    "WorkerConfig",
-    "WorkerStartedMessage",
-    "WorkerProgressMessage",
-    "WorkerCompletedMessage",
-    "WorkerFailedMessage",
     "BackgroundTask",
     "HPCWorkerOrchestrator",
-    "_run_topology_detection",
-    "_run_pipeline_generation",
-    "_run_job_submission",
+    "TaskResult",
+    "TaskStatus",
+    "WorkerCompletedMessage",
+    "WorkerConfig",
+    "WorkerFailedMessage",
+    "WorkerProgressMessage",
+    "WorkerStartedMessage",
     "_run_diagnostics_collection",
+    "_run_job_submission",
+    "_run_pipeline_generation",
+    "_run_topology_detection",
 ]

@@ -17,34 +17,30 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
-import os
 import re
 import time
-import logging
-import threading
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
-from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Container
-from textual.widgets import (
-    Button, Input, Label, Static, Switch, Rule, TextArea, ProgressBar, Select
-)
-from textual.reactive import reactive
-from textual.message import Message
 from textual import on, work
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal
+from textual.message import Message
+from textual.reactive import reactive
+from textual.widgets import Button, Input, Label, Select, Static, Switch, TextArea
 
-from ...core.scheduler import detect as detect_topology, auto_detect_memory
-from ...submit.slurm import (
-    submit_slurm_job,
-    generate_sbatch_script,
-    SlurmJobSpec,
-    SlurmDirectives,
-)
-from ...submit import SUBMIT_PROVIDERS
-from ...utils.validation import backup_machines
+from ...core.scheduler import auto_detect_memory
+from ...core.scheduler import detect as detect_topology
 from ...exceptions import Wien2kGenError, format_error_for_ui
 from ...logging_config import get_logger
+from ...submit import SUBMIT_PROVIDERS
+from ...submit.slurm import (
+    SlurmDirectives,
+    SlurmJobSpec,
+    generate_sbatch_script,
+    submit_slurm_job,
+)
+from ...utils.validation import backup_machines
 from ..widgets import ValidatedInput
 
 logger = get_logger(__name__)
@@ -531,7 +527,7 @@ class SubmitTab(Container):
                 err_msg = "; ".join(result.get("errors", ["Unknown submission error"]))
                 self.call_later(lambda: self.post_message(JobFailedMessage(err_msg)))
 
-        except Wien2kGenError as e:
+        except Wien2kGenError:
             self.call_later(lambda: self.post_message(JobFailedMessage(format_error_for_ui(e))))
         except Exception as e:
             logger.error(f"Submission thread exception: {e}", exc_info=True)
@@ -590,7 +586,7 @@ class SubmitTab(Container):
 # =============================================================================
 
 __all__ = [
-    "SubmitTab",
-    "JobSubmittedMessage",
     "JobFailedMessage",
+    "JobSubmittedMessage",
+    "SubmitTab",
 ]
