@@ -775,16 +775,23 @@ class Topology:
         """
         Return MPI binding hints appropriate for the detected network topology.
 
-        Returns a dictionary with keys suitable for OpenMPI, Intel MPI,
+        Returns a dictionary with keys for OpenMPI, Intel MPI, MPICH, MVAPICH,
         and SLURM srun:
         - openmpi: arguments for mpirun
         - intel_mpi: environment variables for Intel MPI
+        - mpich: environment variables for MPICH (hydra process manager)
+        - mvapich: environment variables for MVAPICH2
         - srun: arguments for srun
 
         Fat-tree:  --map-by ppr:N:node --bind-to core
         Dragonfly: --map-by ppr:N:node:SPAN --bind-to socket
         Torus:     --map-by ppr:N:node:PE=n --bind-to core
         Star/Unknown: round-robin defaults
+
+        References:
+            MPICH Hydra: https://wiki.mpich.org/mpich/index.php/Using_the_Hydra_Process_Manager
+            MVAPICH2: https://mvapich.cse.ohio-state.edu/userguide/
+            Hager & Wellein (2010), "Introduction to HPC", CRC Press, §7.4-7.6
         """
         topo_type = self.detect_topology_type()
         hints: Dict[str, str] = {}
@@ -792,21 +799,29 @@ class Topology:
         if topo_type == TopologyType.FAT_TREE:
             hints["openmpi"] = "--map-by ppr:N:node --bind-to core"
             hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=core"
+            hints["mpich"] = "-bind-to core"
+            hints["mvapich"] = "MV2_ENABLE_AFFINITY=1 MV2_CPU_BINDING_POLICY=bunch"
             hints["srun"] = "--cpu-bind=cores --distribution=block:block"
 
         elif topo_type == TopologyType.DRAGONFLY:
             hints["openmpi"] = "--map-by ppr:N:node:SPAN --bind-to socket"
             hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=socket"
+            hints["mpich"] = "-bind-to socket"
+            hints["mvapich"] = "MV2_ENABLE_AFFINITY=1 MV2_CPU_BINDING_POLICY=scatter"
             hints["srun"] = "--cpu-bind=sockets --distribution=arbitrary"
 
         elif topo_type == TopologyType.TORUS:
             hints["openmpi"] = "--map-by ppr:N:node:PE=n --bind-to core"
             hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=core:compact"
+            hints["mpich"] = "-bind-to core:compact"
+            hints["mvapich"] = "MV2_ENABLE_AFFINITY=1 MV2_CPU_BINDING_POLICY=bunch MV2_CPU_BINDING_LEVEL=core"
             hints["srun"] = "--cpu-bind=cores --distribution=cyclic"
 
         else:
             hints["openmpi"] = "--map-by ppr:N:node --bind-to core"
             hints["intel_mpi"] = "I_MPI_PIN=1 I_MPI_PIN_DOMAIN=auto"
+            hints["mpich"] = "-bind-to core"
+            hints["mvapich"] = "MV2_ENABLE_AFFINITY=1 MV2_CPU_BINDING_POLICY=bunch"
             hints["srun"] = "--cpu-bind=cores --distribution=cyclic"
 
         return hints

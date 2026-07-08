@@ -340,6 +340,86 @@ def _detect_lsf() -> Optional[Dict[str, Any]]:
         logger.error(f"LSF topology extraction failed: {e}", exc_info=True)
         return None
 
+def _detect_sge() -> Optional[Dict[str, Any]]:
+    """
+    Detect SGE (Son of Grid Engine) / Grid Engine / UGE environment.
+
+    SGE provides:
+        SGE_JOB_ID       — job identifier
+        SGE_TASK_ID      — array task index
+        PE_HOSTFILE      — path to parallel environment hostfile
+        NSLOTS           — total slots allocated
+        NHOSTS           — number of hosts
+        QUEUE            — queue name
+
+    The PE_HOSTFILE contains one line per slot: hostname queue slots range
+
+    References:
+        Grid Engine Admin Guide, §5 (Parallel Environments)
+        Oracle Grid Engine 6.2u5 User Guide
+        Son of Grid Engine (SGE) 8.1.x documentation
+    """
+    job_id = os.getenv("SGE_JOB_ID")
+    pe_hostfile = os.getenv("PE_HOSTFILE")
+    nslots = os.getenv("NSLOTS")
+    nh = os.getenv("NHOSTS")
+
+    if not job_id:
+        return None
+
+    logger.info(f"Detected SGE/GridEngine environment: JOB_ID={job_id}")
+
+    try:
+        nodes: List[str] = []
+        cores_per_node_accum: Dict[str, int] = {}
+        total_cores = 0
+
+        if pe_hostfile and Path(pe_hostfile).exists():
+            content = Path(pe_hostfile).read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                # SGE PE_HOSTFILE format: hostname slots queue_name [range]
+                if len(parts) >= 2:
+                    host = parts[0]
+                    slots = int(parts[1]) if parts[1].isdigit() else 1
+                    cores_per_node_accum[host] = cores_per_node_accum.get(host, 0) + slots
+                    total_cores += slots
+            if cores_per_node_accum:
+                nodes = list(cores_per_node_accum.keys())
+        else:
+            nh_val = int(nh) if nh and nh.isdigit() else 1
+            slot_val = int(nslots) if nslots and nslots.isdigit() else get_physical_cores()
+            cores_per_node = max(1, slot_val // nh_val)
+            remainder = slot_val - cores_per_node * nh_val
+            nodes = ["localhost"] if nh_val == 1 else [f"node{i:02d}" for i in range(1, nh_val + 1)]
+            for host in nodes:
+                cores_per_node_accum[host] = cores_per_node + (1 if remainder > 0 else 0)
+                remainder -= 1 if remainder > 0 else 0
+            total_cores = sum(cores_per_node_accum.values())
+
+        if not nodes:
+            nodes = ["localhost"]
+            cores_per_node_accum = {"localhost": get_physical_cores()}
+            total_cores = get_physical_cores()
+
+        cores_list = [cores_per_node_accum[n] for n in nodes]
+
+        return {
+            "scheduler": "sge",
+            "nodes": nodes,
+            "cores_per_node": cores_list,
+            "total_cores": sum(cores_list),
+            "cpus_per_task": 1,
+            "hints": asdict(SchedulerHints(mpi_launcher="mpirun", network="unknown")),
+            "env_type": "cluster"
+        }
+    except Exception as e:
+        logger.error(f"SGE topology extraction failed: {e}", exc_info=True)
+        return None
+
 def _detect_local() -> Dict[str, Any]:
     """Fallback for standalone workstation or development node."""
     phys_cores = get_physical_cores()
@@ -410,7 +490,7 @@ def detect(
             return Topology(**cached)
             
     # Run detectors in priority order
-    detectors: List[Callable] = [_detect_slurm, _detect_pbs, _detect_lsf]
+    detectors: List[Callable] = [_detect_slurm, _detect_pbs, _detect_lsf, _detect_sge]
     detected_env = None
 
     for detector in detectors:

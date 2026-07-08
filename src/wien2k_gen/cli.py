@@ -40,6 +40,7 @@ from .exceptions import (
 )
 from .core.pipeline import run_pipeline
 from .core.scheduler import detect as detect_topology, _detect_scheduler, auto_detect_memory
+from .core.hardware import get_physical_cores
 from .submit.slurm import submit_slurm_job, SlurmJobSpec, SlurmDirectives
 from .submit import SUBMIT_PROVIDERS
 from .ui.rich_ui import detect_terminal_capabilities, get_rich_console, get_plain_console
@@ -95,17 +96,18 @@ def create_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--mode", type=str, choices=[m.value for m in ExecutionMode], help="Parallel execution mode")
     gen_p.add_argument("--target", type=str, choices=[t.value for t in OptimizationTarget], default="time", help="Optimization target (time, memory, balanced, cost)")
     gen_p.add_argument("--max-cores", type=int, default=None, help="Hard limit on total cores to utilize")
+    gen_p.add_argument("--reserve-os-cores", type=int, default=None, metavar="N", help="Reserve N cores for OS/daemons (e.g., 4 leaves 124 of 128)")
     gen_p.add_argument("--memory-limit", type=float, default=None, help="Hard limit on memory per node (GB)")
     gen_p.add_argument("--dry-run", action="store_true", help="Generate config without writing to disk")
     gen_p.add_argument("--export", type=str, default=None, help="Export configuration summary to path")
     gen_p.add_argument("--overwrite", action="store_true", help="Overwrite existing .machines/INCAR without prompt")
-    gen_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler for job scripts (default: auto-detect)")
+    gen_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "sge", "auto"], default="auto", help="Target scheduler for job scripts (default: auto-detect)")
     gen_p.add_argument("--gpu", action="store_true", help="Enable GPU-aware configuration")
     gen_p.add_argument("--gpu-mixed-precision", action="store_true", help="Enable FP32/FP16 mixed precision")
     gen_p.add_argument("--manual", action="store_true", help="After auto-generation, open .machines in $EDITOR for manual review/edit")
 
     sub_p = subparsers.add_parser("submit", help="Submit job to scheduler")
-    sub_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "auto"], default="auto", help="Target scheduler (default: auto-detect)")
+    sub_p.add_argument("--scheduler", "-S", type=str, choices=["slurm", "pbs", "lsf", "sge", "auto"], default="auto", help="Target scheduler (default: auto-detect)")
     sub_p.add_argument("--partition", type=str, default="", help="Scheduler partition/queue")
     sub_p.add_argument("--nodes", type=int, default=1, help="Number of nodes")
     sub_p.add_argument("--ntasks", type=int, default=0, help="Total tasks (0 = auto from topology)")
@@ -210,7 +212,13 @@ def _get_exec_command() -> str:
 
 def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Execute pipeline configuration generation with Rich UI output."""
-    topo = detect_topology(max_cores=args.max_cores)
+    max_cores = args.max_cores
+    if args.reserve_os_cores is not None:
+        phys = get_physical_cores()
+        reserved_max = max(1, phys - args.reserve_os_cores)
+        max_cores = min(max_cores, reserved_max) if max_cores else reserved_max
+        console.print(f"[dim]Reserving {args.reserve_os_cores} OS cores → using {max_cores} of {phys}[/dim]")
+    topo = detect_topology(max_cores=max_cores)
     
     suggestion = {}
     if args.mode: 

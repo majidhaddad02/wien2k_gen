@@ -662,6 +662,184 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 return "arm_neoverse" if "Neoverse" in raw else "arm"
         return "unknown"
 
+    def get_cpu_generation(self) -> str:
+        """
+        Detect specific CPU generation from model name.
+
+        Parses /proc/cpuinfo model name to identify:
+        Intel: Xeon Platinum 8480+, Xeon Gold 6348, Xeon E5-2690v4, Core i9-13900K
+        AMD:   EPYC 9654 (Genoa), EPYC 7763 (Milan), EPYC 7742 (Rome), EPYC 7501 (Naples)
+        ARM:   Neoverse-N1, Neoverse-V1, Ampere Altra
+
+        Returns a canonical string like "Xeon_SapphireRapids", "EPYC_Genoa", "Neoverse_N1"
+        or "unknown" if parsing fails.
+        """
+        try:
+            raw = self._run_cmd_safe(["lscpu"], force_c_locale=True)
+            model_line = ""
+            if raw:
+                for line in raw.splitlines():
+                    if "odel name" in line:
+                        model_line = line.split(":", 1)[-1].strip()
+                        break
+            if not model_line:
+                model_line = (getattr(self, "_get_cpuinfo_model", lambda: "") or "")
+
+            model_lower = model_line.lower()
+
+            arch = self.get_cpu_architecture()
+
+            if arch in ("xeon", "intel_consumer"):
+                if "platinum" in model_lower:
+                    if "85" in model_line or "84" in model_line:
+                        return "Xeon_SapphireRapids"
+                    return "Xeon_SapphireRapids"
+                if "gold 6" in model_lower or "gold 5" in model_lower:
+                    if "63" in model_line and "v" not in model_lower:
+                        return "Xeon_SapphireRapids"
+                    return "Xeon_IceLake"
+                if "gold" in model_lower or "silver" in model_lower:
+                    if "52" in model_line or "62" in model_line:
+                        return "Xeon_CascadeLake"
+                    if "51" in model_line or "61" in model_line:
+                        return "Xeon_Skylake"
+                    if "v4" in model_lower:
+                        return "Xeon_Broadwell"
+                    if "v3" in model_lower:
+                        return "Xeon_Haswell"
+                    if "v2" in model_lower:
+                        return "Xeon_IvyBridge"
+                    return "Xeon_Skylake"
+                if "eon" in model_lower:
+                    if "e5" in model_lower or "e7" in model_lower:
+                        return "Xeon_SandyBridge" if "v1" in model_lower or "-2" in model_line else "Xeon_Haswell"
+                    if "e3" in model_lower:
+                        return "Xeon_CoffeeLake"
+                    return "Xeon_Skylake"
+                if "core" in model_lower and "ultra" in model_lower:
+                    return "CoreUltra_MeteorLake"
+                if "core" in model_lower:
+                    if "13" in model_line or "14" in model_line:
+                        return "Core_RaptorLake"
+                    if "12" in model_line:
+                        return "Core_AlderLake"
+                    if "11" in model_line:
+                        return "Core_TigerLake"
+                    if "10" in model_line:
+                        return "Core_IceLake"
+                    return "Core_Consumer"
+                if "i9" in model_lower or "i7" in model_lower or "i5" in model_lower:
+                    gen_part = model_line.split("-")[-1][:2] if "-" in model_line else ""
+                    if gen_part and gen_part.isdigit():
+                        gen_num = int(gen_part)
+                        if gen_num >= 14:
+                            return "Core_RaptorLake"
+                        if gen_num >= 12:
+                            return "Core_AlderLake"
+                    return "Core_Consumer"
+                return arch
+
+            if arch in ("epyc", "amd_ryzen"):
+                if "epyc" in model_lower:
+                    model_words = model_line.split()
+                    first_num = ""
+                    for w in model_words:
+                        digits = "".join(c for c in w if c.isdigit())
+                        if len(digits) >= 4:
+                            first_num = digits[:4]
+                            break
+                    if first_num:
+                        model_int = int(first_num[:4]) if len(first_num) >= 4 else 0
+                        if model_int >= 9004:
+                            return "EPYC_Genoa"
+                        if model_int >= 8004:
+                            return "EPYC_Siena"
+                        if model_int >= 7004:
+                            return "EPYC_Bergamo"
+                        if model_int >= 7003:
+                            return "EPYC_MilanX"
+                        if model_int >= 7002:
+                            return "EPYC_Rome"
+                        if model_int >= 7001:
+                            return "EPYC_Naples"
+                    return "EPYC_Milan"
+                if "ryzen" in model_lower:
+                    if "9950" in model_line or "9900" in model_line:
+                        return "Ryzen_GraniteRidge"
+                    if "7950" in model_line or "7900" in model_line:
+                        return "Ryzen_Raphael"
+                    if "5950" in model_line or "5900" in model_line:
+                        return "Ryzen_Vermeer"
+                    return "Ryzen_Consumer"
+                return arch
+
+            elif "arm" in arch.lower() or "neoverse" in arch.lower():
+                if "neoverse-v2" in model_lower:
+                    return "Neoverse_V2"
+                if "neoverse-v1" in model_lower:
+                    return "Neoverse_V1"
+                if "neoverse-n2" in model_lower:
+                    return "Neoverse_N2"
+                if "neoverse-n1" in model_lower:
+                    return "Neoverse_N1"
+                if "ampere" in model_lower:
+                    return "Ampere_Altra"
+                if "graviton" in model_lower:
+                    if "4" in model_line:
+                        return "Graviton4"
+                    if "3" in model_line:
+                        return "Graviton3"
+                return "ARMv8"
+
+            return "unknown"
+        except Exception:
+            return "unknown"
+
+    def get_system_type(self) -> str:
+        """
+        Detect system type: laptop, workstation, compute_node, or cluster.
+
+        Heuristics:
+        - laptop:    battery present in /sys/class/power_supply, or chassis=Notebook
+        - cluster:   SLURM/PBS/LSF/SGE job ID is set
+        - compute_node: physical cores >= 32 but no scheduler job detected
+        - workstation: physical cores < 32, no battery, no scheduler
+
+        Returns one of: "laptop", "workstation", "compute_node", "cluster", "unknown"
+        """
+        if os.getenv("SLURM_JOB_ID") or os.getenv("PBS_JOBID") or \
+           os.getenv("LSB_JOBID") or os.getenv("SGE_JOB_ID"):
+            return "cluster"
+
+        try:
+            psu_path = Path("/sys/class/power_supply")
+            if psu_path.exists():
+                for entry in psu_path.iterdir():
+                    try:
+                        tp = (entry / "type").read_text().strip()
+                        if tp == "Battery":
+                            return "laptop"
+                    except Exception:
+                        pass
+
+            chassis_path = Path("/sys/class/dmi/id/chassis_type")
+            if chassis_path.exists():
+                chassis = chassis_path.read_text().strip()
+                if chassis in ("8", "9", "10", "14"):
+                    return "laptop"
+
+            chassis_vendor = self._run_cmd_safe(["cat", "/sys/class/dmi/id/chassis_vendor"]) or \
+                             self._run_cmd_safe(["cat", "/sys/devices/virtual/dmi/id/chassis_vendor"])
+            if chassis_vendor:
+                vl = chassis_vendor.lower()
+                if any(kw in vl for kw in ("notebook", "laptop", "lenovo thinkpad", "dell latitude")):
+                    return "laptop"
+        except Exception:
+            pass
+
+        phys = self.get_physical_cores()
+        return "compute_node" if phys >= 32 else "workstation"
+
     def get_memory_bandwidth_gb_s(self) -> float:
         """Estimate memory bandwidth from CPU arch, DDR generation, and channel count."""
         arch = self.get_cpu_architecture()
@@ -907,6 +1085,14 @@ def get_interconnect_info() -> InterconnectInfo:
 @cache
 def get_cpu_architecture() -> str:
     return _provider.get_cpu_architecture()
+
+@cache
+def get_cpu_generation() -> str:
+    return _provider.get_cpu_generation()
+
+@cache
+def get_system_type() -> str:
+    return _provider.get_system_type()
 
 
 @cache
