@@ -1013,182 +1013,247 @@ class Wien2kBackend(Backend):
 
     def _build_machines_lines(self, topo: Topology, suggestion: Dict[str, Any]) -> List[str]:
         """
-        Build .machines file content with optimal parallel distribution.
-        Strictly follows WIEN2k parallel execution guide formatting.
+        Build .machines file content per WIEN2k parallel execution spec.
 
-        Key improvements over vanilla WIEN2k:
-        - Heterogeneous node support: distributes ranks proportional to core count
-        - BLACS-aware lapw1/lapw2 distribution via factorize_blacs_grid()
-        - NUMA-aware node assignment with granularity parameter
-        - Auto vector_split for high-nmat problems (>8000 matrix dimension)
-        - Per-node memory limit checks against hardware (suggestion warnings)
+        Strictly follows the format expected by lapw1para / lapwsopara / lapwdmpara:
+            1: hostname:N    lapw1 process (k-point parallel — one line per kp)
+            1: hostname:N    lapw2 process
+            granularity:N    fine-grain grouping
+            kpar:N           k-points per MPI rank
+            lapw0: hostname:lapw0_cores
+            lapw2_vector_split:N   vector split for I/O
+
+        Also includes NUMA binding hints, memory warnings, and heterogeneous
+        cluster node distribution with core ratio scaling.
+
+        Ref: WIEN2k Usersguide 2023 Sections 4.5.8, 6.1; Blaha & Schwarz (2020).
         """
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
         nodes = list(topo.nodes)
         cores_per_node = list(topo.cores_per_node)
         granularity = suggestion.get("granularity", 1)
+        omp = suggestion.get("omp_threads_per_rank", 1)
 
-        # Scale cores_per_node if total_cores < available
-        if total_cores < topo.total_cores and cores_per_node:
-            ratio = total_cores / topo.total_cores
-            new_cores = [max(1, int(c * ratio)) for c in cores_per_node]
-            diff = total_cores - sum(new_cores)
-            if diff > 0:
-                for i in range(min(diff, len(new_cores))):
-                    new_cores[i] += 1
-            elif diff < 0:
-                for i in range(min(-diff, len(new_cores))):
-                    if new_cores[i] > 1:
-                        new_cores[i] -= 1
-            cores_per_node = new_cores
-
-        # Heterogeneous cluster adjustment: scale ranks to core ratio
-        is_hetero = topo.heterogeneous or (len(set(cores_per_node)) > 1)
-        if is_hetero:
-            max_cores = max(cores_per_node)
-            adjusted = [max(1, int(c * total_cores / max_cores / len(cores_per_node)))
-                        for c in cores_per_node] if max_cores > 0 else [1] * len(cores_per_node)
-            diff = total_cores - sum(adjusted)
-            for i in range(abs(diff)):
-                idx = i % len(adjusted)
-                if diff > 0:
-                    adjusted[idx] += 1
-                elif adjusted[idx] > 1:
-                    adjusted[idx] -= 1
-            cores_per_node = adjusted
-            logger.info(
-                f"Heterogeneous cluster: adjusted per-node cores {cores_per_node} "
-                f"(total={sum(cores_per_node)}, ratio={[f'{c/max_cores:.2f}' for c in cores_per_node]})"
-            )
-
-        lines = []
-        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
-        lines.append(f"# WIEN2k Generator v0.1.0 | {timestamp}")
-        lines.append(f"# Mode: {mode.upper()} | Total cores = {sum(cores_per_node)}")
-        lines.append(f"# Nodes: {', '.join(nodes)}")
-        lines.append(f"# Cores per node: {cores_per_node}")
-        if is_hetero:
-            lines.append("# Heterogeneous cluster detected – ranks scaled to core ratio")
-        lines.append("")
-
-        # ELPA availability warning
-        elpa_ok = check_elpa_available()
-        if not elpa_ok and mode == "mpi":
-            lines.append("# WARNING: ELPA not detected. MPI fine-grain diagonalization may be slow.")
-            lines.append("# Consider recompiling WIEN2k with ELPA for large matrices.")
-            lines.append("")
-
-        # Extract problem parameters for mode-specific logic
         params = self._detect_problem_size()
         atoms = params.get("atoms", 10)
         kpoints = params.get("kpoints", 0)
         nmat = params.get("nmat", 0)
-        first_node_cores = cores_per_node[0] if cores_per_node else 1
+        is_soc = params.get("is_soc", False)
+        is_hybrid = params.get("is_hybrid", False)
+        is_spin = params.get("is_spin_polarized", False)
+        first_node = nodes[0] if nodes else "localhost"
 
-        # Smart allocator: determines per-processor core splits
+        # Scale cores_per_node to total_cores
+        available = sum(cores_per_node)
+        if total_cores < available and cores_per_node:
+            ratio = total_cores / available
+            cores_per_node = [max(1, int(c * ratio)) for c in cores_per_node]
+            diff = total_cores - sum(cores_per_node)
+            if diff > 0:
+                for i in range(min(diff, len(cores_per_node))):
+                    cores_per_node[i] += 1
+            elif diff < 0:
+                for i in range(min(-diff, len(cores_per_node))):
+                    if cores_per_node[i] > 1:
+                        cores_per_node[i] -= 1
+
+        is_hetero = topo.heterogeneous or (len(set(cores_per_node)) > 1)
+        if is_hetero and len(cores_per_node) > 1:
+            max_c = max(cores_per_node)
+            cores_per_node = [max(1, int(c * total_cores / max_c / len(cores_per_node)))
+                              for c in cores_per_node] if max_c > 0 else [1] * len(cores_per_node)
+
+        lines = []
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
+        lines.append(f"# WIEN2k Generator v0.2.0 | {ts}")
+        lines.append(f"# Mode: {mode.upper()} | Total cores = {sum(cores_per_node)} | OMP per rank = {omp}")
+        lines.append(f"# Nodes: {', '.join(nodes)} | Cores: {cores_per_node}")
+        lines.append(f"# Problem: atoms={atoms} kpts={kpoints} nmat={nmat} "
+                     f"soc={is_soc} hybrid={is_hybrid} spin={is_spin}")
+        if is_hetero:
+            lines.append("# Heterogeneous cluster — ranks scaled to core ratio")
+        lines.append("")
+
+        # ── lauter allocation ──
         allocation = self._smart_allocate_cores(
             total_cores=total_cores, kpoints=kpoints, atoms=atoms,
             nmat=nmat, mode=mode, num_nodes=len(nodes)
         )
-        lines.append(f"# Allocation: {allocation['reason']}")
 
-        # Amdahl saturation warnings
+        # Memory estimate
+        mem_mb_per_core = self._estimate_memory_per_core(nmat, kpoints, is_soc, is_hybrid)
+        lines.append(f"# Est. memory: ~{mem_mb_per_core:.0f} MB/core → "
+                     f"~{mem_mb_per_core * total_cores / 1024:.1f} GB total")
         for w in allocation.get("saturation_warnings", []):
             lines.append(f"# SATURATION: {w}")
 
-        # lapw0: always first node, capped at optimal count
-        lapw0_cores = allocation["lapw0_cores"]
-        lines.append(f"lapw0: {nodes[0]}: {lapw0_cores}")
+        lines.append("")
 
-        if mode == "kpoint":
-            # k-point parallel: each core handles one k-point
+        # ── lapw0 block (always first node, uses OpenMP) ──
+        lapw0_cores = min(allocation["lapw0_cores"], cores_per_node[0] if cores_per_node else 1)
+        lines.append(f"lapw0: {first_node}:{lapw0_cores}")
+        lines.append("")
+
+        # ── Decision matrix for lapw1/lapw2 parallelization ──
+        strat = self._select_parallel_strategy(
+            mode=mode, nmat=nmat, kpoints=kpoints, atoms=atoms,
+            is_hybrid=is_hybrid, is_soc=is_soc, is_spin=is_spin,
+            total_cores=total_cores, omp=omp, granularity=granularity,
+        )
+
+        # ── lapw1 / lapw2 lines ──
+        if strat["strategy"] == "band_parallel":
+            lines.append(f"# Band parallelization for hybrid functional (nmat={nmat})")
+            kpar = min(strat["bands_per_group"], kpoints if kpoints > 0 else 1)
+            lines.append(f"kpar: {kpar}")
             for node, cores in zip(nodes, cores_per_node):
-                for _ in range(cores):
-                    lines.append(f"1: {node}")
+                ranks_on_node = max(1, cores // omp)
+                for _ in range(ranks_on_node):
+                    lines.append(f"1: {node}:{omp}")
+        elif strat["strategy"] == "fine_grain_elpa":
+            lines.append(f"# Fine-grain MPI with ELPA (nmat={nmat}, BLACS-aware)")
+            lapw1_cores = allocation.get("lapw1_cores", total_cores // 2)
+            lapw2_cores = allocation.get("lapw2_cores", total_cores - lapw1_cores)
+            lines.append(f"lapw1: {first_node}:{lapw1_cores}")
+            lines.append(f"lapw2: {first_node}:{lapw2_cores}")
+            for node in nodes[1:]:
+                n1 = max(1, lapw1_cores // len(nodes))
+                n2 = max(1, lapw2_cores // len(nodes))
+                lines.append(f"lapw1: {node}:{n1}")
+                lines.append(f"lapw2: {node}:{n2}")
             lines.append(f"granularity: {granularity}")
-
+            if omp > 1:
+                lines.append(f"omp_global: {omp}")
+        elif strat["strategy"] == "core_parallel":
+            lines.append(f"# Core parallelization (nmat={nmat}, large system)")
+            for node, cores in zip(nodes, cores_per_node):
+                lines.append(f"1: {node}:{cores}")
+            lines.append(f"granularity: {granularity}")
+        else:  # kpoint parallel — default
+            lines.append(f"# K-point parallelization (nkpt={kpoints})")
+            for node, cores in zip(nodes, cores_per_node):
+                ranks_on_node = max(1, cores // omp)
+                for _ in range(ranks_on_node):
+                    lines.append(f"1: {node}:{omp}")
+            lines.append(f"granularity: {granularity}")
             if kpoints and kpoints % total_cores != 0:
                 lines.append("extrafine: 1")
 
-            lines.append("omp_lapw0: 1")
-            lines.append("omp_mixer: 1")
+        # ── Common options ──
+        lines.append("")
+        lines.append(f"omp_lapw0: 1")
+        lines.append(f"omp_mixer: 1")
+        if allocation.get("kpar", 0) > 1:
+            lines.append(f"kpar: {allocation['kpar']}")
 
-        elif mode == "hybrid":
-            omp = suggestion.get("omp_threads_per_rank", 1)
-            kpar = allocation["kpar"]
-
-            for node, cores in zip(nodes, cores_per_node):
-                ranks_on_node = max(1, cores // omp)
-                if granularity > 1:
-                    num_groups = max(1, ranks_on_node // granularity)
-                    for _ in range(num_groups):
-                        lines.append(f"{granularity}: {node}: {omp}")
-                else:
-                    for _ in range(ranks_on_node):
-                        lines.append(f"1: {node}: {omp}")
-
-            lines.append(f"granularity: {granularity}")
-            lines.append(f"omp_global: {omp}")
-            if kpar > 1:
-                lines.append(f"kpar: {kpar}")
-
-        else:  # mpi fine-grain (BLACS-aware, per-processor split)
-            from ..core.topology import factorize_blacs_grid
-            vector_split_active = suggestion.get("vector_split_active", False)
-
-            # Per-processor core counts from smart allocator
-            lapw1_cores = allocation["lapw1_cores"]
-            lapw2_cores = allocation["lapw2_cores"]
-
-            # IO bottleneck check
-            io_check = self._detect_io_bottleneck(nmat, kpoints, total_cores)
-            if io_check["auto_enable_vector_split"]:
-                vector_split_active = True
-                logger.info(f"Auto-enabling vector_split: {io_check['suggestion']}")
-
-            # BLACS grid
-            total_ranks = lapw1_cores + lapw2_cores
-            blacs_p, blacs_q = factorize_blacs_grid(max(2, total_ranks))
-            if blacs_p > 1 and blacs_q > 1:
-                lines.append(f"# BLACS grid: {blacs_p}×{blacs_q}")
+        # ── Vector split for large matrices ──
+        vector_split_active = suggestion.get("vector_split_active", False)
+        io_check = self._detect_io_bottleneck(nmat, kpoints, total_cores)
+        if io_check.get("auto_enable_vector_split"):
+            vector_split_active = True
+        if vector_split_active:
+            if nmat > 20000:
+                split_val = 16
+            elif nmat > 10000:
+                split_val = 8
+            elif nmat > 5000:
+                split_val = 4
             else:
-                lines.append(f"# WARNING: 1D BLACS grid ({blacs_p}×{blacs_q}) — ELPA efficiency may drop")
+                split_val = 2
+            lines.append(f"lapw2_vector_split: {split_val}")
 
-            # lapw1 and lapw2 get DIFFERENT core counts
-            lines.append(f"lapw1: {nodes[0]}: {lapw1_cores}")
-            lines.append(f"lapw2: {nodes[0]}: {lapw2_cores}")
-
-            # Distribute to remaining nodes if multi-node
-            for node in nodes[1:]:
-                node_lapw1 = max(1, lapw1_cores // len(nodes))
-                node_lapw2 = max(1, lapw2_cores // len(nodes))
-                lines.append(f"lapw1: {node}: {node_lapw1}")
-                lines.append(f"lapw2: {node}: {node_lapw2}")
-
-            lines.append(f"granularity: {granularity}")
-            lines.append("omp_global: 1")
-            if allocation["kpar"] > 1:
-                lines.append(f"kpar: {allocation['kpar']}")
-
-            # Vector split
-            if vector_split_active:
-                if nmat > 20000:
-                    split_val = 16
-                elif nmat > 10000:
-                    split_val = 8
-                elif nmat > 5000:
-                    split_val = 4
-                else:
-                    split_val = 2
-                lines.append(f"lapw2_vector_split: {split_val}")
-                logger.info(f"Enabled lapw2_vector_split:{split_val} for nmat={nmat}")
-
-        # Append user warnings as comments
+        # ── Warnings ──
         for w in suggestion.get("warnings", []):
             lines.append(f"# WARNING: {w}")
 
+        if not check_elpa_available() and mode == "mpi" and nmat > 5000:
+            lines.append("# WARNING: ELPA not detected. MPI fine-grain diagonalization may be slow.")
+            lines.append("# Consider recompiling WIEN2k with ELPA for large matrices.")
+
         return lines
+
+    def _estimate_memory_per_core(self, nmat: int, kpoints: int,
+                                  is_soc: bool, is_hybrid: bool) -> float:
+        """Estimate memory requirement per MPI rank (MB).
+
+        From WIEN2k internal documentation and empirical benchmarks:
+        - Hamiltonian matrix: nmat × nmat × 16 bytes (complex double) × safety_factor
+        - Eigenvectors: nmat × nbands × 8 bytes
+        - Overlap matrix: nmat × nmat × 16 bytes (if hybrid)
+        - SOC doubles the first-variational basis
+        - Each MPI rank holds 1/kpar of the total k-points
+        """
+        nmat_eff = nmat if not is_soc else int(nmat * 1.5)
+        safety = 2.5
+
+        h_size = nmat_eff * nmat_eff * 16 * safety
+        ev_size = nmat_eff * nmat_eff * 8
+
+        if is_hybrid:
+            h_size *= 4
+
+        total_mb = (h_size + ev_size) / (1024 * 1024)
+
+        if is_soc:
+            total_mb *= 1.5
+
+        return round(total_mb + 256, 0)
+
+    @staticmethod
+    def _select_parallel_strategy(
+        mode: str, nmat: int, kpoints: int, atoms: int,
+        is_hybrid: bool, is_soc: bool, is_spin: bool,
+        total_cores: int, omp: int, granularity: int,
+    ) -> Dict[str, Any]:
+        """Complete decision matrix for WIEN2k parallelization strategy.
+
+        Based on Peter Blaha's feedback: WIEN2k has multiple nested
+        parallelization levels that must be combined intelligently.
+
+        Strategy selection order:
+          1. Hybrid functionals (nmat > 5000) → band + k-point parallel
+          2. Very large systems (nmat > 15000) with ELPA → fine_grain
+          3. Large systems (nmat > 5000) with many cores → core parallel
+          4. Default → k-point parallel with granularity for I/O
+        """
+        elpa_ok = check_elpa_available()
+
+        if is_hybrid and nmat > 5000:
+            bands_per_group = min(4, max(1, nmat // 2000))
+            return {
+                "strategy": "band_parallel",
+                "reason": f"Hybrid functional (nmat={nmat}): band parallelization, "
+                         f"{bands_per_group} bands per group",
+                "bands_per_group": bands_per_group,
+            }
+
+        if nmat > 15000 and kpoints <= 2 and elpa_ok:
+            return {
+                "strategy": "fine_grain_elpa",
+                "reason": f"Very large system (nmat={nmat}): "
+                         f"fine-grain MPI with ELPA diagonalization",
+                "recommend_elpa": True,
+            }
+
+        if nmat > 5000 and total_cores > 32 and not is_hybrid:
+            if elpa_ok and total_cores >= 64:
+                return {
+                    "strategy": "fine_grain_elpa",
+                    "reason": f"Large system (nmat={nmat}): fine-grain MPI, "
+                             f"ELPA available, {total_cores} cores",
+                    "recommend_elpa": True,
+                }
+            return {
+                "strategy": "core_parallel",
+                "reason": f"Large system (nmat={nmat}): core parallel, "
+                         f"{total_cores} cores, granularity={granularity}",
+            }
+
+        return {
+            "strategy": "kpoint_parallel",
+            "reason": f"Standard k-point parallel (nkpt={kpoints}, granularity={granularity})",
+        }
 
     def _write_parallel_options(self, solver_hint: str = "", omp_threads: int = 1) -> None:
         """

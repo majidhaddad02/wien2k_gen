@@ -452,11 +452,110 @@ def load_series_from_yaml(path: Union[str, Path]) -> List[ScalingSeries]:
     return series_list
 
 
+class ScalingType:
+    STRONG = "strong"
+    WEAK = "weak"
+
+
+def identify_scaling_bottlenecks(series: ScalingSeries) -> dict:
+    """Analyze scaling efficiency to identify bottlenecks.
+
+    Bottleneck detection rules (from Blaha & Schwarz 2020):
+    - Efficiency < 50% at 2× nodes → strong bottleneck (I/O or memory)
+    - Efficiency < 80% at 4× nodes → moderate bottleneck
+    - Efficiency > 90% at max nodes → excellent scaling
+    """
+    bottlenecks = {
+        "io_bound": False,
+        "memory_bound": False,
+        "network_bound": False,
+        "compute_bound": False,
+        "recommendations": [],
+    }
+
+    if not series.efficiency or not series.data_points:
+        return bottlenecks
+
+    eff = series.efficiency
+    nodes = [dp.node_count for dp in series.data_points]
+    max_nodes = max(nodes) if nodes else 1
+
+    if series.scaling_type == "strong":
+        if len(eff) >= 2 and eff[1] < 50:
+            bottlenecks["io_bound"] = True
+            bottlenecks["recommendations"].append(
+                "Strong I/O bottleneck — enable lapw2_vector_split and nowrite for .vector files. "
+                "Consider local scratch storage (tmpfs) per node."
+            )
+
+        if len(eff) >= 4 and eff[3] < 80:
+            bottlenecks["network_bound"] = True
+            bottlenecks["recommendations"].append(
+                "Scaling degrades beyond 4 nodes — check interconnect bandwidth. "
+                "Consider InfiniBand with RDMA or OmniPath. Reduce allreduce frequency."
+            )
+
+        final_eff = eff[-1] if eff else 0
+        if final_eff > 90:
+            bottlenecks["compute_bound"] = True
+            bottlenecks["recommendations"].append(
+                f"Near-ideal scaling ({final_eff:.0f}% at {max_nodes} nodes) — "
+                "system is compute-limited. Consider higher RKMAX or denser k-mesh."
+            )
+
+    elif series.scaling_type == "weak":
+        if len(eff) >= 2 and eff[0] > 80 and eff[1] < 60:
+            bottlenecks["network_bound"] = True
+            bottlenecks["recommendations"].append(
+                "Weak scaling drop indicates communication overhead. "
+                "Increase granularity or reduce MPI rank count."
+            )
+
+    return bottlenecks
+
+
+def generate_benchmark_recommendations(
+    strong_scaling: List[ScalingSeries],
+    weak_scaling: Optional[List[ScalingSeries]] = None,
+) -> str:
+    """Generate actionable optimization recommendations from benchmark results.
+
+    Returns plain-text recommendations suitable for job scripts.
+    """
+    lines = []
+    lines.append("#" * 72)
+    lines.append("# WIEN2k Gen — Automatic Benchmark Recommendations")
+    lines.append("#" * 72)
+    lines.append("")
+
+    for series in strong_scaling:
+        bottlenecks = identify_scaling_bottlenecks(series)
+        lines.append(f"## System: {series.name} ({series.scaling_type.upper()} scaling)")
+        for rec in bottlenecks["recommendations"]:
+            lines.append(f"  - {rec}")
+        lines.append("")
+
+    if weak_scaling:
+        for series in weak_scaling:
+            bottlenecks = identify_scaling_bottlenecks(series)
+            lines.append(f"## System: {series.name} (WEAK scaling)")
+            for rec in bottlenecks["recommendations"]:
+                lines.append(f"  - {rec}")
+            lines.append("")
+
+    lines.append(f"# Generated: {__import__('datetime').datetime.now().isoformat()}")
+    lines.append("#" * 72)
+    return "\n".join(lines)
+
+
 __all__ = [
     "ScalingDataPoint",
     "ScalingSeries",
+    "ScalingType",
+    "generate_benchmark_recommendations",
     "generate_charts",
     "generate_report",
     "generate_text_report",
+    "identify_scaling_bottlenecks",
     "load_series_from_yaml",
 ]

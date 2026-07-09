@@ -681,8 +681,129 @@ def generate_convergence_report(results: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def detect_scf_divergence(scf_content: str, energy_values: Optional[List[float]] = None) -> dict:
+    """Detect SCF divergence and recommend automatic recovery actions.
+
+    Divergence signatures:
+      - Monotonic energy increase over 10+ cycles → unstable mixing
+      - Oscillating energy ±10 eV → charge sloshing
+      - Exploding energy > 1e5 → catastrophic divergence
+      - Gap oscillation for metallic systems → need smearing
+      - Stuck energy (flat for 20+ cycles) → stalled convergence
+
+    Returns dict with:
+        divergent: bool
+        divergence_type: str
+        severity: float (0-1)
+        recommended_action: str
+        auto_mixing_params: dict (beta adjustment suggestions)
+    """
+    if energy_values is None:
+        cd_pattern = re.compile(
+            r':ene\s*:\s*.*?(-?\d+\.\d+)', re.IGNORECASE
+        )
+        matches = cd_pattern.findall(scf_content)
+        energy_values = [float(m) for m in matches]
+
+    result = {
+        "divergent": False,
+        "divergence_type": "none",
+        "severity": 0.0,
+        "recommended_action": "",
+        "auto_mixing_params": {"beta": None, "pratt_cycles": None, "msr1a": False},
+    }
+
+    if len(energy_values) < 5:
+        return result
+
+    n = len(energy_values)
+    deltas = [energy_values[i] - energy_values[i - 1] for i in range(1, n)]
+
+    # 1. Catastrophic divergence (energy explodes)
+    if any(abs(e) > 1e5 for e in energy_values):
+        result["divergent"] = True
+        result["divergence_type"] = "catastrophic"
+        result["severity"] = 1.0
+        result["recommended_action"] = (
+            "Energy exploded. Check RMT values, RKMAX, and initial charge "
+            "density. Restart from scratch with reduced mixing (β=0.02) "
+            "and increased PRATT cycles."
+        )
+        result["auto_mixing_params"]["beta"] = 0.02
+        result["auto_mixing_params"]["pratt_cycles"] = 10
+        return result
+
+    # 2. Monotonic drift (energy increasing steadily for 10+ cycles)
+    if len(deltas) >= 10:
+        recent_deltas = deltas[-10:]
+        positive_count = sum(1 for d in recent_deltas if d > 0)
+        if positive_count >= 8:
+            drift_rate = sum(d for d in recent_deltas if d > 0) / max(positive_count, 1)
+            result["divergent"] = True
+            result["divergence_type"] = "monotonic_drift"
+            result["severity"] = min(1.0, abs(drift_rate) / 10.0)
+            result["recommended_action"] = (
+                f"Energy drifting upward ({drift_rate:.3f} Ry/cycle). "
+                f"Reduce mixing beta 3x and increase PRATT to 5 cycles. "
+                f"Try MSR1a mixing for multi-secant stabilization."
+            )
+            result["auto_mixing_params"]["beta"] = 0.03
+            result["auto_mixing_params"]["pratt_cycles"] = 5
+            result["auto_mixing_params"]["msr1a"] = True
+            return result
+
+    # 3. High-amplitude oscillation (charge sloshing)
+    if len(deltas) >= 8:
+        sign_changes = sum(1 for i in range(1, len(deltas)) if deltas[i] * deltas[i - 1] < 0)
+        if sign_changes >= len(deltas) // 2:
+            max_amp = max(abs(d) for d in deltas)
+            result["divergent"] = True
+            result["divergence_type"] = "charge_sloshing"
+            result["severity"] = min(1.0, max_amp / 0.01)
+            result["recommended_action"] = (
+                f"Charge sloshing detected (amplitude {max_amp:.6f} Ry). "
+                f"Halve mixing beta, use PRATT mixing, or switch to MSR1a. "
+                f"If metallic, add Methfessel-Paxton smearing (0.02 Ry)."
+            )
+            beta = 0.05
+            if energy_values:
+                current_beta = _infer_mixing_beta(scf_content)
+                beta = current_beta / 2.0 if current_beta > 0 else 0.05
+            result["auto_mixing_params"]["beta"] = max(0.01, beta)
+            result["auto_mixing_params"]["pratt_cycles"] = 3
+            return result
+
+    # 4. Stalled convergence (flat for many cycles)
+    if len(deltas) >= 20:
+        recent = deltas[-20:]
+        if all(abs(d) < 1e-8 for d in recent):
+            result["divergent"] = True
+            result["divergence_type"] = "stalled"
+            result["severity"] = 0.5
+            result["recommended_action"] = (
+                "SCF stalled — energy not changing. Check if converged "
+                "(< 0.0001 Ry), or increase mixing beta slightly."
+            )
+            result["auto_mixing_params"]["beta"] = 0.15
+            result["auto_mixing_params"]["pratt_cycles"] = 3
+
+    return result
+
+
+def _infer_mixing_beta(scf_content: str) -> float:
+    """Try to infer current mixing beta from SCF log or case.inm."""
+    inm_match = re.search(
+        r'(?:MIXING|beta|MSEC|pratt)\s*[=:]\s*(0?\.\d+)',
+        scf_content, re.IGNORECASE,
+    )
+    if inm_match:
+        return float(inm_match.group(1))
+    return 0.0
+
+
 __all__ = [
     "ConvergenceResult",
+    "detect_scf_divergence",
     "find_converged_parameters",
     "generate_convergence_report",
     "run_kpoint_convergence",

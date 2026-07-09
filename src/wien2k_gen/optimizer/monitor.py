@@ -1284,6 +1284,72 @@ def pause_monitoring() -> None:
     logger.debug("SCF monitor paused")
 
 
+def create_scf_checkpoint(case_name: str, label: str = "") -> str:
+    """Save SCF checkpoint for restart after failure or preemption.
+
+    Copies case.clmval (charge density), case.clmsum, case.broyd*
+    to a timestamped backup directory under case_checkpoints/.
+
+    Returns path to the checkpoint directory.
+    """
+    import shutil as _shutil
+
+    case = Path(case_name)
+    if not case.exists():
+        case = Path(".")
+
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    ckpt_dir = case / "case_checkpoints" / f"ckpt_{ts}"
+    if label:
+        ckpt_dir = case / "case_checkpoints" / f"ckpt_{label}_{ts}"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    for suffix in [".clmval", ".clmsum", ".broyd", ".broyd1", ".broyd2"]:
+        src = case / f"{case.name}{suffix}"
+        if src.exists():
+            _shutil.copy2(str(src), str(ckpt_dir / src.name))
+
+    (ckpt_dir / "CHECKPOINT_INFO").write_text(
+        f"case={case.name}\nlabel={label}\ntimestamp={ts}\n"
+    )
+
+    logger.info(f"SCF checkpoint saved: {ckpt_dir}")
+    return str(ckpt_dir)
+
+
+def restore_from_checkpoint(case_name: str, checkpoint_dir: Optional[str] = None) -> bool:
+    """Restore SCF state from most recent (or specified) checkpoint.
+
+    Returns True if restore succeeded.
+    """
+    import shutil as _shutil
+
+    case = Path(case_name)
+    if not case.exists():
+        case = Path(".")
+
+    ckpt_base = case / "case_checkpoints"
+    if checkpoint_dir:
+        ckpt_dir = Path(checkpoint_dir)
+    elif ckpt_base.exists():
+        dirs = sorted(ckpt_base.glob("ckpt_*"), key=os.path.getmtime, reverse=True)
+        if not dirs:
+            logger.warning("No checkpoints found")
+            return False
+        ckpt_dir = dirs[0]
+    else:
+        logger.warning("No checkpoint directory exists")
+        return False
+
+    for src_file in ckpt_dir.glob("*"):
+        if src_file.name.endswith((".clmval", ".clmsum", ".broyd", ".broyd1", ".broyd2")):
+            dest = case / f"{case.name}{src_file.suffix}"
+            _shutil.copy2(str(src_file), str(dest))
+
+    logger.info(f"SCF checkpoint restored from: {ckpt_dir}")
+    return True
+
+
 def resume_monitoring() -> None:
     """Resume polling after pause."""
     with _monitor_state.lock:

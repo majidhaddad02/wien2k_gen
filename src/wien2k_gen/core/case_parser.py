@@ -685,6 +685,82 @@ def parse_case_directory(path: Optional[Path] = None) -> CaseData:
     return CaseFileParser(path).parse_all()
 
 
+def detect_wien2k_version() -> str:
+    """Detect WIEN2k version from WIENROOT environment and installed files.
+
+    WIEN2k version history and key changes:
+      19.x — ELPA support introduced, band parallelization improvements
+      21.x — Improved hybrid functionals, GPU experimental support
+      23.x — GPU acceleration (experimental), improved SOC performance
+      24.x — Enhanced fine_grain parallelization, better NUMA support
+
+    Returns version string like "24.1" or "unknown".
+    """
+    import subprocess as _sp
+
+    wienroot = os.environ.get("WIENROOT", "")
+    if not wienroot:
+        return "unknown"
+
+    candidates = [
+        Path(wienroot) / "VERSION",
+        Path(wienroot) / "WIEN2k_VERSION",
+        Path(wienroot) / "version.txt",
+    ]
+    for vf in candidates:
+        if vf.exists():
+            content = vf.read_text().strip()
+            m = re.search(r'(\d+\.\d+)', content)
+            if m:
+                return m.group(1)
+
+    try:
+        result = _sp.run(
+            ["x_lapw", "--version"], capture_output=True, text=True, timeout=5,
+        )
+        m = re.search(r'(\d+\.\d+)', result.stdout + result.stderr)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+
+    try:
+        lv = Path(wienroot) / "SRC_lapw1" / "lapw1.F"
+        if lv.exists():
+            content = lv.read_text()
+            for line in content.split('\n')[:20]:
+                m = re.search(r'version.*?(\d+\.\d+)', line, re.IGNORECASE)
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+_VERSION_CAPABILITIES = {
+    "19": {"elpa": True, "band_par": True, "gpu": False, "fine_grain": "basic"},
+    "21": {"elpa": True, "band_par": True, "gpu": "experimental", "fine_grain": "basic"},
+    "23": {"elpa": True, "band_par": True, "gpu": "experimental", "fine_grain": "enhanced"},
+    "24": {"elpa": True, "band_par": True, "gpu": "supported", "fine_grain": "full"},
+}
+
+
+def wien2k_supports(capability: str) -> bool:
+    """Check if detected WIEN2k version supports a specific capability."""
+    version = detect_wien2k_version()
+    if version == "unknown":
+        return True
+    major = version.split('.')[0]
+    caps = _VERSION_CAPABILITIES.get(major, {})
+    val = caps.get(capability)
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    return True
+
+
 # ------------------------------------------------------------------
 # Tiny 3D vector for volume calculation (no numpy dependency)
 # ------------------------------------------------------------------
