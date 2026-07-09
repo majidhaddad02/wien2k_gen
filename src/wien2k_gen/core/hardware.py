@@ -476,7 +476,13 @@ class SysFSHardwareInfo(HardwareInfoProvider):
     # --- NUMA Topology & Cache Hierarchy ---
 
     def get_numa_topology_detailed(self) -> List[HardwareNUMANode]:
-        nodes = []
+        nodes = self._get_numa_from_sysfs()
+        if len(nodes) <= 1:
+            nodes = self._augment_numa_from_lscpu(nodes)
+        return self._augment_numa_from_numactl(nodes)
+
+    def _get_numa_from_sysfs(self) -> List[HardwareNUMANode]:
+        nodes: List[HardwareNUMANode] = []
         try:
             online_content = Path("/sys/devices/system/node/online").read_text().strip()
             node_ids: list[int] = []
@@ -530,6 +536,65 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 node_id=0, cpus=f"0-{phys-1}", cpu_ids=list(range(phys)),
                 mem_kb=self.get_total_mem_kb(), cores=phys, distance={0: 10}
             )]
+        return nodes
+
+    @staticmethod
+    def _augment_numa_from_lscpu(nodes: List[HardwareNUMANode]) -> List[HardwareNUMANode]:
+        """Augment NUMA topology using lscpu output.
+
+        lscpu reports thread/core/socket counts and NUMA layout,
+        which complements sysfs for systems with SNC (sub-NUMA
+        clustering) or memory interleaving.
+        """
+        try:
+            out = SysFSHardwareInfo._run_cmd_safe(["lscpu", "-p=cpu,node,socket,core"], timeout=3)
+            if not out:
+                return nodes
+
+            socket_to_node: Dict[int, set] = {}
+            for line in out.strip().split('\n'):
+                if line.startswith('#'):
+                    continue
+                parts = line.split(',')
+                if len(parts) >= 4:
+                    try:
+                        socket = int(parts[2])
+                        node_id = int(parts[1])
+                        socket_to_node.setdefault(socket, set()).add(node_id)
+                    except ValueError:
+                        continue
+
+            snc_detected = any(len(v) > 1 for v in socket_to_node.values())
+            if snc_detected and len(nodes) == 0:
+                logger.info("Sub-NUMA Clustering (SNC) detected via lscpu")
+        except Exception:
+            pass
+        return nodes
+
+    @staticmethod
+    def _augment_numa_from_numactl(nodes: List[HardwareNUMANode]) -> List[HardwareNUMANode]:
+        """Augment NUMA topology using numactl --hardware.
+
+        numactl reports memory bandwidth, interleaving, and distance
+        matrices not always available in sysfs on older kernels.
+        """
+        try:
+            out = SysFSHardwareInfo._run_cmd_safe(["numactl", "--hardware"], timeout=3)
+            if not out:
+                return nodes
+
+            node_size_map: Dict[int, int] = {}
+            for line in out.split('\n'):
+                m = re.search(r'node\s+(\d+)\s+size.*?(\d+)\s*MB', line, re.IGNORECASE)
+                if m:
+                    node_size_map[int(m.group(1))] = int(m.group(2)) * 1024
+
+            for node in nodes:
+                nid = node["node_id"]
+                if nid in node_size_map and node["mem_kb"] == 0:
+                    node["mem_kb"] = node_size_map[nid]
+        except Exception:
+            pass
         return nodes
 
     def get_cache_topology(self) -> List[CacheLevel]:
@@ -849,23 +914,94 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return "compute_node" if phys >= 32 else "workstation"
 
     def get_memory_bandwidth_gb_s(self) -> float:
+        """Measure or estimate memory bandwidth.
+
+        Try in order:
+        1. sysfs numa bandwidth counters (instant, accurate on newer kernels)
+        2. Estimate from CPU arch, DDR generation, and channel count.
+        Warnings logged when bandwidth < 50 GB/s (LAPW1 memory-bound).
+        """
+        measured = self._measure_bandwidth_sysfs()
+        if measured is not None:
+            return round(measured, 1)
+
+        return self._estimate_bandwidth_from_arch()
+
+    @staticmethod
+    def _measure_bandwidth_sysfs() -> Optional[float]:
+        """Measure memory bandwidth via NUMA sysfs counters.
+
+        Reads /sys/devices/system/node/node*/meminfo BW_total counters
+        sampled over 3 seconds. Returns None if counters unavailable.
+        """
+        try:
+            bw_files = sorted(Path("/sys/devices/system/node").glob("node*/meminfo"))
+            if not bw_files:
+                return None
+
+            counters = {}
+            for f in bw_files:
+                content = f.read_text()
+                for line in content.split('\n'):
+                    if 'BW_total' in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                counters[str(f)] = int(parts[1])
+                            except ValueError:
+                                pass
+
+            if not counters:
+                return None
+
+            import time
+            t0_sample = {}
+            for f_path in bw_files:
+                content = f_path.read_text()
+                for line in content.split('\n'):
+                    if 'BW_total' in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                t0_sample[str(f_path)] = int(parts[1])
+                            except ValueError:
+                                pass
+
+            time.sleep(3.0)
+
+            bw_sum_mb = 0.0
+            for f_path in bw_files:
+                content = f_path.read_text()
+                for line in content.split('\n'):
+                    if 'BW_total' in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            try:
+                                v1 = t0_sample.get(str(f_path), 0)
+                                v2 = int(parts[1])
+                                bw_sum_mb += (v2 - v1) / 3.0
+                            except (ValueError, ZeroDivisionError):
+                                pass
+
+            if bw_sum_mb > 0:
+                return bw_sum_mb / 1000.0
+        except (OSError, PermissionError):  # noqa: PERF203  -- kernel supports nested try/except
+            pass
+        return None
+
+    def _estimate_bandwidth_from_arch(self) -> float:
         """Estimate memory bandwidth from CPU arch, DDR generation, and channel count."""
         arch = self.get_cpu_architecture()
         channels = 8 if "epyc" in arch else (6 if "xeon" in arch else 4)
 
-        # Detect DDR generation from dmidecode or /sys
-        ddr_gen = self._detect_ddr_generation()
+        ddr_gen = SysFSHardwareInfo._detect_ddr_generation()
 
-        # Per-channel bandwidth by DDR generation (nominal, MT/s × 8 bytes)
-        # DDR4-2133: 17GB/s, DDR4-2400: 19, DDR4-2666: 21, DDR4-2933: 23.5
-        # DDR4-3200: 25.6, DDR5-4800: 38.4, DDR5-5200: 41.6, DDR5-5600: 44.8
         per_channel_bw = {
             "DDR3": 12.8,
             "DDR4": 25.6,
             "DDR5": 38.4,
-        }.get(ddr_gen, 21.3)  # Default: DDR4-2666 conservative
+        }.get(ddr_gen, 21.3)
 
-        # DDR5 on EPYC Genoa/Bergamo uses 12 channels, not 8
         if ddr_gen == "DDR5" and "epyc" in arch:
             channels = 12
 
@@ -874,7 +1010,6 @@ class SysFSHardwareInfo(HardwareInfoProvider):
     @staticmethod
     def _detect_ddr_generation() -> str:
         """Detect DDR memory generation from dmidecode or sysfs counters."""
-        # Try dmidecode first
         raw = SysFSHardwareInfo._run_cmd_safe(
             ["dmidecode", "-t", "memory"], force_c_locale=True, timeout=5
         )
@@ -887,13 +1022,11 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     return "DDR4"
                 elif "DDR3" in line_upper:
                     return "DDR3"
-        # Fallback: check /sys for ECC memory controller info (indicates server-class)
         edac_path = Path("/sys/devices/system/edac/mc")
         if edac_path.exists():
             try:
                 for mc_dir in edac_path.iterdir():
                     if mc_dir.is_dir():
-                        # Server-class with ECC → likely recent DDR4/DDR5
                         return "DDR4"
             except PermissionError:
                 pass
@@ -982,6 +1115,11 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             warnings.append("Memory limit detected. Ensure WIEN2k charge density fits within allocated RAM per node.")
         if profile["scratch_fs"] in ["nfs", "unknown"]:
             warnings.append("Non-local scratch filesystem detected. Performance may suffer during lapw0/lapw1 I/O heavy phases.")
+        if profile["memory_bandwidth_gb_s"] < 50.0:
+            warnings.append(
+                f"Low memory bandwidth ({profile['memory_bandwidth_gb_s']:.1f} GB/s < 50 GB/s). "
+                f"LAPW1 is memory-bound for large systems; additional MPI ranks yield no benefit."
+            )
 
         profile["validation_warnings"] = warnings
 

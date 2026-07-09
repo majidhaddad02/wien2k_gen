@@ -423,6 +423,162 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
     }
 
 
+def diagnose_charge_sloshing_root_cause(
+    dayfile_content: str,
+    case_name: str = "case",
+    struct_path: Optional[str] = None,
+) -> dict:
+    """Diagnose root cause of charge sloshing and recommend targeted fix.
+
+    Based on Peter Blaha's feedback: sloshing has specific root causes
+    that require different treatments:
+
+    1. Metallic systems (Fermi surface, bands crossing EF):
+       → Apply Methfessel-Paxton smearing (0.02 Ry), PRATT mixing
+    2. Symmetry breaking (structural distortion, magnetic ordering):
+       → Disable symmetry (runsp_lapw), reduce mixing slowly
+    3. Core overlap (RMT ratio < 1.5 between adjacent atoms):
+       → Check RMT values, adjust R0, increase PRATT iterations
+    4. Default (mixing rate too aggressive):
+       → Reduce mixing beta, increase PRATT cycles, try MSR1a
+
+    Returns dict with:
+        root_cause: str — one of "metallic", "symmetry_breaking",
+                   "core_overlap", "mixing_too_aggressive", "unknown"
+        actions: List[dict] — ordered list of remediation steps
+        confidence: float — 0.0–1.0 diagnostic confidence
+    """
+    slosh = detect_charge_sloshing(dayfile_content)
+    if not slosh["sloshing_detected"]:
+        return {
+            "root_cause": "none",
+            "actions": [],
+            "confidence": 0.0,
+        }
+
+    indicators: Dict[str, float] = {}
+
+    # 1. Check for metallic system indicators
+    if case_name:
+        try:
+            scf_path = Path(f"{case_name}.scf")
+            if not scf_path.exists():
+                scf_path = Path(case_name) / f"{case_name}.scf"
+            if scf_path.exists():
+                scf_text = scf_path.read_text()
+                if ":GAP" in scf_text:
+                    gap_match = re.search(r':GAP\s*:\s*(-?\d+\.\d+)', scf_text)
+                    if gap_match:
+                        gap = float(gap_match.group(1))
+                        if gap < 0.01:
+                            indicators["metallic"] = 0.9
+                        elif gap < 0.1:
+                            indicators["metallic"] = 0.6
+                if "FERMI" in scf_text or "nearly free" in scf_text.lower():
+                    indicators.setdefault("metallic", 0.0)
+                    indicators["metallic"] = max(indicators["metallic"], 0.5)
+        except Exception:
+            pass
+
+    # 2. Check for symmetry breaking
+    if "symmetry" in dayfile_content.lower() or "symm" in dayfile_content.lower():
+        if "broken" in dayfile_content.lower() or "fail" in dayfile_content.lower():
+            indicators["symmetry_breaking"] = 0.85
+
+    # 3. Check for core overlap via RMT info
+    rmt_pattern = re.compile(r'(?:RMT|rmt)\s*[=:]\s*([\d]+\.?\d*)', re.IGNORECASE)
+    rmt_matches = rmt_pattern.findall(dayfile_content)
+    if len(rmt_matches) >= 2:
+        rmt_vals = [float(v) for v in rmt_matches]
+        min_rmt = min(rmt_vals)
+        max_rmt = max(rmt_vals)
+        if min_rmt > 0 and max_rmt / min_rmt > 1.5:
+            indicators["core_overlap"] = min(0.9, (max_rmt / min_rmt - 1.5) * 2)
+
+    # 4. Check case.inc for mixing settings
+    if case_name:
+        try:
+            inc_path = Path(f"{case_name}.inc")
+            if not inc_path.exists():
+                inc_path = Path(case_name) / f"{case_name}.inc"
+            if inc_path.exists():
+                inc_text = inc_path.read_text()
+                mix_match = re.search(r'([\d]+\.?\d*)\s*\n', inc_text)
+                if mix_match:
+                    beta = float(mix_match.group(1))
+                    if beta > 0.3:
+                        indicators["mixing_too_aggressive"] = 0.8
+                    elif beta > 0.2:
+                        indicators["mixing_too_aggressive"] = 0.4
+        except Exception:
+            pass
+
+    # 5. Default: if nothing specific, assume aggressive mixing
+    if not indicators:
+        indicators["mixing_too_aggressive"] = 0.5
+
+    root_cause = max(indicators, key=indicators.get)
+    confidence = indicators[root_cause]
+
+    actions = _build_sloshing_remediation(root_cause, slosh["severity"])
+
+    return {
+        "root_cause": root_cause,
+        "confidence": round(confidence, 2),
+        "indicators": indicators,
+        "actions": actions,
+    }
+
+
+_SLOSHING_REMEDIATION = {
+    "metallic": [
+        {"action": "set_smearing", "params": {"type": "Methfessel-Paxton", "width_ry": 0.02},
+         "reason": "Metallic systems require Fermi surface smearing to stabilize SCF"},
+        {"action": "set_mixing", "params": {"beta": 0.10},
+         "reason": "Use PRATT mixing with beta=0.10 for metals"},
+        {"action": "increase_kpoints", "params": {"factor": 2.0},
+         "reason": "Denser k-mesh captures Fermi surface better"},
+    ],
+    "symmetry_breaking": [
+        {"action": "disable_symmetry", "params": {},
+         "reason": "Switch to runsp_lapw to handle broken symmetry"},
+        {"action": "set_mixing", "params": {"beta": 0.05},
+         "reason": "Conservative mixing for symmetry-broken systems"},
+        {"action": "set_rmt", "params": {"reduction": 0.95},
+         "reason": "Slightly reduce RMT to avoid sphere overlap"},
+    ],
+    "core_overlap": [
+        {"action": "check_rmt_ratios", "params": {},
+         "reason": "RMT ratio > 1.5 between atoms; check sphere overlap"},
+        {"action": "adjust_r0", "params": {"reduction": 0.90},
+         "reason": "Reduce R0 to separate core from valence spheres"},
+        {"action": "set_mixing", "params": {"beta": 0.02},
+         "reason": "Very conservative mixing for core overlap cases"},
+        {"action": "increase_pratt", "params": {"cycles": 5},
+         "reason": "Increase PRATT iterations to 5 cycles"},
+    ],
+    "mixing_too_aggressive": [
+        {"action": "set_mixing", "params": {"beta": 0.05},
+         "reason": "Reduce mixing beta by 50% from current value"},
+        {"action": "increase_pratt", "params": {"cycles": 3},
+         "reason": "Increase PRATT iterations for better preconditioning"},
+        {"action": "try_msr1a", "params": {},
+         "reason": "Switch to multi-secant MSR1a mixing for improved stability"},
+    ],
+}
+
+
+def _build_sloshing_remediation(root_cause: str, severity: float) -> List[dict]:
+    """Build ordered remediation steps scaled by severity."""
+    template = _SLOSHING_REMEDIATION.get(root_cause, _SLOSHING_REMEDIATION["mixing_too_aggressive"])
+    actions = []
+    for step in template:
+        action = dict(step)
+        action["priority"] = "critical" if severity > 0.7 else "high"
+        actions.append(action)
+    return actions
+
+
 def detect_charge_sloshing_fft(dayfile_content: str) -> dict:
     """
     Detect charge sloshing via frequency-domain (FFT) analysis.

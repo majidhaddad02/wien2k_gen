@@ -47,23 +47,55 @@ def recommend_numa_strategy(
 ) -> ParallelizationStrategy:
     """Recommend NUMA-aware parallelization strategy.
 
-    Based on Blaha et al. CPC 185 (2014): for large systems (nmat > 5000),
-    accessing memory from non-local NUMA nodes can cause 20-40% performance loss.
-    Use 1 MPI rank per NUMA node + OpenMP threads within each node.
+    Based on Blaha et al. CPC 185 (2014): granular parallelization is only
+    effective when each MPI rank has multiple k-points (kpts_per_mpi > 10)
+    and nmat exceeds 10000. For systems with nmat 5000-10000, granular
+    overhead outweighs benefits.
+
+    Also checks memory bandwidth: if < 50 GB/s, increasing MPI ranks
+    provides no benefit since LAPW1 is memory-bound.
     """
     total_cores = sum(topology.cores_per_node)
     max_cores = min(available_cores, total_cores) if available_cores > 0 else total_cores
 
     try:
-        from ..core.hardware import get_numa_node_count
+        from ..core.hardware import get_memory_bandwidth_gb_s, get_numa_node_count
         numa_nodes = get_numa_node_count()
+        mem_bw = get_memory_bandwidth_gb_s()
     except Exception:
         numa_nodes = len(topology.nodes)
+        mem_bw = float("inf")
 
-    is_large_system = nmat > 5000
-    is_medium_system = 2000 < nmat <= 5000
+    is_very_large = nmat > 10000
+    is_large = 5000 < nmat <= 10000
+    low_bandwidth = mem_bw < 50.0
+    nmpi = max(nkpt, 1)
+    kpts_per_mpi = nkpt / nmpi if nmpi > 0 else 0
 
-    if is_large_system and numa_nodes > 1:
+    if low_bandwidth:
+        logger.warning(f"Memory bandwidth {mem_bw:.1f} GB/s < 50 GB/s. "
+                       f"LAPW1 is memory-bound; additional MPI ranks yield no benefit.")
+
+    if is_very_large and numa_nodes > 1 and kpts_per_mpi > 10:
+        ranks = min(numa_nodes, max_cores)
+        omp = min(max_cores // ranks, 16)
+        granularity = min(16, max(1, int(kpts_per_mpi / 2)))
+        return ParallelizationStrategy(
+            mode="numa_aware",
+            mpi_ranks=ranks,
+            omp_threads=omp,
+            cores_per_node=[ranks],
+            numa_binding=True,
+            granularity=granularity,
+            efficiency_pct=85.0,
+            recommendation=(
+                f"NUMA-aware granular: {ranks} ranks × {omp} threads, granular={granularity} "
+                f"across {numa_nodes} NUMA nodes. Expected ~30% improvement for very large "
+                f"systems (nmat={nmat}). Use `numactl --membind` for memory locality."
+            ),
+        )
+
+    if is_large and numa_nodes > 1:
         ranks = min(numa_nodes, max_cores)
         omp = min(max_cores // ranks, 16)
         return ParallelizationStrategy(
@@ -73,11 +105,10 @@ def recommend_numa_strategy(
             cores_per_node=[ranks],
             numa_binding=True,
             granularity=1,
-            efficiency_pct=85.0,
+            efficiency_pct=80.0,
             recommendation=(
-                f"NUMA-aware: {ranks} ranks × {omp} threads across {numa_nodes} NUMA nodes. "
-                f"Expected ~30% improvement for large systems (nmat={nmat}). "
-                f"Use `numactl --membind` for memory locality."
+                f"Standard NUMA: {ranks} ranks × {omp} threads. "
+                f"nmat={nmat} below granular threshold (10000); granular overhead avoided."
             ),
         )
 
@@ -163,24 +194,24 @@ def recommend_io_strategy(
     """
     result: Dict[str, object] = {}
 
-    if nmat > 8000:
+    if nmat > 10000:
         result["granularity"] = 16
         result["vector_split"] = 4 if nkpt < 8 else 2
         result["nowrite_vector"] = True
         result["recommendation"] = (
-            f"Large system (nmat={nmat}): enable granular={16}, "
+            f"Very large system (nmat={nmat}): enable granular={16}, "
             f"vector_split={result['vector_split']}, nowrite for .vector. "
             f"Expect 25-40% I/O reduction."
         )
-    elif nmat > 4000:
+    elif nmat > 5000:
         result["granularity"] = 8
         result["vector_split"] = 2 if nkpt < 16 else 1
         result["nowrite_vector"] = False
         result["recommendation"] = (
-            f"Medium system (nmat={nmat}): enable granular={8}. "
+            f"Large system (nmat={nmat}): enable granular={8}. "
             f"Collective I/O recommended for parallel filesystems."
         )
-    else:
+    elif nmat > 2500:
         result["granularity"] = 1
         result["vector_split"] = 0
         result["nowrite_vector"] = False
@@ -215,6 +246,14 @@ def recommend_rkmax(atomic_numbers: List[int], calculation_type: str = "scf") ->
         base = 7.0
     elif max_z > 20:
         base = 6.5
+    elif nmat > 2500:
+        result["granularity"] = 4
+        result["vector_split"] = 1
+        result["nowrite_vector"] = False
+        result["recommendation"] = (
+            f"Moderate system (nmat={nmat}): granular={4}. "
+            f"Group k-points to reduce I/O overhead."
+        )
     else:
         base = 6.0
 
@@ -287,3 +326,91 @@ def recommend_mkl_threading(nmat: int, nkpt: int) -> int:
     elif nmat > 2000:
         return 8
     return 0  # use default
+
+
+def recommend_weighted_kpoint_distribution(
+    nkpt: int,
+    nmpi: int,
+    k_weights: Optional[List[float]] = None,
+    symmetry_weight: bool = True,
+) -> Dict[int, List[int]]:
+    """Distribute k-points weighted by computational cost per k-point.
+
+    Equal distribution of k-points across MPI ranks assumes all k-points
+    require equal computation. In reality:
+    - k-points near Fermi surface require more SCF iterations
+    - k-points with lower symmetry have more plane waves
+    - Hybrid functional k-points have non-uniform cost
+
+    This function computes a weighted distribution minimizing the
+    maximum total weight per rank (bin-packing heuristic).
+
+    Args:
+        nkpt: Total number of k-points
+        nmpi: Number of MPI ranks
+        k_weights: Optional list of per-kpoint computational weights.
+                   If None, weights are estimated from symmetry heuristics.
+        symmetry_weight: If True and no explicit weights, estimate weights
+                        from IBZ (irreducible Brillouin zone) distribution.
+
+    Returns:
+        Dict mapping rank index (0..nmpi-1) to list of k-point indices.
+    """
+    if nmpi <= 1:
+        return {0: list(range(nkpt))}
+
+    if not k_weights or len(k_weights) != nkpt:
+        k_weights = _estimate_kpoint_weights(nkpt, symmetry_weight)
+
+    weighted = sorted(
+        [(i, k_weights[i] if i < len(k_weights) else 1.0) for i in range(nkpt)],
+        key=lambda x: -x[1],
+    )
+
+    rank_loads = [0.0] * nmpi
+    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(nmpi)}
+
+    for k_idx, weight in weighted:
+        min_rank = min(range(nmpi), key=lambda r: rank_loads[r])
+        rank_loads[min_rank] += weight
+        rank_kpts[min_rank].append(k_idx)
+
+    avg_load = sum(k_weights) / nmpi if k_weights else nkpt / nmpi
+    max_load = max(rank_loads)
+    imbalance = (max_load / avg_load - 1.0) * 100 if avg_load > 0 else 0.0
+
+    logger.info(
+        f"K-point weighted distribution: {nkpt} kpts → {nmpi} ranks, "
+        f"imbalance={imbalance:.1f}% (lower is better)"
+    )
+
+    if imbalance > 50.0:
+        logger.warning(
+            f"Severe k-point load imbalance ({imbalance:.0f}%). "
+            f"Consider increasing granularity or using k-point parallel."
+        )
+
+    return rank_kpts
+
+
+def _estimate_kpoint_weights(nkpt: int, symmetry_weight: bool = True) -> List[float]:
+    """Estimate k-point computational weights from symmetry heuristics.
+
+    Without explicit IBZ data, we estimate on the assumption that
+    k-points near the zone boundary (index > nkpt/2) may have
+    different plane-wave counts than zone-center k-points.
+    """
+    weights = [1.0] * nkpt
+    if not symmetry_weight or nkpt < 4:
+        return weights
+
+    mid = nkpt // 2
+    for i in range(nkpt):
+        if i < mid // 3:
+            weights[i] = 0.8
+        elif i > 2 * nkpt // 3:
+            weights[i] = 1.3
+        else:
+            weights[i] = 1.0
+
+    return weights

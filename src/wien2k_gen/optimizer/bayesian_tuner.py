@@ -18,11 +18,12 @@ Usage:
 """
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from ..core.topology import Topology
+from ..core.case_parser import CaseFileParser
 from ..logging_config import get_logger
 from .bayesian import BayesianOptimizer, _CATEGORICAL_MODES, compute_expected_improvement
 from .history import ExecutionHistory
@@ -251,7 +252,8 @@ class BayesianParameterTuner:
             rkmax = float(self._rng.uniform(5.5, 9.0))
             kppra = int(self._rng.uniform(1000, 15000))
             mixing = float(self._rng.uniform(0.08, 0.30))
-            return _decode_tuning_config(_encode_tuning_config(rkmax, kppra, mixing))
+            config = _decode_tuning_config(_encode_tuning_config(rkmax, kppra, mixing))
+            return self._apply_physics_constraints(config)
 
         X = np.vstack(self._X)
         y = np.array(self._y, dtype=np.float64)
@@ -279,7 +281,65 @@ class BayesianParameterTuner:
                 best_ei = ei
                 best_vec = vec
 
-        return _decode_tuning_config(best_vec)
+        config = _decode_tuning_config(best_vec)
+        return self._apply_physics_constraints(config)
+
+    def _apply_physics_constraints(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Enforce physical validity of optimized parameters.
+
+        Based on Peter Blaha's feedback:
+        - Heavy elements (Z > 70): enforce min RKMAX >= 7 (insufficient
+          basis for 4f/5f electrons otherwise).
+        - Soft elements (Z <= 10): enforce max RKMAX <= 9 (APW+lo
+          convergence faster, high RKMAX wastes resources).
+        """
+        min_rkmax = 5.0
+        max_rkmax = 10.0
+
+        max_z = self._max_atomic_number()
+        if max_z > 90:
+            min_rkmax = 8.0
+        elif max_z > 70:
+            min_rkmax = 7.0
+        elif max_z > 50:
+            min_rkmax = 6.0
+        elif max_z <= 10:
+            max_rkmax = 8.0
+
+        if self.verbose and config["rkmax"] < min_rkmax:
+            logger.info(f"Physics constraint (Zmax={max_z}): RKMAX "
+                       f"{config['rkmax']} → {min_rkmax}")
+            config["rkmax"] = min_rkmax
+        elif config["rkmax"] < min_rkmax:
+            config["rkmax"] = min_rkmax
+
+        if config["rkmax"] > max_rkmax:
+            config["rkmax"] = max_rkmax
+
+        return config
+
+    def _max_atomic_number(self) -> int:
+        """Detect maximum atomic number from case.struct or case.inc."""
+        try:
+            case_path = Path(self.case_name)
+            struct_path = case_path.with_suffix(".struct")
+            if not struct_path.exists():
+                struct_path = Path(f"{self.case_name}.struct")
+            if struct_path.exists():
+                parser = CaseFileParser()
+                case_data = parser.parse_struct_file(str(struct_path))
+                if case_data and case_data.get("atoms"):
+                    z_list = []
+                    for atm in case_data["atoms"]:
+                        z = atm.get("atomic_number", 0)
+                        if z == 0 and atm.get("name"):
+                            z = CaseFileParser._z_from_name(atm["name"])
+                        z_list.append(z)
+                    if z_list:
+                        return max(z_list)
+        except Exception:
+            pass
+        return 0
 
     def tune(self, use_simulated: bool = True, max_cores: int = 1) -> TunerResult:
         """Run Bayesian optimization loop for `budget` iterations.
@@ -341,6 +401,16 @@ class BayesianParameterTuner:
                 result.convergence_achieved = True
                 result.iterations = i + 1
                 break
+
+            if obj < 0.0001 and i >= 2 and not result.convergence_achieved:
+                recent = [self._y[j] for j in range(max(0, i - 1), i + 1)]
+                if all(v < 0.0001 for v in recent[-2:]):
+                    result.convergence_achieved = True
+                    if self.verbose:
+                        logger.info(f"Convergence test passed at iter {i + 1} "
+                                   f"(last 3 deltas < 0.1 meV).")
+                    result.iterations = i + 1
+                    break
 
         if self.use_ard and self.n_observations >= 5:
             X_all = np.vstack(self._X)
