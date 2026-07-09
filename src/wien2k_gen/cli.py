@@ -132,6 +132,10 @@ def create_parser() -> argparse.ArgumentParser:
     diag_p.add_argument("--export", type=str, default=None, help="Save diagnostic report to path")
     diag_p.add_argument("--full", action="store_true", help="Include verbose library & interconnect checks")
 
+    hw_p = subparsers.add_parser("hardware", help="Show hardware info and parallelization recommendations")
+    hw_p.add_argument("--recommend", "-r", action="store_true", help="Show NUMA/hybrid/IO optimization advice")
+    hw_p.add_argument("--case", type=str, default=None, help="Case name for problem-specific recommendations")
+
     ana_p = subparsers.add_parser("analyze", help="Parse SCF logs & generate performance reports")
     ana_p.add_argument("--log", type=str, required=True, help="Path to SCF/output log file")
     ana_p.add_argument("--code", type=str, choices=["wien2k", "vasp", "qe"], default=None, help="Force DFT code parser")
@@ -144,6 +148,23 @@ def create_parser() -> argparse.ArgumentParser:
     mon_p.add_argument("case", type=str, nargs="?", default=None, help="Case name to monitor (omit to list active jobs)")
     mon_p.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds (default: 2)")
     mon_p.add_argument("--output", type=str, default=None, help="SCF output file to parse")
+
+    run_p = subparsers.add_parser("run", help="Execute a WIEN2k workflow from YAML")
+    run_p.add_argument("workflow_file", type=str, help="Path to workflow.yaml")
+    run_p.add_argument("--auto-retry", action="store_true", default=True, help="Auto-retry on convergence failure")
+    run_p.add_argument("--no-retry", action="store_true", help="Disable auto-retry")
+    run_p.add_argument("--max-retries", type=int, default=3, help="Maximum retry attempts (default: 3)")
+    run_p.add_argument("--poll", type=float, default=5.0, help="Job polling interval in seconds (default: 5)")
+
+    wf_p = subparsers.add_parser("workflow", help="Generate workflow YAML templates")
+    wf_p.add_argument("action", type=str, choices=["create", "list", "visualize"], help="Workflow action")
+    wf_p.add_argument("--case", type=str, default="case", help="Case name")
+    wf_p.add_argument("--steps", type=str, default="scf,dos,band", help="Comma-separated workflow steps")
+    wf_p.add_argument("--output", type=str, default=None, help="Output YAML path")
+
+    diag_scf = subparsers.add_parser("diagnose", help="Diagnose SCF convergence issues")
+    diag_scf.add_argument("case", type=str, nargs="?", default=None, help="Case name to diagnose")
+    diag_scf.add_argument("--log", type=str, default=None, help="Path to .scf or .output file")
 
     conv_p = subparsers.add_parser("converge", help="Run automated convergence tests")
     conv_p.add_argument("--case", type=str, required=True, help="Case name")
@@ -403,6 +424,91 @@ def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any
         return {"run_id": result["run_id"], "status": result["status"], "wall_time": result["wall_time_sec"]}
 
 
+def _handle_hardware(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Show hardware info with optional NUMA/hybrid/IO optimization recommendations."""
+    from .core.hardware import (
+        get_cpu_architecture,
+        get_cpu_generation,
+        get_numa_node_count,
+        get_physical_cores,
+        get_scratch_filesystem_type,
+        get_system_type,
+        get_total_mem_kb,
+    )
+    from .core.topology import Topology
+    from .optimizer.parallel import (
+        recommend_gmax,
+        recommend_io_strategy,
+        recommend_lapw0_strategy,
+        recommend_mkl_threading,
+        recommend_numa_strategy,
+        recommend_rkmax,
+    )
+
+    cores = get_physical_cores()
+    arch = get_cpu_architecture()
+    generation = get_cpu_generation()
+    sys_type = get_system_type()
+    ram_gb = get_total_mem_kb() / (1024 * 1024)
+    numa = get_numa_node_count()
+    scratch = get_scratch_filesystem_type()
+
+    table = Table(title="Hardware Profile", border_style="blue")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("CPU", f"{generation} ({arch})")
+    table.add_row("Cores", str(cores))
+    table.add_row("NUMA Nodes", str(numa))
+    table.add_row("RAM", f"{ram_gb:.1f} GB")
+    table.add_row("System Type", sys_type)
+    table.add_row("Scratch FS", scratch)
+    console.print(table)
+
+    if args.recommend:
+        nmat = 2000
+        nkpt = 8
+        atoms = 10
+        if args.case:
+            try:
+                from .core.case_parser import CaseFileParser
+                parser = CaseFileParser(args.case)
+                data = parser.parse_all()
+                nmat = data.nmat or 2000
+                atoms = data.atoms or 10
+                nkpt = data.kpoints or 8
+            except Exception:
+                console.print("[dim]Case parsing failed — using defaults[/dim]")
+
+        rec_table = Table(title="Parallelization Recommendations", border_style="green")
+        rec_table.add_column("Strategy", style="bold cyan")
+        rec_table.add_column("Details", style="green")
+
+        numa_rec = recommend_numa_strategy(
+            Topology(nodes=["n1"], cores_per_node=[cores]), nmat, nkpt, atoms,
+        )
+        rec_table.add_row("NUMA-Aware", numa_rec.recommendation)
+
+        lapw0_rec = recommend_lapw0_strategy(
+            Topology(nodes=["n1"], cores_per_node=[cores]), nmat,
+        )
+        rec_table.add_row("LAPW0 (Hybrid)", lapw0_rec.recommendation)
+
+        io_rec = recommend_io_strategy(nmat, nkpt, atoms, scratch)
+        rec_table.add_row("I/O", str(io_rec.get("recommendation", "-")))
+
+        rkmax_rec = recommend_rkmax([26], "scf")
+        gmax_rec = recommend_gmax(rkmax_rec, "scf")
+        rec_table.add_row("RKMAX/GMAX", f"RKMAX={rkmax_rec}, GMAX={gmax_rec} (SCF)")
+
+        mkl_threads = recommend_mkl_threading(nmat, nkpt)
+        rec_table.add_row("MKL Threads", str(mkl_threads) if mkl_threads else "use default")
+
+        console.print(rec_table)
+        return {"status": "displayed", "nmat": nmat, "nkpt": nkpt, "cores": cores}
+
+    return {"cores": cores, "arch": arch, "generation": generation}
+
+
 def _handle_diagnostics(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Collect & export system diagnostics."""
     report = run_diagnostics()
@@ -463,6 +569,139 @@ def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     else:
         console.print(list_active_jobs())
         return {"status": "listed"}
+
+
+def _handle_run(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Execute a WIEN2k workflow from a YAML file."""
+    try:
+        from .core.workflow_executor import run_workflow_from_yaml
+    except ImportError as e:
+        return {"error": f"Workflow executor not available: {e}"}
+
+    auto_retry = not args.no_retry
+    console.print(Panel(
+        f"[cyan]Executing Workflow[/]\n"
+        f"File: [bold]{args.workflow_file}[/]\n"
+        f"Auto-retry: [{'green' if auto_retry else 'red'}]{auto_retry}[/]\n"
+        f"Max retries: {args.max_retries}",
+        border_style="blue",
+    ))
+
+    status = run_workflow_from_yaml(
+        args.workflow_file,
+        auto_retry=auto_retry,
+        max_retries=args.max_retries,
+        poll_interval=args.poll,
+    )
+
+    if status.state.value == "completed":
+        console.print(f"[green]Workflow completed in {status.elapsed_total:.1f}s[/green]")
+    else:
+        console.print(f"[red]Workflow {status.state.value}: {len([e for e in status.events if 'Error' in e or 'Failed' in e])} errors[/red]")
+
+    return {"status": status.state.value, "elapsed": status.elapsed_total, "events": status.events}
+
+
+def _handle_workflow(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Generate workflow YAML templates."""
+    steps = [s.strip() for s in args.steps.split(",")]
+
+    if args.action == "list":
+        tasks = []
+        prev = None
+        for i, step in enumerate(steps):
+            node_id = f"{args.case}_{step}"
+            tasks.append((step, str(i + 1), prev if prev else "-"))
+            prev = node_id
+
+        table = Table(title=f"Workflow: {args.case}", border_style="cyan")
+        table.add_column("Step", style="bold")
+        table.add_column("Order")
+        table.add_column("Depends On")
+        for task in tasks:
+            table.add_row(*task)
+        console.print(table)
+        return {"status": "listed", "steps": steps}
+
+    yaml_content = f"# WIEN2k workflow generated by wien2k_gen\ncase: {args.case}\nsteps: [{', '.join(steps)}]\nscheduler: auto\nauto_retry: true\nmax_retries: 3\npoll_interval: 5.0\n"
+    output = args.output or f"{args.case}_workflow.yaml"
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(yaml_content)
+
+    console.print(f"[green]Workflow template saved to {output}[/green]")
+    console.print(f"  Steps: {', '.join(steps)}")
+    return {"status": "created", "output": output, "steps": steps}
+
+
+def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """SCF convergence diagnostics."""
+    import re as _re
+
+    scf_path = None
+    if args.log:
+        scf_path = Path(args.log)
+    elif args.case:
+        scf_path = Path(f"{args.case}.scf")
+    else:
+        matches = sorted(Path(".").glob("*.scf*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        scf_path = matches[0] if matches else None
+
+    if not scf_path or not scf_path.exists():
+        console.print("[red]No SCF output file found.[/red]")
+        return {"error": "No SCF file found"}
+
+    content = scf_path.read_text(encoding="utf-8", errors="replace")
+
+    energy_matches = _re.findall(r":ENE\s*:\s*.*?(-?\d+\.\d+)", content)
+    charge_matches = _re.findall(r":DIS\s*:\s*.*?(\d+\.\d+)", content)
+
+    energies = [float(e) for e in energy_matches]
+    charges = [float(c) for c in charge_matches]
+
+    table = Table(title=f"SCF Diagnostics: {scf_path.name}", border_style="blue")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Cycles completed", str(len(energies)))
+    table.add_row("Final energy", f"{energies[-1]:.6f} Ry" if energies else "N/A")
+    table.add_row("Final charge distance", f"{charges[-1]:.6f}" if charges else "N/A")
+
+    converged = "charge convergence" in content.lower() or "energy convergence" in content.lower()
+    table.add_row("Converged", f"[{'green' if converged else 'red'}]{converged}[/]")
+
+    if len(charges) >= 3:
+        ratios = []
+        for i in range(1, len(charges)):
+            if charges[i - 1] > 1e-12:
+                ratios.append(charges[i] / charges[i - 1])
+        avg_ratio = sum(ratios) / len(ratios) if ratios else 1.0
+        table.add_row("Avg charge ratio", f"{avg_ratio:.3f}")
+        if avg_ratio > 1.01:
+            table.add_row("Diagnosis", "[red]Divergent — reduce mixing beta or enable PRATT[/red]")
+        elif avg_ratio < 0.95:
+            table.add_row("Diagnosis", "[green]Converging monotonically[/green]")
+        else:
+            table.add_row("Diagnosis", "[yellow]Oscillatory — reduce mixing[/yellow]")
+
+    if len(energies) >= 2:
+        deltas = [abs(energies[i] - energies[i - 1]) for i in range(1, len(energies))]
+        sign_changes = sum(1 for i in range(1, len(deltas)) if deltas[i] * deltas[i - 1] < 0)
+        oscillation_pct = sign_changes / max(1, len(deltas) - 1) * 100 if len(deltas) > 1 else 0
+        table.add_row("Energy oscillations", f"{oscillation_pct:.1f}%")
+        if oscillation_pct > 40:
+            table.add_row("Recommendation", "[red]Charge sloshing — reduce mixing beta[/red]")
+
+    error_detected = any(p in content.lower() for p in ("qtl-b", "lapw crashed", "not converged", "segmentation fault"))
+    if error_detected:
+        table.add_row("Errors detected", "[red]Yes — review output file[/red]")
+
+    console.print(table)
+
+    return {
+        "converged": converged,
+        "cycles": len(energies),
+        "error_detected": error_detected,
+        "final_energy": energies[-1] if energies else 0.0,
+    }
 
 
 def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
@@ -672,9 +911,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         "submit": _handle_submit,
         "benchmark": _handle_benchmark,
         "diagnostics": _handle_diagnostics,
+        "hardware": _handle_hardware,
         "analyze": _handle_analyze,
         "tui": _handle_tui,
         "monitor": _handle_monitor,
+        "run": _handle_run,
+        "workflow": _handle_workflow,
+        "diagnose": _handle_diagnose,
         "converge": _handle_converge,
         "history": _handle_history,
         "analyze-bands": _handle_analyze_bands,
