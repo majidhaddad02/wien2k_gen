@@ -99,8 +99,8 @@ def __getattr__(name: str) -> Any:
         from .wizard_sbatch import run_sbatch_wizard
         return run_sbatch_wizard
     if name == "launch_tui":
-        from .ui.interactive import launch_app
-        return launch_app
+        from .core.terminal_monitor import launch_monitor
+        return launch_monitor
         
     # Config & Logging (Explicit access)
     if name == "get_config":
@@ -165,7 +165,7 @@ def __dir__() -> List[str]:
         "build_auto", "build_mpi", "build_hybrid", "build_kpoint",
         "get_backend", "set_backend", "list_backends", "get_current_backend",
         "setup_scratch", "cleanup_scratch", "write_parallel_options",
-        "run_wizard", "run_sbatch_wizard", "launch_tui",
+        "run_wizard", "run_sbatch_wizard", "launch_monitor",
         "get_config", "load_config",
         "PipelineResult", "ResourceSuggestion", "TopologyData",
         "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",

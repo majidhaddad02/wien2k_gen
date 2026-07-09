@@ -215,7 +215,8 @@ class LogManager:
 def setup_logging(
     config: Optional["AppConfig"] = None,
     verbose: int = 0,
-    quiet: bool = False
+    quiet: bool = False,
+    log_file: Optional[str] = None,
 ) -> logging.Logger:
     """
     Initialize logging system based on AppConfig and CLI flags.

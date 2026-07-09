@@ -253,16 +253,17 @@ class ConfigManager:
 
         # Enum validation for log_level
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if cfg.log_level.upper() not in valid_levels:
+        if cfg.log_level and cfg.log_level.upper() not in valid_levels:
             errors.append(f"Invalid log_level: {cfg.log_level}. Use one of: {sorted(valid_levels)}")
 
         # Enum validation for backend
         from .types import BackendCode
-        try:
-            BackendCode(cfg.backend.lower())
-        except ValueError:
-            valid_backends = [b.value for b in BackendCode]
-            errors.append(f"Unsupported backend: {cfg.backend}. Use one of: {valid_backends}")
+        if cfg.backend:
+            try:
+                BackendCode(cfg.backend.lower())
+            except ValueError:
+                valid_backends = [b.value for b in BackendCode]
+                errors.append(f"Unsupported backend: {cfg.backend}. Use one of: {valid_backends}")
             
         return errors
 

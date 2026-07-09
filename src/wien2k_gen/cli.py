@@ -47,7 +47,7 @@ from .submit import SUBMIT_PROVIDERS
 from .submit.slurm import SlurmDirectives, SlurmJobSpec, submit_slurm_job
 from .types import BackendCode, ExecutionMode, OptimizationTarget, PipelineResult
 from .ui.analysis import generate_report, parse_scf_log
-from .ui.interactive import launch_app
+from .core.terminal_monitor import launch_monitor, list_active_jobs
 from .ui.rich_ui import detect_terminal_capabilities, get_plain_console, get_rich_console
 from .utils.diagnostic import export_diagnostics_json, run_diagnostics
 
@@ -141,9 +141,9 @@ def create_parser() -> argparse.ArgumentParser:
     tui_p.add_argument("--compact", action="store_true", help="Enable compact UI layout")
 
     mon_p = subparsers.add_parser("monitor", help="Monitor SCF convergence in real-time")
-    mon_p.add_argument("--case", type=str, required=True, help="Case name / path to monitor")
+    mon_p.add_argument("case", type=str, nargs="?", default=None, help="Case name to monitor (omit to list active jobs)")
+    mon_p.add_argument("--interval", type=float, default=2.0, help="Polling interval in seconds (default: 2)")
     mon_p.add_argument("--output", type=str, default=None, help="SCF output file to parse")
-    mon_p.add_argument("--interval", type=int, default=10, help="Polling interval in seconds (default: 10)")
 
     conv_p = subparsers.add_parser("converge", help="Run automated convergence tests")
     conv_p.add_argument("--case", type=str, required=True, help="Case name")
@@ -448,43 +448,21 @@ def _handle_analyze(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
 
 
 def _handle_tui(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
-    """Launch interactive TUI application."""
-    if args.json_output:
-        return {"status": "tui_launch_skipped_in_json_mode"}
-    launch_app()
-    return {"status": "tui_exited"}
+    """Interactive terminal UI removed. Use `wien2k_gen monitor` for live SCF display."""
+    console.print("[yellow]TUI has been removed. Use `wien2k_gen monitor [case]` for live SCF monitoring.[/yellow]")
+    return {"status": "tui_removed"}
 
 
 def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
-    """Monitor SCF convergence in real-time."""
-    try:
-        from .core.scheduler import detect as detect_topology
-        from .optimizer.monitor import get_monitor_status, start_monitoring, stop_monitoring
-    except ImportError as e:
-        return {"error": f"Monitor module dependencies not available: {e}"}
+    """Monitor SCF convergence with live Rich terminal display."""
+    if args.json_output:
+        return {"status": "monitor_skipped_in_json_mode"}
 
-    topo = detect_topology()
-    console.print(Panel(f"[cyan]Starting SCF Monitor[/]\nCase: [bold]{args.case}[/]\nInterval: {args.interval}s", border_style="blue"))
-
-    output_path = args.output or f"{args.case}.scf"
-    os.environ["WIEN2K_SCF_LOG"] = output_path
-    
-    try:
-        start_monitoring(topo, check_interval=args.interval, daemon=False)
-        while True:
-            status = get_monitor_status()
-            if not status.get("running"):
-                break
-            if status.get("events"):
-                last_events = status.get("events", [])[-5:]
-                for evt in last_events:
-                    console.print(f"[dim]{evt}[/dim]")
-            time.sleep(args.interval)
-    except KeyboardInterrupt:
-        stop_monitoring()
-        console.print("[yellow]Monitoring stopped by user.[/yellow]")
-    
-    return {"status": "monitoring_ended", "case": args.case}
+    if args.case:
+        return launch_monitor(job_name=args.case, interval=args.interval)
+    else:
+        console.print(list_active_jobs())
+        return {"status": "listed"}
 
 
 def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
@@ -670,7 +648,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     try:
         cfg = load_config(file_path=args.config, cli_override={
-            "log_level": "DEBUG" if args.verbose > 0 else "ERROR" if args.quiet else None,
+            "log_level": "DEBUG" if args.verbose > 0 else "ERROR" if args.quiet else "INFO",
             "quiet_mode": args.quiet,
             "backend": args.backend
         })

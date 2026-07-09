@@ -1,15 +1,8 @@
 """
-UI Package Initialization for Wien2kGen TUI.
-Exports the main interactive application, CLI fallback entrypoints, shared UI components,
-and analysis/worker modules. Designed for modular, type-safe integration with the core HPC pipeline.
+UI Package — Terminal output formatting and SCF log analysis.
+Provides Rich-based console formatting, analysis reports, and visualization.
 """
 
-# =============================================================================
-# Main TUI Application & CLI Fallbacks
-# =============================================================================
-# =============================================================================
-# Log Analysis & Scaling Engine
-# =============================================================================
 from .analysis import (
     AnalysisReport,
     ScalingMetrics,
@@ -18,58 +11,28 @@ from .analysis import (
     parse_scf_log,
     visualize_scaling,
 )
-from .interactive import Wien2kGenApp, launch_app
 from .rich_ui import (
     CLIWorkflowRunner,
     launch_cli_mode,
     print_banner,
+    print_error_panel,
+    print_warning_panel,
+    print_topology,
+    print_pipeline_result,
+    print_diagnostics,
+    print_table_from_dict,
 )
 
-# =============================================================================
-# Reusable UI Components
-# =============================================================================
-from .widgets import (
-    LogPanel,
-    ResourceSummaryTable,
-    StatusIndicator,
-    ValidatedInput,
-)
-
-# =============================================================================
-# Background Task Orchestrators
-# =============================================================================
-from .workers import (
-    BackgroundTask,
-    HPCWorkerOrchestrator,
-    WorkerCompletedMessage,
-    WorkerConfig,
-    WorkerFailedMessage,
-    WorkerStartedMessage,
-)
-
-# =============================================================================
-# Explicit Public API Declaration
-# =============================================================================
 __all__ = [
-    # App & CLI
-    "Wien2kGenApp",
-    "launch_app",
-    "launch_cli_mode",
     "CLIWorkflowRunner",
+    "launch_cli_mode",
     "print_banner",
-    # Widgets
-    "StatusIndicator",
-    "LogPanel",
-    "ResourceSummaryTable",
-    "ValidatedInput",
-    # Workers
-    "HPCWorkerOrchestrator",
-    "BackgroundTask",
-    "WorkerConfig",
-    "WorkerStartedMessage",
-    "WorkerCompletedMessage",
-    "WorkerFailedMessage",
-    # Analysis
+    "print_error_panel",
+    "print_warning_panel",
+    "print_topology",
+    "print_pipeline_result",
+    "print_diagnostics",
+    "print_table_from_dict",
     "parse_scf_log",
     "visualize_scaling",
     "generate_report",
