@@ -166,6 +166,26 @@ def create_parser() -> argparse.ArgumentParser:
     diag_scf.add_argument("case", type=str, nargs="?", default=None, help="Case name to diagnose")
     diag_scf.add_argument("--log", type=str, default=None, help="Path to .scf or .output file")
 
+    opt_p = subparsers.add_parser("optimize", help="Bayesian auto-tuning of RKMAX, k-points, mixing")
+    opt_p.add_argument("--case", type=str, default="case", help="WIEN2k case name")
+    opt_p.add_argument("--budget", type=int, default=10, help="Max DFT runs (default: 10)")
+    opt_p.add_argument("--target", type=str, default="energy_convergence", help="Target metric")
+    opt_p.add_argument("--simulated", action="store_true", help="Use simulated objective for testing")
+    opt_p.add_argument("--verbose", "-v", action="store_true", help="Show iteration details")
+
+    screen_p = subparsers.add_parser("screen", help="High-throughput screening via Materials Project")
+    screen_p.add_argument("--formula", type=str, default=None, help="Chemical formula (e.g. ABO3, LiFePO4)")
+    screen_p.add_argument("--elements", type=str, default=None, help="Comma-separated elements (e.g. Ti,O,Zr)")
+    screen_p.add_argument("--mp-id", type=str, default=None, help="Single Materials Project ID")
+    screen_p.add_argument("--max", type=int, default=50, help="Max materials (default: 50)")
+    screen_p.add_argument("--api-key", type=str, default=None, help="Materials Project API key")
+    screen_p.add_argument("--output", type=str, default=None, help="Output directory")
+
+    pred_p = subparsers.add_parser("predict", help="Predict SCF convergence time before calculation")
+    pred_p.add_argument("--case", type=str, default="case", help="WIEN2k case name")
+    pred_p.add_argument("--struct", type=str, default=None, help="Path to .struct file")
+    pred_p.add_argument("--no-history", action="store_true", help="Skip ML training from history")
+
     conv_p = subparsers.add_parser("converge", help="Run automated convergence tests")
     conv_p.add_argument("--case", type=str, required=True, help="Case name")
     conv_p.add_argument("--mode", type=str, choices=["kpoints", "rkmax", "both"], default="both", help="Parameter to converge (default: both)")
@@ -704,6 +724,168 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     }
 
 
+def _handle_optimize(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Bayesian auto-tuning of RKMAX, k-points, and mixing parameter."""
+    try:
+        from .optimizer.bayesian_tuner import optimize_convergence_parameters
+    except ImportError as e:
+        return {"error": f"Bayesian tuner not available: {e}"}
+
+    console.print(Panel(
+        f"[cyan]Bayesian Parameter Optimization[/]\n"
+        f"Case: [bold]{args.case}[/] | Budget: [bold]{args.budget} runs[/] | "
+        f"Target: [bold]{args.target}[/]",
+        border_style="magenta",
+    ))
+
+    result = optimize_convergence_parameters(
+        case_name=args.case,
+        budget=args.budget,
+        use_simulated=args.simulated,
+        verbose=args.verbose,
+    )
+
+    table = Table(title="Optimization Results", border_style="green")
+    table.add_column("Parameter", style="cyan")
+    table.add_column("Optimal Value", style="green bold")
+    table.add_column("Uncertainty", style="dim")
+    table.add_row("RKMAX", f"{result.best_rkmax:.1f}", f"±{result.uncertainty_rkmax:.2f}")
+    table.add_row("KPPRA", str(result.best_kppra), "-")
+    table.add_row("Mixing β", f"{result.best_mixing:.4f}", f"±{result.uncertainty_mixing:.4f}")
+    table.add_row("ΔE (best)", f"{result.best_energy:.6f} Ry", "")
+    table.add_row("Iterations", str(result.iterations), "")
+    table.add_row("Converged", f"[{'green' if result.convergence_achieved else 'red'}]{result.convergence_achieved}[/]", "")
+    console.print(table)
+
+    if result.observations:
+        hist_table = Table(title="Iteration History", border_style="dim")
+        hist_table.add_column("#", style="dim")
+        hist_table.add_column("RKMAX")
+        hist_table.add_column("KPPRA")
+        hist_table.add_column("Mixing")
+        hist_table.add_column("ΔE (Ry)")
+        for obs in result.observations[-8:]:
+            hist_table.add_row(
+                str(obs["iteration"]), f"{obs['rkmax']:.1f}",
+                str(obs["kppra"]), f"{obs['mixing']:.4f}",
+                f"{obs['delta_energy']:.6f}",
+            )
+        console.print(hist_table)
+
+    return {
+        "rkmax": result.best_rkmax,
+        "kppra": result.best_kppra,
+        "mixing": result.best_mixing,
+        "delta_energy": result.best_energy,
+        "converged": result.convergence_achieved,
+    }
+
+
+def _handle_screen(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """High-throughput screening via Materials Project API."""
+    try:
+        from .core.materials_project import screen_materials
+    except ImportError as e:
+        return {"error": f"Materials Project client not available: {e}"}
+
+    elements_list = args.elements.split(",") if args.elements else None
+
+    console.print(Panel(
+        f"[cyan]Materials Project Screening[/]\n"
+        f"Query: [bold]{args.formula or args.elements or args.mp_id}[/] | "
+        f"Max: [bold]{args.max}[/]",
+        border_style="blue",
+    ))
+
+    result = screen_materials(
+        formula=args.formula,
+        elements=elements_list,
+        mp_id=args.mp_id,
+        max_results=args.max,
+        api_key=args.api_key,
+        output_dir=args.output,
+    )
+
+    table = Table(title="Screening Results", border_style="green")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Total found", str(result.total_found))
+    table.add_row("Downloaded", str(result.downloaded))
+    table.add_row("Converted to .struct", str(result.converted))
+    table.add_row("Errors", f"[{'red' if result.errors else 'green'}]{len(result.errors)}[/]")
+    console.print(table)
+
+    if result.materials[:10]:
+        mat_table = Table(title="Materials (first 10)", border_style="dim")
+        mat_table.add_column("MP-ID", style="cyan")
+        mat_table.add_column("Formula", style="bold")
+        mat_table.add_column("Band Gap (eV)")
+        mat_table.add_column("E_above_hull (eV/at)")
+        for mat in result.materials[:10]:
+            gap_color = "green" if mat.band_gap > 0 else "red"
+            mat_table.add_row(
+                mat.mp_id, mat.formula,
+                f"[{gap_color}]{mat.band_gap:.2f}[/{gap_color}]",
+                f"{mat.energy_above_hull:.3f}",
+            )
+        console.print(mat_table)
+
+    if result.errors:
+        for err in result.errors[:5]:
+            console.print(f"[dim]  - {err}[/dim]")
+
+    return {"downloaded": result.downloaded, "converted": result.converted, "errors": len(result.errors)}
+
+
+def _handle_predict(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Predict SCF convergence time and probability before calculation."""
+    try:
+        from .optimizer.ml_predict import ConvergencePrediction, predict_convergence
+    except ImportError as e:
+        return {"error": f"ML predictor not available: {e}"}
+
+    console.print(Panel(
+        f"[cyan]SCF Convergence Prediction[/]\n"
+        f"Case: [bold]{args.case}[/]",
+        border_style="magenta",
+    ))
+
+    use_history = not args.no_history
+    pred = predict_convergence(
+        case_name=args.case,
+        struct_path=args.struct,
+        use_history=use_history,
+    )
+
+    table = Table(title=f"Prediction: {args.case}", border_style="blue")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green bold")
+    table.add_row("Estimated SCF time", f"{pred.estimated_time_hours:.1f} ± {pred.time_uncertainty_hours:.1f} hours")
+    table.add_row("Convergence probability", f"{pred.convergence_probability * 100:.0f}%")
+    table.add_row("Estimated SCF cycles", str(pred.estimated_cycles))
+    table.add_row("Recommended mixing", f"β = {pred.recommended_mixing:.3f}")
+    difficulty_color = {"easy": "green", "moderate": "yellow", "hard": "red", "very_hard": "red"}
+    table.add_row("Difficulty", f"[{difficulty_color.get(pred.convergence_difficulty, 'white')}]{pred.convergence_difficulty}[/]")
+    console.print(table)
+
+    if pred.feature_importance:
+        sorted_features = sorted(pred.feature_importance.items(), key=lambda x: -x[1])[:5]
+        fi_table = Table(title="Top Feature Importance", border_style="dim")
+        fi_table.add_column("Feature", style="cyan")
+        fi_table.add_column("Importance", style="green")
+        for feat, imp in sorted_features:
+            fi_table.add_row(feat, f"{imp:.3f}")
+        console.print(fi_table)
+
+    return {
+        "estimated_hours": pred.estimated_time_hours,
+        "uncertainty_hours": pred.time_uncertainty_hours,
+        "convergence_probability": pred.convergence_probability,
+        "recommended_mixing": pred.recommended_mixing,
+        "difficulty": pred.convergence_difficulty,
+    }
+
+
 def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Run automated convergence testing."""
     try:
@@ -918,6 +1100,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "run": _handle_run,
         "workflow": _handle_workflow,
         "diagnose": _handle_diagnose,
+        "optimize": _handle_optimize,
+        "screen": _handle_screen,
+        "predict": _handle_predict,
         "converge": _handle_converge,
         "history": _handle_history,
         "analyze-bands": _handle_analyze_bands,

@@ -296,7 +296,8 @@ class _GaussianProcessARD(_GaussianProcess):
             alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
             Kinv = np.linalg.solve(L.T, np.linalg.solve(L, np.eye(n)))
 
-            nll = 0.5 * float(y.T @ alpha) + float(np.sum(np.log(np.diag(L)))) + \
+            quad = float((y.T @ alpha).item())
+            nll = 0.5 * quad + float(np.sum(np.log(np.diag(L)))) + \
                   0.5 * n * math.log(2.0 * math.pi)
             if nll < best_nll:
                 best_nll = nll
