@@ -1213,7 +1213,7 @@ class Wien2kBackend(Backend):
 
         Strategy selection order:
           1. Hybrid functionals (nmat > 5000) → band + k-point parallel
-          2. Very large systems (nmat > 15000) with ELPA → fine_grain
+           2. Very large systems (nmat > 8000) with ELPA → fine_grain
           3. Large systems (nmat > 5000) with many cores → core parallel
           4. Default → k-point parallel with granularity for I/O
         """
@@ -1228,7 +1228,7 @@ class Wien2kBackend(Backend):
                 "bands_per_group": bands_per_group,
             }
 
-        if nmat > 15000 and kpoints <= 2 and elpa_ok:
+        if nmat > 8000 and kpoints <= 2 and elpa_ok:
             return {
                 "strategy": "fine_grain_elpa",
                 "reason": f"Very large system (nmat={nmat}): "

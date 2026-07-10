@@ -394,7 +394,7 @@ def run_wizard(topo=None) -> None:
     advanced_opts = {}
 
     advanced_opts["use_elpa"] = Confirm.ask(
-        "Enable ELPA eigensolver for large systems (nmat > 15000)?",
+        "Enable ELPA eigensolver for large systems (nmat > 8000)?",
         console=console, default=False
     )
     if advanced_opts["use_elpa"]:

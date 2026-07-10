@@ -335,22 +335,53 @@ def recommend_elpa_solver(
     nkpt: int,
     is_soc: bool = False,
     is_hybrid: bool = False,
+    num_cores: int = 0,
 ) -> Optional[str]:
     """Recommend ELPA solver stage based on problem characteristics.
 
-    Ref: ELPA documentation and WIEN2k integration guide.
+    Threshold lowered to 8000 based on Thomas Ruh (2023) PhD thesis benchmarks
+    showing ELPA crossover at nmat ≈ 8000 for modern multicore nodes.
+
+    Ref: ELPA documentation, WIEN2k integration guide, Ruh 2023.
     """
     if nmat < 500:
         return None
 
+    if nmat > 8000:
+        return "elpa2"
+    if nmat > 5000 and num_cores > 64:
+        return "elpa2"
     if nmat > 5000 or (is_soc and nmat > 2000):
         return "elpa2"
     if is_hybrid:
         return "elpa2"
-    if nmat > 1000:
+    if nmat > 2000:
         return "elpa1"
 
     return None
+
+
+def should_use_elpa(nmat: int, num_cores: int = 0) -> bool:
+    """Determine if ELPA eigensolver should be used.
+
+    Decision matrix based on Ruh 2023 benchmarks:
+        nmat > 8000 → True (ELPA always faster)
+        nmat > 5000 AND num_cores > 64 → True (better scalability)
+        nmat > 5000 AND is_soc → True
+        otherwise → False
+
+    Warns if nmat < 5000 (ELPA overhead exceeds benefits).
+    """
+    if nmat > 8000:
+        return True
+    if nmat > 5000 and num_cores > 64:
+        return True
+    if nmat < 5000 and nmat > 500:
+        logger.warning(
+            f"ELPA overhead may exceed benefits for small systems "
+            f"(nmat={nmat} < 5000). Consider using ScaLAPACK."
+        )
+    return False
 
 
 def recommend_mkl_threading(nmat: int, nkpt: int) -> int:
@@ -455,3 +486,179 @@ def _estimate_kpoint_weights(nkpt: int, symmetry_weight: bool = True) -> List[fl
             weights[i] = 1.0
 
     return weights
+
+
+def detect_numa_topology() -> Dict[str, Any]:
+    """Detect NUMA topology via numactl or hwloc.
+
+    Returns dict with:
+        num_nodes: int — number of NUMA nodes
+        cores_per_node: List[int] — physical cores per node
+        total_cores: int — total physical cores
+        detected: bool — whether NUMA was detected
+    """
+    result: Dict[str, Any] = {
+        "num_nodes": 1,
+        "cores_per_node": [1],
+        "total_cores": 1,
+        "detected": False,
+    }
+
+    # Try numactl --hardware (most reliable on Linux HPC)
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["numactl", "--hardware"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode == 0:
+            text = proc.stdout
+            node_match = re.findall(r'node\s+(\d+)\s+cpus:', text)
+            core_counts = []
+            for nm in node_match:
+                cpus_line = re.search(
+                    rf'node\s+{nm}\s+cpus:\s+([\d\s]+)', text)
+                if cpus_line:
+                    cpus = [int(c) for c in cpus_line.group(1).split()]
+                    core_counts.append(len(cpus))
+            if core_counts:
+                result["num_nodes"] = len(core_counts)
+                result["cores_per_node"] = core_counts
+                result["total_cores"] = sum(core_counts)
+                result["detected"] = True
+                return result
+    except Exception:
+        pass
+
+    # Fallback: check /sys/devices/system/node
+    try:
+        node_dirs = sorted(Path("/sys/devices/system/node").glob("node[0-9]*"))
+        if node_dirs:
+            core_counts = []
+            for nd in node_dirs:
+                cpulist = nd / "cpulist"
+                if cpulist.exists():
+                    cpus = cpulist.read_text().strip()
+                    ranges = cpus.split(",")
+                    count = 0
+                    for r in ranges:
+                        if "-" in r:
+                            a, b = r.split("-")
+                            count += int(b) - int(a) + 1
+                        else:
+                            count += 1
+                    core_counts.append(count)
+            if core_counts:
+                result["num_nodes"] = len(core_counts)
+                result["cores_per_node"] = core_counts
+                result["total_cores"] = sum(core_counts)
+                result["detected"] = True
+                return result
+    except Exception:
+        pass
+
+    # Final fallback: assume single NUMA node
+    import os
+    cpu_count = os.cpu_count() or 1
+    result["total_cores"] = cpu_count
+    result["cores_per_node"] = [cpu_count]
+    return result
+
+
+def numa_aware_kpoint_distribution(
+    kpoints: int,
+    numa_nodes: int,
+    cores_per_node: List[int],
+    k_weights: Optional[List[float]] = None,
+) -> Dict[str, Any]:
+    """Distribute k-points across NUMA nodes for local memory access.
+
+    Algorithm:
+      1. Sort k-points by weight (descending)
+      2. Round-robin allocation to NUMA nodes
+      3. Each NUMA node processes only its local k-points
+      4. Compute balance_ratio = min_load / max_load
+
+    Returns dict with:
+        node_kpts: Dict[int, List[int]] — k-point indices per NUMA node
+        node_cores: Dict[int, int] — cores allocated per NUMA node
+        balance_ratio: float — load balance quality (1.0 = perfect)
+        recommendation: str
+    """
+    if k_weights is None:
+        k_weights = [1.0] * kpoints
+    if len(k_weights) != kpoints:
+        k_weights = [1.0] * kpoints
+
+    # Sort k-points by weight descending for greedy allocation
+    indexed = sorted(enumerate(k_weights), key=lambda x: -x[1])
+
+    node_loads = [0.0] * numa_nodes
+    node_kpts: Dict[int, List[int]] = {n: [] for n in range(numa_nodes)}
+    node_cores: Dict[int, int] = {
+        n: cores_per_node[n] if n < len(cores_per_node) else 1
+        for n in range(numa_nodes)
+    }
+
+    # Round-robin allocation
+    for i, (k_idx, weight) in enumerate(indexed):
+        best_node = i % numa_nodes
+        node_loads[best_node] += weight
+        node_kpts[best_node].append(k_idx)
+
+    # Compute balance ratio
+    max_load = max(node_loads) if node_loads else 1.0
+    min_load = min(node_loads) if node_loads else 1.0
+    balance_ratio = min_load / max_load if max_load > 0 else 1.0
+
+    recommendation = (
+        f"NUMA-aware distribution: {numa_nodes} nodes, "
+        f"{kpoints} k-points, balance_ratio={balance_ratio:.3f}"
+    )
+
+    if balance_ratio < 0.90:
+        logger.warning(
+            f"NUMA load imbalance detected (ratio={balance_ratio:.3f}). "
+            f"Consider adjusting k-point distribution or increasing granularity."
+        )
+        recommendation += " [yellow]WARNING: imbalance > 10%[/]"
+
+    logger.info(recommendation)
+
+    return {
+        "node_kpts": node_kpts,
+        "node_cores": node_cores,
+        "balance_ratio": round(balance_ratio, 4),
+        "recommendation": recommendation,
+    }
+
+
+def generate_numa_aware_machines(
+    case_name: str,
+    node_kpts: Dict[int, List[int]],
+    node_cores: Dict[int, int],
+    hostname_prefix: str = "node",
+) -> str:
+    """Generate .machines entries with explicit NUMA grouping.
+
+    Format:
+        # NUMA Node 0
+        lapw1:node01:4
+        lapw1:node02:4
+
+        # NUMA Node 1
+        lapw1:node03:4
+
+    Returns multi-line string suitable for writing to .machines.
+    """
+    lines = ["# NUMA-aware .machines — generated by wien2k_gen"]
+    for node_idx in sorted(node_kpts.keys()):
+        cores = node_cores.get(node_idx, 1)
+        kpt_list = node_kpts[node_idx]
+        lines.append(f"# NUMA Node {node_idx} — {len(kpt_list)} k-points")
+        entries_needed = max(len(kpt_list), 1)
+        for i in range(entries_needed):
+            hostname = f"{hostname_prefix}{node_idx + 1:02d}"
+            lines.append(f"lapw1:{hostname}:{cores}")
+        lines.append("")
+    return "\n".join(lines)
