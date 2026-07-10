@@ -193,6 +193,15 @@ def create_parser() -> argparse.ArgumentParser:
     conv_p.add_argument("--kpoints", type=str, default="2,2,2 4,4,4 6,6,6 8,8,8 10,10,10", help="Space-separated k-point grids (default: '2,2,2 4,4,4 6,6,6 8,8,8 10,10,10')")
     conv_p.add_argument("--rkmax", type=str, default="5,6,7,8,9,10", help="Comma-separated RKmax values (default: '5,6,7,8,9,10')")
 
+    advise_p = subparsers.add_parser("advise", help="Get intelligent optimization advice (Roofline, Amdahl, NUMA)")
+    advise_p.add_argument("--case", type=str, default="case", help="WIEN2k case name for problem-aware advice")
+    advise_p.add_argument("--nmat", type=int, default=None, help="Override matrix size (detected from case if not given)")
+    advise_p.add_argument("--kpoints", type=int, default=None, help="Override k-point count")
+    advise_p.add_argument("--cores", type=int, default=None, help="Target total cores")
+    advise_p.add_argument("--target", type=str, choices=["time", "energy", "cost", "balanced"], default="time", help="Optimization goal (default: time)")
+    advise_p.add_argument("--plain", action="store_true", help="Show advice in simple language (non-expert mode)")
+    advise_p.add_argument("--json", action="store_true", help="Export advice as JSON")
+
     hist_p = subparsers.add_parser("history", help="Query execution history database")
     hist_p.add_argument("--list", action="store_true", help="List past runs")
     hist_p.add_argument("--show", type=str, default=None, help="Show details of run ID")
@@ -886,6 +895,252 @@ def _handle_predict(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     }
 
 
+def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+    """Show intelligent optimization advice with Roofline, Amdahl, NUMA analysis.
+
+    This is the UI layer that connects the backend intelligence to the user,
+    answering Peter Blaha's critique about hidden backend smarts.
+    """
+    from .core.hardware import (
+        calculate_peak_fp64_gflops,
+        get_cpu_architecture,
+        get_memory_bandwidth_gb_s,
+        get_numa_node_count,
+        get_physical_cores,
+    )
+    from .optimizer.advisor import (
+        estimate_amdahl_saturation,
+        estimate_max_kp_cores_roofline,
+    )
+    from .core.case_parser import CaseFileParser
+
+    plain = getattr(args, "plain", False)
+    target = getattr(args, "target", "time")
+
+    case_path = Path(args.case)
+    case_data = None
+    try:
+        parser = CaseFileParser(case_path if case_path.exists() else None)
+        case_data = parser.parse_all()
+    except Exception:
+        pass
+
+    atoms = getattr(case_data, "atoms", 10) if case_data else 10
+    nmat = args.nmat or (getattr(case_data, "nmat", 0) if case_data else 5000)
+    kpoints = args.kpoints or (getattr(case_data, "kpoints", 0) if case_data else 8)
+
+    if nmat == 0:
+        nmat = 5000
+    if kpoints == 0:
+        kpoints = 8
+
+    cores = args.cores or get_physical_cores()
+    arch = get_cpu_architecture()
+    mem_bw = get_memory_bandwidth_gb_s()
+    peak_gflops = calculate_peak_fp64_gflops()
+    numa_nodes = get_numa_node_count()
+
+    from .core.scheduler import detect as detect_topology
+    topo = detect_topology(max_cores=cores)
+
+    if args.json:
+        import json as _json
+        result = _build_advice_dict(
+            nmat=nmat, kpoints=kpoints, atoms=atoms, cores=cores,
+            arch=arch, mem_bw=mem_bw, peak_gflops=peak_gflops,
+            numa_nodes=numa_nodes, topo=topo, plain=plain, target=target,
+        )
+        console.print_json(_json.dumps(result))
+        return result
+
+    _print_advice_rich(
+        nmat=nmat, kpoints=kpoints, atoms=atoms, cores=cores,
+        arch=arch, mem_bw=mem_bw, peak_gflops=peak_gflops,
+        numa_nodes=numa_nodes, topo=topo, plain=plain, target=target,
+    )
+
+    return {"status": "advice_displayed"}
+
+
+def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
+                       peak_gflops, numa_nodes, topo, plain, target):
+    """Build structured advice dictionary for JSON export."""
+    from .optimizer.advisor import (
+        estimate_amdahl_saturation,
+        roofline_crossover_analysis,
+    )
+    roofline = roofline_crossover_analysis(
+        {"mem_bw_gb_s": mem_bw, "arch": arch, "peak_fp64_gflops": peak_gflops},
+        oi=0.15, target_backend="wien2k_lapw1",
+    )
+    amdahl = estimate_amdahl_saturation(kpoints, nmat, atoms, cores)
+
+    return {
+        "hardware": {
+            "cpu_arch": arch,
+            "cores": cores,
+            "numa_nodes": numa_nodes,
+            "memory_bandwidth_gb_s": mem_bw,
+            "peak_fp64_gflops": peak_gflops,
+        },
+        "problem": {
+            "nmat": nmat, "kpoints": kpoints, "atoms": atoms,
+        },
+        "roofline": {
+            "regime": roofline["regime"],
+            "efficiency_pct": roofline["efficiency_pct"],
+            "optimal_cores": roofline["optimal_cores"],
+            "suggestion": roofline["suggestion"],
+        },
+        "amdahl": amdahl,
+    }
+
+
+def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
+                       peak_gflops, numa_nodes, topo, plain, target):
+    """Print rich terminal advice panel with Roofline + Amdahl + suggestions."""
+    from .optimizer.advisor import (
+        estimate_amdahl_saturation,
+        roofline_crossover_analysis,
+    )
+    import os as _os
+    _os.environ.setdefault("WIEN2K_NO_DETECT", "1")
+    roofline = roofline_crossover_analysis(
+        {"mem_bw_gb_s": mem_bw, "arch": arch, "peak_fp64_gflops": peak_gflops},
+        oi=0.15, target_backend="wien2k_lapw1",
+    )
+    amdahl = estimate_amdahl_saturation(kpoints, nmat, atoms, cores)
+
+    if plain:
+        _lang = _build_plain_language()
+    else:
+        _lang = {}
+
+    console.print(Panel(
+        f"[cyan bold]WIEN2k Optimization Advisor[/]\n"
+        f"System: {nmat}×{nmat} matrix, {kpoints} k-points, {atoms} atoms | "
+        f"[dim]{arch} • {cores} cores • {numa_nodes} NUMA nodes • {mem_bw:.0f} GB/s mem[/]\n"
+        f"[dim]Target: optimize for [bold]{target}[/][/]",
+        border_style="cyan",
+    ))
+
+    bottleneck = None
+    if roofline["regime"] == "memory_bound" and mem_bw < 100:
+        label = "Memory Bandwidth" if not plain else "Memory Bandwidth"
+        msg = ("حافظه کم آوردی — MPI بیشتر اضافه نکن، OpenMP بده" if plain
+               else "LAPW1 is memory-hungry — extra MPI ranks won't help, use OpenMP instead")
+        bottleneck = (f"[red]{label}[/]", "red", msg)
+    elif isinstance(amdahl, dict) and amdahl.get("saturation_cores", cores) < max(cores * 0.6, 1):
+        sat = amdahl["saturation_cores"]
+        label = "Amdahl Saturation" if not plain else "Amdahl Saturation"
+        msg = (f"قانون آمال میگه بیش از {sat} هسته بی‌فایده‌ست" if plain
+               else f"More than {sat} cores won't improve performance (Amdahl's Law)")
+        bottleneck = (f"[yellow]{label}[/]", "yellow", msg)
+
+    if bottleneck:
+        console.print(Panel(bottleneck[2], title=bottleneck[0], border_style=bottleneck[1]))
+
+    table = Table(title=("تحلیل عملکرد" if plain else "Performance Analysis"), border_style="blue")
+    table.add_column(("معیار" if plain else "Metric"), style="cyan")
+    table.add_column(("مقدار" if plain else "Value"), style="green bold")
+    table.add_column(("یعنی چه" if plain else "What This Means"), style="dim")
+
+    regime_fa = "محدود به حافظه — MPI اضافی کمکی نمی‌کند" if roofline["regime"] == "memory_bound" else "محدود به پردازنده — MPI بیشتر جواب می‌دهد"
+    regime_en = "Memory bottleneck — extra MPI won't help" if roofline["regime"] == "memory_bound" else "CPU-limited — more MPI will help"
+    table.add_row(
+        ("نوع گلوگاه" if plain else "Roofline Regime"),
+        f"[{'red' if roofline['regime'] == 'memory_bound' else 'green'}]{roofline['regime'].replace('_', ' ').title()}[/]",
+        roofline_label := (regime_fa if plain else regime_en),
+    )
+    table.add_row(
+        ("کارایی Roofline" if plain else "Roofline Efficiency"),
+        f"{roofline['efficiency_pct']:.0f}%", "",
+    )
+    table.add_row(
+        ("تعداد هستهٔ بهینه" if plain else "Optimal Cores (Roofline)"),
+        str(roofline["optimal_cores"]),
+        ("با این تعداد بهترین کارایی رو می‌گیری" if plain else "Best efficiency at this core count"),
+    )
+
+    if isinstance(amdahl, dict):
+        sat_cores = amdahl.get("saturation_cores", cores)
+        eff = amdahl.get("efficiency_pct", 100.0)
+        table.add_row(
+            ("اشباع آمال" if plain else "Amdahl Saturation"),
+            str(sat_cores),
+            ("فراتر از این تعداد، بهبود محسوسی نداری" if plain else "Beyond this, speedup plateaus"),
+        )
+        table.add_row(
+            ("کارایی آمال" if plain else "Amdahl Efficiency"),
+            f"{eff:.0f}%", "",
+        )
+    else:
+        sat_cores = cores
+        eff = 100.0
+
+    console.print(table)
+
+    rec_table = Table(title=("پیشنهادات" if plain else "Recommendations"), border_style="green")
+    rec_table.add_column("#", style="dim")
+    rec_table.add_column(("اقدام" if plain else "Action"), style="cyan bold")
+    rec_table.add_column(("دلیل" if plain else "Why"), style="dim")
+    rec_table.add_column(("تأثیر" if plain else "Impact"), style="green")
+
+    counter = 1
+    if roofline["regime"] == "memory_bound":
+        rec_table.add_row(str(counter),
+            ("OpenMP رو زیاد کن، MPI کم کن" if plain else "Increase OpenMP threads, reduce MPI ranks"),
+            ("پهنای باند حافظه اشباع شده" if plain else "Memory bandwidth saturated"),
+            ("بالا" if plain else "HIGH"))
+        counter += 1
+        if omp := (cores // max(1, numa_nodes)):
+            rec_table.add_row(str(counter),
+                f"export OMP_NUM_THREADS={omp}",
+                ("هر رتبهٔ MPI روی یک گرهٔ NUMA" if plain else "One MPI rank per NUMA node"),
+                ("بالا" if plain else "HIGH"))
+            counter += 1
+    elif sat_cores < cores * 0.7:
+        rec_table.add_row(str(counter),
+            (f"حداکثر {sat_cores} هسته استفاده کن" if plain else f"Limit to {sat_cores} cores"),
+            ("قانون آمال — بیش از این هدر رفته" if plain else "Amdahl's Law — more is wasted"),
+            ("متوسط" if plain else "MEDIUM"))
+        counter += 1
+
+    if nmat > 5000:
+        rec_table.add_row(str(counter),
+            "lapw2_vector_split: 1" if not plain else "lapw2_vector_split رو فعال کن",
+            ("کاهش I/O برای ماتریس بزرگ" if plain else "Large matrix I/O reduction"),
+            ("متوسط" if plain else "MEDIUM"))
+        counter += 1
+
+    if kpoints > 1 and kpoints % cores != 0:
+        rec_table.add_row(str(counter),
+            ("تعداد k-point رو مضربی از هسته‌ها کن" if plain else "Set k-points to a multiple of core count"),
+            ("توزیع نامتوازن بار" if plain else "Uneven load distribution"),
+            ("متوسط" if plain else "MEDIUM"))
+        counter += 1
+
+    console.print(rec_table)
+    console.print(f"\n[dim]➤ Run [bold]wien2k_gen optimize --simulated[/] to auto-tune RKMAX/KPPRA/mixing[/]")
+    console.print(f"[dim]➤ Run [bold]wien2k_gen generate[/] to produce optimized .machines[/]")
+
+
+_SIMPLE_LANGUAGE = {
+    "memory_bound": "حافظه کم آوردی — MPI بیشتر اضافه نکن، OpenMP بده",
+    "compute_bound": "پردازنده محدودیت داره — MPI بیشتر جواب میده",
+    "rkmax": "اندازهٔ مجموعهٔ پایه (هرچی بیشتر = دقیق‌تر ولی کندتر)",
+    "kppra": "تعداد k-point (نقاط نمونه‌برداری در فضای انرژی)",
+    "mixing": "سرعت همگرایی SCF (کمتر = پایدارتر ولی کندتر)",
+    "granularity": "تعداد k-point در هر گروه موازی",
+    "elpa": "کتابخانهٔ قطری‌سازی سریع برای ماتریس‌های بزرگ",
+    "nuam": "معماری حافظهٔ غیریکنواخت — دسترسی به حافظهٔ نزدیک سریع‌تره",
+}
+
+
+def _build_plain_language():
+    return _SIMPLE_LANGUAGE
+
+
 def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Run automated convergence testing."""
     try:
@@ -1103,6 +1358,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "optimize": _handle_optimize,
         "screen": _handle_screen,
         "predict": _handle_predict,
+        "advise": _handle_advise,
         "converge": _handle_converge,
         "history": _handle_history,
         "analyze-bands": _handle_analyze_bands,
