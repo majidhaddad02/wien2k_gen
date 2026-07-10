@@ -532,10 +532,12 @@ def diagnose_charge_sloshing_root_cause(
 
 _SLOSHING_REMEDIATION = {
     "metallic": [
+        {"action": "set_kerker_mixing", "params": {"q0": 0.1, "beta": 0.10},
+         "reason": "Kerker preconditioned mixing suppresses long-wavelength charge sloshing in metals"},
         {"action": "set_smearing", "params": {"type": "Methfessel-Paxton", "width_ry": 0.02},
          "reason": "Metallic systems require Fermi surface smearing to stabilize SCF"},
-        {"action": "set_mixing", "params": {"beta": 0.10},
-         "reason": "Use PRATT mixing with beta=0.10 for metals"},
+        {"action": "set_mixing", "params": {"beta": 0.10, "method": "PRATT"},
+         "reason": "Backup: PRATT mixing with beta=0.10 if Kerker fails"},
         {"action": "increase_kpoints", "params": {"factor": 2.0},
          "reason": "Denser k-mesh captures Fermi surface better"},
     ],

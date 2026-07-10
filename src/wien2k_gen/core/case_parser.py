@@ -21,6 +21,7 @@ References:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +31,7 @@ __all__ = [
     "CaseData",
     "CaseFileParser",
     "LDAUData",
+    "check_struct_quality",
     "parse_case_directory",
 ]
 
@@ -790,3 +792,155 @@ def try_float(s: str) -> Optional[float]:
         return float(s)
     except (ValueError, TypeError):
         return None
+
+
+def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
+    """Check WIEN2k .struct file for common issues.
+
+    Ref: Blaha et al., WIEN2k User Guide — struct preparation.
+    Warns about:
+      - RMT sphere overlaps (>10% overlap triggers strong warning)
+      - Very small RMT for light elements (O, F, N)
+      - Zone symbol / Wyckoff position warnings
+
+    Returns dict with:
+        warnings: List[str]
+        errors: List[str]
+        rmt_data: List[dict] — per-atom RMT/Z/position info
+    """
+    result: Dict[str, Any] = {"warnings": [], "errors": [], "rmt_data": []}
+
+    try:
+        content = struct_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        result["errors"].append(f"Cannot read struct file: {struct_path}")
+        return result
+
+    lines = content.splitlines()
+
+    # Extract lattice constants
+    a, b, c = 1.0, 1.0, 1.0
+    alpha, beta, gamma = 90.0, 90.0, 90.0
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) >= 6:
+            vals = [try_float(p) for p in parts[:6]]
+            if all(v is not None for v in vals):
+                a, b, c = vals[0], vals[1], vals[2]
+                alpha, beta, gamma = vals[3], vals[4], vals[5]
+                break
+
+    alpha_r, beta_r, gamma_r = (
+        math.radians(alpha), math.radians(beta), math.radians(gamma))
+
+    # Fractional → Cartesian conversion
+    ca, cb, cg = math.cos(alpha_r), math.cos(beta_r), math.cos(gamma_r)
+    sg = math.sin(gamma_r)
+    cart_matrix = (
+        (a, b * cg, c * cb),
+        (0.0, b * sg, c * (ca - cb * cg) / sg if sg > 1e-12 else 0.0),
+        (0.0, 0.0, c * math.sqrt(1 - ca*ca - cb*cb - cg*cg + 2*ca*cb*cg) / sg
+         if sg > 1e-12 else c),
+    )
+
+    def frac_to_cart(x, y, z):
+        vx = cart_matrix[0][0] * x + cart_matrix[0][1] * y + cart_matrix[0][2] * z
+        vy = cart_matrix[1][0] * x + cart_matrix[1][1] * y + cart_matrix[1][2] * z
+        vz = cart_matrix[2][0] * x + cart_matrix[2][1] * y + cart_matrix[2][2] * z
+        return (vx, vy, vz)
+
+    # Parse ATOM entries
+    atom_positions = []
+    atom_rmts = []
+    atom_zs = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        m = re.match(r'ATOM\s+\d+:\s+X=\s*([\d\.\-]+)\s+Y=\s*([\d\.\-]+)\s+Z=\s*([\d\.\-]+)', line, re.IGNORECASE)
+        if m:
+            x = float(m.group(1))
+            y = float(m.group(2))
+            z = float(m.group(3))
+            atom_positions.append((x, y, z))
+            # Next lines: MULT, then atom data with RMT
+            if i + 2 < len(lines):
+                data_line = lines[i + 2].strip()
+                rmt_match = re.search(r'RMT\s*=\s*([\d\.]+)', data_line, re.IGNORECASE)
+                z_match = re.search(r'Z\s*:\s*([\d\.]+)', data_line, re.IGNORECASE)
+                atom_rmts.append(float(rmt_match.group(1)) if rmt_match else 0.0)
+                atom_zs.append(int(float(z_match.group(1))) if z_match else 0)
+            else:
+                atom_rmts.append(0.0)
+                atom_zs.append(0)
+        i += 1
+
+    if not atom_positions:
+        result["warnings"].append("No ATOM positions found in struct — file may be incomplete")
+        return result
+
+    for idx, (pos, rmt, z) in enumerate(zip(atom_positions, atom_rmts, atom_zs)):
+        result["rmt_data"].append({
+            "index": idx, "x": pos[0], "y": pos[1], "z": pos[2],
+            "rmt": rmt, "z": z,
+        })
+
+    # Check RMT overlaps between inequivalent atoms
+    for i in range(len(atom_positions)):
+        for j in range(i + 1, len(atom_positions)):
+            pi = atom_positions[i]
+            pj = atom_positions[j]
+            rmt_sum = atom_rmts[i] + atom_rmts[j]
+            if rmt_sum <= 0:
+                continue
+
+            cart_i = frac_to_cart(*pi)
+            cart_j = frac_to_cart(*pj)
+            dist = math.sqrt(
+                (cart_i[0] - cart_j[0])**2 +
+                (cart_i[1] - cart_j[1])**2 +
+                (cart_i[2] - cart_j[2])**2
+            )
+
+            overlap = rmt_sum - dist
+            overlap_pct = (overlap / dist) * 100 if dist > 0 else 100.0
+
+            if overlap_pct > 30:
+                result["errors"].append(
+                    f"CRITICAL: RMT spheres overlap by {overlap_pct:.0f}% "
+                    f"between atom {i} (RMT={atom_rmts[i]:.2f}) and atom {j} "
+                    f"(RMT={atom_rmts[j]:.2f}). Reduce RMT to < 0.85×nearest-neighbor distance."
+                )
+            elif overlap_pct > 10:
+                result["warnings"].append(
+                    f"RMT spheres overlap by {overlap_pct:.0f}% between "
+                    f"atom {i} and atom {j}. Consider reducing RMT to avoid linearization errors."
+                )
+            elif overlap_pct > 0:
+                result["warnings"].append(
+                    f"Marginal RMT overlap ({overlap_pct:.1f}%) between "
+                    f"atom {i} and atom {j}. Monitor SCF convergence."
+                )
+
+    # Warn about small RMT for light hard elements (O, F, N)
+    hard_z = {8, 9, 7}
+    for idx, (rmt, z) in enumerate(zip(atom_rmts, atom_zs)):
+        if z in hard_z:
+            if rmt < 1.4:
+                result["warnings"].append(
+                    f"Atom {idx} (Z={z}) has very small RMT={rmt:.2f} bohr. "
+                    f"Hard potentials of light elements need RKMAX ≥ 7.0 for convergence."
+                )
+
+    # Wyckoff / symmetry heuristic
+    if "MULT" in content and "NONEQUIV.ATOMS" in content:
+        m = re.search(r'NONEQUIV\.ATOMS\s*:\s*\d+\s+(\d+)[-_]', content, re.IGNORECASE)
+        if m:
+            sg = int(m.group(1))
+            if sg < 2:
+                result["warnings"].append(
+                    f"Spacegroup {sg}: triclinic — ensure exact Wyckoff positions "
+                    f"to avoid symmetry breaking during SCF"
+                )
+
+    return result

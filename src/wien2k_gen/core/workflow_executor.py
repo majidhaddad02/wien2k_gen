@@ -214,10 +214,39 @@ class WorkflowExecutor:
         time.sleep(10)
 
     def _adjust_mixing(self, attempt: int) -> None:
-        """Reduce mixing parameter on retry to stabilise SCF convergence."""
+        """Adjust mixing parameters on retry to stabilise SCF convergence.
+
+        Blaha critique: blind mixing reduction is insufficient for metals.
+        Kerker preconditioned mixing is required for long-wavelength charge
+        sloshing in metallic systems with Fermi surfaces.
+        """
         mixing_file = Path(".mixing_params")
         factors = {1: 0.70, 2: 0.50, 3: 0.30}
         factor = factors.get(attempt, 0.25)
+
+        is_metallic = self._check_if_metallic()
+
+        if is_metallic:
+            if mixing_file.exists():
+                current = mixing_file.read_text(encoding="utf-8", errors="replace").strip()
+                try:
+                    current_val = float(current)
+                    new_val = current_val * factor
+                except ValueError:
+                    new_val = 0.15
+                mixing_file.write_text(f"{new_val:.4f}", encoding="utf-8")
+            else:
+                mixing_file.write_text("0.15", encoding="utf-8")
+
+            kerker_file = Path(".kerker_params")
+            kerker_file.write_text(
+                "PRATT 1.0 1\n"
+                "KERKER 0.3\n", encoding="utf-8")
+            self.status.events.append(
+                f"Metallic system detected: Kerker mixing enabled (q0=0.3, "
+                f"beta={new_val:.4f}) to suppress charge sloshing"
+            )
+            return
 
         if mixing_file.exists():
             current = mixing_file.read_text(encoding="utf-8", errors="replace").strip()
@@ -228,6 +257,27 @@ class WorkflowExecutor:
                 self.status.events.append(f"Mixing adjusted: {current_val:.4f} → {new_val:.4f}")
             except ValueError:
                 mixing_file.write_text(f"{0.3 * factor:.4f}", encoding="utf-8")
+        else:
+            mixing_file.write_text(f"{0.3 * factor:.4f}", encoding="utf-8")
+            self.status.events.append(f"Mixing initialized: {0.3 * factor:.4f}")
+
+    def _check_if_metallic(self) -> bool:
+        """Check if the system is metallic from case.scf file."""
+        for scf_path in [Path("case.scf"), Path(".", "case.scf")]:
+            if not scf_path.exists():
+                scf_paths = list(Path(".").glob("*.scf"))
+                scf_path = scf_paths[0] if scf_paths else None
+            if scf_path and scf_path.exists():
+                text = scf_path.read_text(encoding="utf-8", errors="replace")
+                gap_match = re.search(r':GAP\s*:\s*(-?\d+\.\d+)', text)
+                if gap_match:
+                    gap = float(gap_match.group(1))
+                    if gap < 0.1:
+                        return True
+                if "FERMI" in text:
+                    return True
+                break
+        return False
 
     def _submit_node(self, node: WorkflowNode) -> str:
         case_name = node.parameters.get("case", "case")

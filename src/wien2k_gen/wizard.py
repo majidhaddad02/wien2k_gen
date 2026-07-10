@@ -386,6 +386,54 @@ def run_wizard(topo=None) -> None:
             warn_table.add_row("[yellow]•[/]", f"[dim]{w}[/dim]")
         console.print(warn_table)
 
+    # 3.5 Advanced Options (ELPA, Bayesian, Weighted K-points, Struct Check)
+    console.print("\n[bold cyan]Step 3.5: Advanced Physics Options[/bold cyan]")
+    console.print(Rule(style="dim"))
+    console.print("[dim]Configure advanced HPC and ML-based optimizations.[/dim]")
+
+    advanced_opts = {}
+
+    advanced_opts["use_elpa"] = Confirm.ask(
+        "Enable ELPA eigensolver for large systems (nmat > 15000)?",
+        console=console, default=False
+    )
+    if advanced_opts["use_elpa"]:
+        sug_dict["use_elpa"] = True
+        console.print("[green]  → ELPA solver enabled for diagonalization[/green]")
+
+    advanced_opts["use_bayesian"] = Confirm.ask(
+        "Use Bayesian optimization for RKMAX/mixing tuning?",
+        console=console, default=False
+    )
+    if advanced_opts["use_bayesian"]:
+        sug_dict["use_bayesian"] = True
+        console.print("[green]  → Bayesian optimization will tune RKMAX and mixing[/green]")
+
+    advanced_opts["weighted_kpoints"] = Confirm.ask(
+        "Use weighted k-point distribution (bin-packing for load balance)?",
+        console=console, default=False
+    )
+    if advanced_opts["weighted_kpoints"]:
+        sug_dict["weighted_kpoints"] = True
+        console.print("[green]  → Weighted k-point distribution enabled[/green]")
+
+    # Auto-detect and validate struct file
+    struct_files = sorted(Path.cwd().glob("*.struct"))
+    if struct_files:
+        struct_path = struct_files[0]
+        console.print(f"\n[bold cyan]Struct detected:[/bold cyan] {struct_path.name}")
+        if Confirm.ask("Validate struct file for RMT overlaps?", console=console, default=True):
+            from .core.case_parser import check_struct_quality
+            quality = check_struct_quality(struct_path)
+            if quality["errors"]:
+                for err in quality["errors"]:
+                    console.print(f"[red]  ✗ {err}[/red]")
+            if quality["warnings"]:
+                for warn in quality["warnings"]:
+                    console.print(f"[yellow]  ⚠ {warn}[/yellow]")
+            if not quality["errors"] and not quality["warnings"]:
+                console.print("[green]  ✓ Struct file looks good — no RMT overlaps detected[/green]")
+
     # 4. Pre-flight Validation & Confirmation
     console.print(Rule(style="dim"))
     if not Confirm.ask("Proceed with this configuration and generate .machines?", console=console, default=True):

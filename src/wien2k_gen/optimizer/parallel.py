@@ -190,6 +190,10 @@ def recommend_io_strategy(
     in each iteration consumes significant time. Use granular parallelization
     (group k-points) and disable intermediate writes.
 
+    ⚠ Peter Blaha warns: nowrite_vector is DANGEROUS without checkpointing.
+    Only enable it when scratch is fast+reliable AND checkpointing is active.
+    A crash without .vector files means total loss of all computation.
+
     Ref: WIEN2k User Guide 2023, Chapter on Parallelization.
     """
     result: Dict[str, object] = {}
@@ -197,11 +201,18 @@ def recommend_io_strategy(
     if nmat > 10000:
         result["granularity"] = 16
         result["vector_split"] = 4 if nkpt < 8 else 2
-        result["nowrite_vector"] = True
+        result["nowrite_vector"] = False
+        result["nowrite_vector_warning"] = (
+            f"⚠ DANGER: nmat={nmat} is large enough for nowrite_vector, "
+            f"but this will PREVENT RESTART on crash. Enable checkpointing "
+            f"(wien2k_gen monitor creates checkpoints automatically) before "
+            f"setting nowrite_vector=True."
+        )
         result["recommendation"] = (
             f"Very large system (nmat={nmat}): enable granular={16}, "
-            f"vector_split={result['vector_split']}, nowrite for .vector. "
-            f"Expect 25-40% I/O reduction."
+            f"vector_split={result['vector_split']}. "
+            f"[red]nowrite_vector disabled for safety[/] — use checkpointing instead. "
+            f"Expect 25-40% I/O reduction from granularity."
         )
     elif nmat > 5000:
         result["granularity"] = 8
@@ -216,21 +227,44 @@ def recommend_io_strategy(
         result["vector_split"] = 0
         result["nowrite_vector"] = False
         result["recommendation"] = "Standard I/O — no special optimization needed."
+    else:
+        result["granularity"] = 1
+        result["vector_split"] = 0
+        result["nowrite_vector"] = False
+        result["recommendation"] = "Standard I/O — no special optimization needed."
 
     if scratch_fs in ("tmpfs", "ramfs"):
         result["recommendation"] += " Scratch on tmpfs: excellent I/O performance."
 
+    # Add granular memory warning (Blaha: granular parallelization increases per-rank memory)
+    if result.get("granularity", 1) > 4:
+        result.setdefault("warnings", [])
+        result["warnings"].append(
+            f"Granular={result['granularity']} increases per-MPI-rank memory. "
+            f"Ensure each rank has enough RAM with safety factor 3x."
+        )
+
     return result
 
 
-def recommend_rkmax(atomic_numbers: List[int], calculation_type: str = "scf") -> float:
+def recommend_rkmax(
+    atomic_numbers: List[int],
+    calculation_type: str = "scf",
+    rmt_ratios: Optional[List[float]] = None,
+    is_soc: bool = False,
+) -> float:
     """Recommend RKMAX based on atomic composition.
 
     Heavy atoms (Z > 50): RKMAX = 7-9
     Medium atoms (Z 20-50): RKMAX = 6-8
     Light atoms (Z < 20): RKMAX = 5-7
 
-    Ref: Blaha et al., WIEN2k User Guide 2023, Section on Basis Set Convergence.
+    ⚠ Blaha critique: RKMAX also depends on RMT hardness.
+    Elements with small RMT (O, F, N in oxides/fluorides) need
+    RKMAX >= 7.0 because hard potentials demand more plane waves.
+    SOC calculations need RKMAX >= 7.0 for reliable results.
+
+    Ref: Blaha et al., WIEN2k User Guide 2023.
     """
     if not atomic_numbers:
         return 7.0
@@ -246,16 +280,23 @@ def recommend_rkmax(atomic_numbers: List[int], calculation_type: str = "scf") ->
         base = 7.0
     elif max_z > 20:
         base = 6.5
-    elif nmat > 2500:
-        result["granularity"] = 4
-        result["vector_split"] = 1
-        result["nowrite_vector"] = False
-        result["recommendation"] = (
-            f"Moderate system (nmat={nmat}): granular={4}. "
-            f"Group k-points to reduce I/O overhead."
-        )
     else:
         base = 6.0
+
+    hard_elements = {8, 9, 7, 16, 17, 35}
+    has_hard = any(z in hard_elements for z in atomic_numbers)
+
+    if has_hard and rmt_ratios:
+        min_rmt_idx = rmt_ratios.index(min(rmt_ratios))
+        if atomic_numbers[min_rmt_idx] in hard_elements and rmt_ratios[min_rmt_idx] < 1.6:
+            base = max(base, 7.0)
+
+    if has_hard and rmt_ratios is None and base < 7.0:
+        base = 7.0
+
+    if is_soc:
+        base = max(base, 7.0)
+        base += 0.5
 
     if calculation_type == "opt":
         base += 0.5
