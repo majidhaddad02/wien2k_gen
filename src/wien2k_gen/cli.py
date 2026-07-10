@@ -663,7 +663,11 @@ def _handle_workflow(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 
 
 def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
-    """SCF convergence diagnostics."""
+    """SCF convergence diagnostics with root cause analysis.
+
+    Connects backend intelligence (charge sloshing diagnosis, Bayesian tuning,
+    QTL-B root cause) to the terminal UI as Peter Blaha demands.
+    """
     import re as _re
 
     scf_path = None
@@ -671,6 +675,8 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
         scf_path = Path(args.log)
     elif args.case:
         scf_path = Path(f"{args.case}.scf")
+        if not scf_path.exists():
+            scf_path = Path.cwd() / f"{args.case}.scf"
     else:
         matches = sorted(Path(".").glob("*.scf*"), key=lambda p: p.stat().st_mtime, reverse=True)
         scf_path = matches[0] if matches else None
@@ -686,6 +692,7 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
 
     energies = [float(e) for e in energy_matches]
     charges = [float(c) for c in charge_matches]
+    converged = "charge convergence" in content.lower() or "energy convergence" in content.lower()
 
     table = Table(title=f"SCF Diagnostics: {scf_path.name}", border_style="blue")
     table.add_column("Metric", style="cyan")
@@ -693,8 +700,6 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     table.add_row("Cycles completed", str(len(energies)))
     table.add_row("Final energy", f"{energies[-1]:.6f} Ry" if energies else "N/A")
     table.add_row("Final charge distance", f"{charges[-1]:.6f}" if charges else "N/A")
-
-    converged = "charge convergence" in content.lower() or "energy convergence" in content.lower()
     table.add_row("Converged", f"[{'green' if converged else 'red'}]{converged}[/]")
 
     if len(charges) >= 3:
@@ -716,19 +721,90 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
         sign_changes = sum(1 for i in range(1, len(deltas)) if deltas[i] * deltas[i - 1] < 0)
         oscillation_pct = sign_changes / max(1, len(deltas) - 1) * 100 if len(deltas) > 1 else 0
         table.add_row("Energy oscillations", f"{oscillation_pct:.1f}%")
-        if oscillation_pct > 40:
-            table.add_row("Recommendation", "[red]Charge sloshing — reduce mixing beta[/red]")
-
-    error_detected = any(p in content.lower() for p in ("qtl-b", "lapw crashed", "not converged", "segmentation fault"))
-    if error_detected:
-        table.add_row("Errors detected", "[red]Yes — review output file[/red]")
 
     console.print(table)
+
+    # ── Charge Sloshing Root Cause Analysis ──
+    try:
+        from .optimizer.monitor import diagnose_charge_sloshing_root_cause
+        diag = diagnose_charge_sloshing_root_cause(content, case_name=args.case or scf_path.stem)
+        if diag["root_cause"] != "none":
+            panel_title = "[red bold]Charge Sloshing Detected"
+            cause_labels = {
+                "metallic": "فلزی — سطح فرمی پیچیده / Metallic — complex Fermi surface",
+                "symmetry_breaking": "شکست تقارن / Symmetry breaking",
+                "core_overlap": "همپوشانی هسته — RMT نامناسب / Core overlap — check RMT",
+                "mixing_too_aggressive": "نرخ مخلوط‌سازی بالا / Mixing too aggressive",
+            }
+            cause_label = cause_labels.get(diag["root_cause"], diag["root_cause"])
+            body = f"[bold]Root Cause:[/] {cause_label}\n"
+            body += f"[dim]Confidence: {diag['confidence']:.0%}[/]\n\n"
+            for i, act in enumerate(diag["actions"], 1):
+                body += f"  {i}. [cyan]{act['action']}[/] — {act['reason']}\n"
+            console.print(Panel(body.strip(), title=panel_title, border_style="red"))
+    except Exception:
+        pass
+
+    # ── QTL-B Root Cause Analysis ──
+    has_qtlb = any(p in content.lower() for p in ("qtl-b",))
+    has_crash = any(p in content.lower() for p in ("lapw crashed", "segmentation fault"))
+    has_not_conv = "not converged" in content.lower()
+
+    if has_qtlb:
+        qtlb_body = ""
+        if "rkmax" in content.lower() or "kmax" in content.lower():
+            qtlb_body += "• Reduce RKMAX by 0.5–1.0\n"
+        if "overlap" in content.lower():
+            qtlb_body += "• Reduce RMT values or check sphere overlap\n"
+        if "linearization" in content.lower() or "ene" in content.lower():
+            qtlb_body += "• Add more linearization energies in case.in1\n"
+        qtlb_body += "• Increase GMAX to 2.5×RKMAX\n"
+        qtlb_body += "• Check init_lapw —b (non-default linearization)"
+        console.print(Panel(qtlb_body, title="[red bold]QTL-B Error — Root Cause Analysis", border_style="red"))
+
+    if has_crash:
+        console.print(Panel(
+            "• Check MPI stack (mpirun/srun) and memory limits\n"
+            "• Look for OOM (Out of Memory) in SLURM output\n"
+            "• Verify .machines file format matches WIEN2k version\n"
+            "• Try running with fewer MPI ranks first",
+            title="[red bold]LAPWx Crash Detected", border_style="red"
+        ))
+
+    # ── SCF Divergence Detection ──
+    try:
+        from .optimizer.convergence import detect_scf_divergence
+        divergence = detect_scf_divergence(content, energy_values=energies if energies else None)
+        if divergence["divergent"]:
+            console.print(Panel(
+                f"[bold]Type:[/] {divergence['divergence_type']}\n"
+                f"[bold]Severity:[/] {divergence['severity']:.0%}\n\n"
+                f"{divergence['recommended_action']}\n\n"
+                f"[dim]Auto fix: beta={divergence['auto_mixing_params']['beta']}, "
+                f"pratt={divergence['auto_mixing_params']['pratt_cycles']}, "
+                f"msr1a={divergence['auto_mixing_params']['msr1a']}[/]",
+                title="[red bold]SCF Divergence Analysis", border_style="red"
+            ))
+    except Exception:
+        pass
+
+    if has_not_conv and not converged:
+        console.print(Panel(
+            "1. Check if charge sloshing (see above)\n"
+            "2. Reduce mixing beta to 0.05 and enable PRATT\n"
+            "3. Increase NSTEPS in case.in2\n"
+            "4. For metals: add TEMP 0.002 in case.in2 (Fermi smearing)\n"
+            "5. Run [bold]wien2k_gen optimize --simulated[/] to auto-tune RKMAX/KPPRA",
+            title="[yellow bold]SCF Not Converged — Action Plan", border_style="yellow"
+        ))
+
+    if not any([has_qtlb, has_crash, has_not_conv, converged, diag.get("root_cause", "") != "none" if 'diag' in dir() else False]):
+        console.print("[green]No critical issues detected. SCF appears healthy.[/green]")
 
     return {
         "converged": converged,
         "cycles": len(energies),
-        "error_detected": error_detected,
+        "error_detected": has_qtlb or has_crash,
         "final_energy": energies[-1] if energies else 0.0,
     }
 

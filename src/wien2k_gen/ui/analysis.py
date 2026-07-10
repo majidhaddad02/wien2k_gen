@@ -504,19 +504,32 @@ def visualize_scaling(
 def generate_report(
     parsed_scf: SCFParseResult,
     scaling_data: Optional[Dict[int, float]] = None,
-    include_recommendations: bool = True
+    include_recommendations: bool = True,
+    verbose: bool = False,
 ) -> AnalysisReport:
     """
-    Compile parsed SCF data + scaling metrics into a structured report.
-    Generates actionable HPC recommendations based on convergence, timing, and efficiency.
+    Compile parsed SCF data + scaling metrics + backend intelligence into a structured report.
+
+    Connects Bayesian optimization, Roofline analysis, charge sloshing diagnosis,
+    NUMA topology, and k-point load balancing to the terminal UI.
+
+    Parameters
+    ----------
+    parsed_scf : SCFParseResult
+        Parsed SCF output from parse_scf_log().
+    scaling_data : dict, optional
+        {cores: time_sec} mapping for scaling analysis.
+    include_recommendations : bool
+        Generate actionable recommendations.
+    verbose : bool
+        Include full backend trace (Bayesian history, Roofline details, NUMA map).
     """
     report = AnalysisReport(
         timestamp=time.time(),
         code_backend=parsed_scf.get("code", "unknown"),
         parsing=parsed_scf,
     )
-    
-    # Scaling integration
+
     if scaling_data and len(scaling_data) >= 2:
         sorted_runs = sorted(scaling_data.items())
         report.scaling = calculate_scaling_metrics(
@@ -524,7 +537,6 @@ def generate_report(
             sorted_runs[-1][0], sorted_runs[-1][1]
         )
 
-    # Recommendation engine
     recs = []
     if not parsed_scf.get("converged"):
         recs.append("SCF not converged. Adjust mixing parameters (BROYDEN, KERKER), increase NSTEPS, or check k-point density.")
@@ -534,16 +546,55 @@ def generate_report(
             recs.append(f"Low CPU/Wall ratio ({ratio:.2f}). Likely I/O or network bottleneck. Use local scratch and check interconnect.")
         elif ratio > 0.95:
             recs.append("Excellent CPU utilization. Scaling bottleneck is likely computational.")
-            
+
     if report.scaling and report.scaling["efficiency_percent"] < 50:
         recs.append(f"Parallel efficiency is low ({report.scaling['efficiency_percent']:.1f}%). Reduce MPI ranks or switch to hybrid mode.")
     if "QTL-B" in str(parsed_scf.get("errors", [])):
         recs.append("QTL-B detected. Lower RKMAX, increase GMAX, or refine linearization energies in case.in1.")
 
+    # ── Backend Intelligence Integration ──
+    try:
+        from ..optimizer.monitor import diagnose_charge_sloshing_root_cause
+        raw = parsed_scf.get("raw_snippet", "")
+        slosh_diag = diagnose_charge_sloshing_root_cause(raw)
+        if slosh_diag["root_cause"] != "none":
+            rc = slosh_diag["root_cause"].replace("_", " ").title()
+            recs.append(f"Charge sloshing: {rc} (confidence {slosh_diag['confidence']:.0%}). "
+                        f"Fix: {'; '.join(a['action'] for a in slosh_diag['actions'][:2])}")
+            if verbose:
+                for a in slosh_diag["actions"]:
+                    recs.append(f"  → {a['action']} [{a['priority']}]: {a['reason']}")
+    except Exception:
+        if verbose:
+            recs.append("(Charge sloshing analyzer unavailable)")
+
+    try:
+        from ..core.hardware import get_memory_bandwidth_gb_s, get_numa_node_count
+        bw = get_memory_bandwidth_gb_s()
+        numa = get_numa_node_count()
+        if bw < 50:
+            recs.append(f"Low memory bandwidth ({bw:.0f} GB/s). LAPW1 is memory-bound; extra MPI ranks yield no benefit.")
+        if verbose:
+            recs.append(f"Hardware: {numa} NUMA node(s), {bw:.0f} GB/s bandwidth")
+    except Exception:
+        if verbose:
+            recs.append("(Hardware detection unavailable)")
+
+    try:
+        from ..optimizer.convergence import detect_scf_divergence
+        div = detect_scf_divergence(parsed_scf.get("raw_snippet", ""))
+        if div["divergent"]:
+            recs.append(f"SCF divergence ({div['divergence_type']}): {div['recommended_action'][:120]}...")
+            if verbose:
+                recs.append(f"  → Auto fix: beta={div['auto_mixing_params']['beta']}, "
+                           f"pratt_cycles={div['auto_mixing_params']['pratt_cycles']}")
+    except Exception:
+        if verbose:
+            recs.append("(Divergence detector unavailable)")
+
     report.recommendations = recs
     report.warnings = parsed_scf.get("warnings", [])
 
-    # Build Rich Tree for UI consumption
     from rich.console import Console
     from rich.tree import Tree
     tree = Tree(f"[bold]{report.code_backend.upper()} Analysis Report[/]")
@@ -555,6 +606,11 @@ def generate_report(
     time_node = tree.add("Timing")
     time_node.add(f"CPU: {parsed_scf.get('cpu_time_sec', 0):.1f}s")
     time_node.add(f"Wall: {parsed_scf.get('wall_time_sec', 0):.1f}s")
+
+    if parsed_scf.get("stage_timings"):
+        stage_node = time_node.add("Per-Stage CPU")
+        for stage, t in sorted(parsed_scf["stage_timings"].items()):
+            stage_node.add(f"{stage}: {t:.1f}s")
 
     if report.scaling:
         scale_node = tree.add("Scaling")
