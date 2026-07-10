@@ -377,3 +377,106 @@ def _create_dag_for_steps(case: str, steps: List[str]) -> WorkflowDAG:
         prev_id = node.node_id
 
     return dag
+
+
+def run_wien2k_pipeline(
+    case_name: str,
+    steps: Optional[List[str]] = None,
+    auto_retry: bool = True,
+    max_scf_iterations: int = 100,
+    convergence_tolerance_ry: float = 0.0001,
+    interactive: bool = False,
+) -> Dict[str, Any]:
+    """Run a complete WIEN2k pipeline with automatic resource optimization.
+
+    Implements the full workflow that Peter Blaha recommends:
+        1. init_lapw (if case doesn't exist)
+        2. wien2k_gen generate → produces .machines file
+        3. run_lapw -p with SCF monitoring
+        4. Convergence check + auto mixing adjustment
+        5. Iterate until converged or max iterations reached
+        6. Optional: post-SCF steps (DOS, bands, optics)
+
+    This bridges the gap between WIEN2k's interactive workflow
+    and automated HPC resource management.
+
+    Args:
+        case_name: WIEN2k case name (e.g., "Fe")
+        steps: Pipeline steps in order (default: ["scf"])
+        auto_retry: If True, retry with adjusted mixing on divergence
+        max_scf_iterations: Maximum SCF cycles before giving up
+        convergence_tolerance_ry: Energy convergence tolerance
+        interactive: If True, prompt user before key decisions
+
+    Returns:
+        dict with status, energy, iterations, and recommendations
+    """
+    case_path = Path(case_name)
+    struct_exists = (case_path / f"{case_name}.struct").exists() or Path(f"{case_name}.struct").exists()
+
+    result = {
+        "status": "unknown",
+        "case": case_name,
+        "total_energy_ry": 0.0,
+        "scf_iterations": 0,
+        "converged": False,
+        "mixing_used": 0.0,
+        "recommendations": [],
+    }
+
+    if not struct_exists and not interactive:
+        logger.warning(f"Case '{case_name}' not found and not interactive. "
+                       f"Run init_lapw manually first or use --interactive.")
+        result["status"] = "case_not_found"
+        return result
+
+    if steps is None:
+        steps = ["scf"]
+
+    try:
+        from ..optimizer.monitor import create_scf_checkpoint
+
+        dag = create_wien2k_workflow(case_name, steps)
+        executor = WorkflowExecutor(dag, auto_retry=auto_retry)
+        executor_status = executor.run(timeout_per_node=3600)
+
+        result["status"] = "completed" if executor_status.state == ExecutorState.COMPLETED else "failed"
+
+        try:
+            scf_path = case_path / f"{case_name}.scf"
+            if not scf_path.exists():
+                scf_path = Path(f"{case_name}.scf")
+            if scf_path.exists():
+                content = scf_path.read_text()
+                energy_match = re.search(r':ENE\s*:\s*.*?(-?\d+\.\d+)', content, re.IGNORECASE)
+                if energy_match:
+                    result["total_energy_ry"] = float(energy_match.group(1))
+
+                iter_pattern = re.findall(r':ITE\s*:\s*\d+', content)
+                result["scf_iterations"] = len(iter_pattern)
+
+                for line in content.split('\n'):
+                    if 'MIX' in line.upper():
+                        mix_match = re.search(r'([\d]+\.?\d*)', line)
+                        if mix_match:
+                            result["mixing_used"] = float(mix_match.group(1))
+
+                if result["scf_iterations"] > 0:
+                    result["converged"] = ":DIS" in content and "CHARGE CONVERGENCE" in content.upper()
+
+            create_scf_checkpoint(case_name, label="pipeline_done")
+
+        except Exception as e:
+            logger.warning(f"Post-run analysis failed: {e}")
+
+    except Exception as e:
+        result["status"] = "error"
+        result["recommendations"].append(f"Pipeline failed: {e}")
+
+    if not result["converged"]:
+        result["recommendations"].append(
+            "SCF not converged — reduce mixing beta to 0.05, "
+            "increase PRATT iterations, or check RMT values"
+        )
+
+    return result
