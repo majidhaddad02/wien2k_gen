@@ -1,6 +1,6 @@
 # WIEN2k Generator (wien2k_gen) v0.1.0
 
-Parallel configuration file generator and HPC job dispatcher for WIEN2k density functional theory code. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, and SLURM/PBS/LSF scheduler integration.
+Parallel configuration file generator, HPC job dispatcher, and SCF convergence optimizer for WIEN2k density functional theory code. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, Roofline performance modeling, multi-scheduler integration (SLURM, PBS, LSF), Bayesian hyperparameter optimization, and AI-assisted k-point prediction.
 
 > **Note:** WIEN2k is a copyrighted code developed by P. Blaha, K. Schwarz, and collaborators at TU Wien. A valid WIEN2k license is required to use the generated configuration files. Visit [wien2k.at](http://www.wien2k.at/) for licensing information.
 
@@ -10,14 +10,14 @@ Parallel configuration file generator and HPC job dispatcher for WIEN2k density 
 |------------|-------------|-------------|-------------|-------------|
 | 0.1.0      | Partial     | Partial     | Yes         | Yes         |
 
-> **Known limitations:** WIEN2k_19 does not fully support fine-grain parallelism. WIEN2k_21 requires hybrid MPI+OpenMP for best performance on modern clusters. WIEN2k_23+ supports the `.machines` per-stage granularity syntax used by this tool.
+> **Known limitations:** WIEN2k_19 does not fully support fine-grain parallelism. WIEN2k_21 requires hybrid MPI+OpenMP for best performance on modern clusters. WIEN2k_23+ supports the `.machines` per-stage granularity syntax and GPU offloading used by this tool.
 
 ## Citation
 
-If you use wien2k_gen in your research, please cite:
-
-- **WIEN2k primary reference:** Blaha, P., Schwarz, K., Tran, F., Laskowski, R., Madsen, G. K. H., & Marks, L. D. (2020). WIEN2k: An APW+lo program for calculating the properties of solids. *J. Chem. Phys.*, 152, 074101. DOI: [10.1063/1.5143061](https://doi.org/10.1063/1.5143061)
-- **Amdahl's Law parallel scaling:** Amdahl, G. M. (1967). Validity of the single processor approach to achieving large scale computing capabilities. *AFIPS Conference Proceedings*, 30, 483-485.
+- **WIEN2k primary reference:** Blaha, P., Schwarz, K., Tran, F., Laskowski, R., Madsen, G. K. H., & Marks, L. D. (2020). WIEN2k: An APW+lo program for calculating the properties of solids. *J. Chem. Phys.*, 152, 074101.
+- **Amdahl's Law:** Amdahl, G. M. (1967). *AFIPS Conference Proceedings*, 30, 483-485.
+- **Roofline Model:** Williams, S., Waterman, A., & Patterson, D. (2009). *CACM*, 52(4), 65-76.
+- **Bayesian Optimization:** Snoek, J., Larochelle, H., & Adams, R. P. (2012). *NIPS*, 25, 2951-2959.
 - **This tool:** See [CITATION.cff](CITATION.cff) file.
 
 ## Quick Start
@@ -25,31 +25,79 @@ If you use wien2k_gen in your research, please cite:
 ```bash
 pip install wien2k_gen
 wien2k_gen generate
-wien2k_gen tui
+wien2k_gen submit --partition compute --time 48:00:00
+wien2k_wizard                           # interactive configuration
 ```
 
 ## CLI Tools
 
 | Command | Description |
 |---------|------------|
-| `wien2k_gen` | Full-featured CLI (generate, submit, benchmark, diagnostics, analyze, TUI) |
+| `wien2k_gen` | Full-featured CLI (generate, submit, benchmark, diagnostics, analyze, advise, diagnose, TUI) |
+| `wien2k_gen generate` | Auto-detect topology and generate `.machines` + `parallel_options` |
+| `wien2k_gen submit` | Schedule and submit WIEN2k job to queue |
+| `wien2k_gen advise` | Roofline + Amdahl + NUMA performance analysis with hardware-aware recommendations |
+| `wien2k_gen diagnose` | SCF convergence diagnosis — charge sloshing root cause, QTL-B analysis, divergence detection |
+| `wien2k_gen benchmark` | Run weak/strong scaling benchmarks with uncertainty quantification |
 | `wien2k_sbatch` | Dedicated SLURM batch job submission |
-| `wien2k_wizard` | Interactive configuration wizard |
+| `wien2k_wizard` | Interactive configuration wizard with advanced physics options |
 
 ## Features
 
+### HPC Infrastructure
 - Automatic hardware topology detection (NUMA, cache, ISA, interconnect)
+- Memory bandwidth measurement via sysfs counters + STREAM benchmark integration
 - Spin-polarization auto-detection (`run_lapw` vs `runsp_lapw`)
 - Calculation flag detection: `-so`, `-orbc`, `-hf`, `-fc`, `-eece`
-- SLURM/PBS/LSF scheduler integration
+- SLURM/PBS/LSF/SGE scheduler integration
 - Amdahl's Law saturation analysis for optimal core selection
-- SCF convergence monitoring and profiling
+- Roofline model analysis (compute-bound vs memory-bound bottleneck identification)
 - Air-gapped HPC offline installation support
 - Docker and Singularity/Apptainer containers
 
-## Supported Calculation Types
+### Parallelization & Performance
+- NUMA-aware resource allocation with `numactl` + `lscpu` integration
+- Granular parallelism (`WIEN_GRANULARITY`) with 3× memory safety factor and OOM warnings
+- ELPA eigensolver recommendation with threshold 8000 (Ruh 2023 benchmarks)
+- Weighted k-point distribution (First Fit Decreasing bin-packing algorithm)
+- NUMA-aware k-point distribution with balance ratio scoring
+- Hybrid MPI+OpenMP for LAPW0 FFT-dominated workloads
+- GPU offloading detection and hybrid CPU+GPU `.machines` generation
+- Weak/strong scaling bottleneck identification
 
-wien2k_gen automatically detects the correct WIEN2k execution command:
+### SCF Convergence & Physics
+- Smart Kerker mixing q0 based on system type (Winkelmann 2020):
+  - metal: `q0 = 0.4 × 2π/a` | semiconductor: `0.15 × 2π/a` | insulator: `0.05 × 2π/a`
+- Restarted Pulay mixing for large systems (>50 atoms) — Pratapa 2015, PRB 92 115160
+- Charge sloshing root cause diagnosis (metallic/symmetry/core-overlap/mixing)
+- QTL-B error root cause analysis with targeted fixes
+- SCF divergence detection (catastrophic/monotonic_drift/charge_sloshing/stalled)
+- Automatic checkpointing with incremental file copy (UPC Study best practices)
+- Adaptive checkpoint intervals: <20% walltime → 5 cycles, <50% → 10, else → 15
+
+### ML & AI-Assisted Optimization
+- Bayesian hyperparameter optimization with Matérn ν=2.5 kernel (Lyngby 2024)
+- Expected Improvement (EI) and q-batch EI acquisition functions
+- Latin Hypercube Sampling for uniform search space coverage
+- Physics-informed priors (element-aware RKMAX/mixing/kpt constraints)
+- GNN-based k-point grid prediction (CGCNN architecture, pure NumPy inference)
+- Multi-fidelity Bayesian optimization with transfer learning
+- History-driven warm-start from SQLite execution database
+
+### Structure & Input Validation
+- `.struct` RMT sphere overlap detection (warning >10%, critical >30%)
+- Small RMT warnings for light hard elements (O, F, N)
+- setrmt algorithm: automated RMT optimization from nearest-neighbor distances (Blaha JCP 2020)
+- Wyckoff position / spacegroup heuristic warnings
+- WIEN2k version detection 19.x–24.x with capability mapping
+
+### UI & Output
+- Rich-text interactive TUI with Textual framework
+- Dual-language output (English + Persian `--plain` mode for non-expert users)
+- Roofline + Amdahl bottleneck visualization with color-coded warnings
+- Formatted RMT optimization reports with per-atom overlap tables
+
+## Supported Calculation Types
 
 | Input Files | Detected Calculation | Command |
 |-------------|---------------------|---------|
@@ -61,12 +109,6 @@ wien2k_gen automatically detects the correct WIEN2k execution command:
 | `case.struct` + `HYBR` in `case.in0` | Hybrid functional | `run_lapw -p -hf` |
 | `case.struct` + `case.ineece` | Onsite exact exchange | `run_lapw -p -eece` |
 
-## Requirements
-
-- Python >= 3.9
-- Linux or macOS (HPC features require Linux)
-- WIEN2k installation with valid license
-
 ## End-to-End Example
 
 ```bash
@@ -76,13 +118,19 @@ init_lapw -b -vxc 13 -ecut -6 -rkmax 7.0 -numk 1000
 # 2. Run SCF to generate .scf file (provides NMAT for optimal parallelization)
 run_lapw -p
 
-# 3. Ask wien2k_gen for optimal parallel settings
+# 3. Get performance advice before generating config
+wien2k_gen advise --case Fe
+
+# 4. Diagnose any SCF convergence issues
+wien2k_gen diagnose --log Fe.scf
+
+# 5. Auto-generate optimal .machines with all backend intelligence
 wien2k_gen generate --target time
 
-# 4. Submit to SLURM with auto-detected resources
+# 6. Submit to SLURM with auto-detected resources
 wien2k_gen submit --partition compute --time 48:00:00
 
-# Or use the interactive wizard
+# Or use the interactive wizard with physics options
 wien2k_wizard
 ```
 
@@ -92,8 +140,30 @@ wien2k_wizard
 |------|-------------|-------------|
 | **kpoint** | Many k-points (>4), small unit cells | k-point parallel, minimal communication |
 | **hybrid** | General purpose, modern multi-core nodes | MPI + OpenMP mixed |
-| **mpi** | Large matrices with ELPA, few k-points | Fine-grain ScaLAPACK/ELPA diagonalization |
-| **fine_grain** | Very large systems, limited k-points | Atom-level decomposition via `WIEN_GRANULARITY` |
+| **mpi** | Large matrices with ELPA (nmat > 8000), few k-points | Fine-grain ScaLAPACK/ELPA diagonalization |
+| **fine_grain** | Very large systems (nmat > 15000), limited k-points | Atom-level decomposition via `WIEN_GRANULARITY` |
+
+## Mixing Strategies
+
+| Strategy | When Applied | Key Parameter |
+|----------|-------------|---------------|
+| **Broyden (default)** | Small systems (≤50 atoms) | Standard WIEN2k mixing |
+| **Kerker** | Metallic systems | Smart q0 based on system type + lattice constant |
+| **Restarted Pulay** | Large systems (>50 atoms) | history_size=7, regularization=1e-10 |
+| **Restarted Pulay + Kerker** | Large + metallic | Combined Pulay restart + Kerker preconditioning |
+
+## RKMAX Recommendations
+
+| Element Type | Base RKMAX | Notes |
+|-------------|-----------|-------|
+| Heavy (Z > 70) | 8.0 | f-elements, actinides |
+| Medium-heavy (Z > 50) | 7.5 | Transition metals, lanthanides |
+| Medium (Z > 30) | 7.0 | First-row transition metals |
+| Light (Z > 20) | 6.5 | p-block elements |
+| Light hard (O, F, N) | 7.0 (min) | Requires high cutoff due to small RMT |
+| With SOC | 7.0 (min) + 0.5 | Spin-orbit coupling demands high cutoff |
+| Optimization | +0.5 | Forces require higher cutoff |
+| EFG/Hyperfine | +1.0 | Maximum precision needed |
 
 ## Development
 
