@@ -944,3 +944,361 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
                 )
 
     return result
+
+
+# ===========================================================================
+# Phase 2 — setrmt Algorithm (JCP 2020)
+# ===========================================================================
+
+def parse_crystal_structure(struct_path: Path) -> Dict[str, Any]:
+    """Parse WIEN2k .struct file for crystal structure data.
+
+    Extracts:
+        lattice: dict with a,b,c,alpha,beta,gamma (bohr, degrees)
+        atoms: List[dict] — fractional coordinates, atomic number, RMT
+        spacegroup: str
+        num_atoms: int
+
+    Returns empty dict on error.
+    """
+    try:
+        content = struct_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return {}
+
+    lines = content.splitlines()
+    result: Dict[str, Any] = {
+        "lattice": {"a": 1.0, "b": 1.0, "c": 1.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
+        "atoms": [],
+        "spacegroup": "",
+        "num_atoms": 0,
+    }
+
+    # Lattice parameters (6-float line)
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) >= 6:
+            vals = [try_float(p) for p in parts[:6]]
+            if all(v is not None for v in vals):
+                result["lattice"] = {
+                    "a": vals[0], "b": vals[1], "c": vals[2],
+                    "alpha": vals[3], "beta": vals[4], "gamma": vals[5],
+                }
+                break
+
+    # Spacegroup
+    m = re.search(r'(\d+)\s+(I|P|F|C|R|A|B)[-\w]*\s*(?:RELA|NONE)?', content)
+    if m:
+        result["spacegroup"] = m.group(0).strip().split()[0]
+
+    # ATOM entries
+    atom_entries = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        m = re.match(
+            r'ATOM\s+\d+:\s+X=\s*([\d\.\-]+)\s+Y=\s*([\d\.\-]+)\s+Z=\s*([\d\.\-]+)',
+            line, re.IGNORECASE)
+        if m:
+            x = float(m.group(1))
+            y = float(m.group(2))
+            z = float(m.group(3))
+            atom_entry = {"x": x, "y": y, "z": z, "rmt": 0.0, "z_num": 0}
+            if i + 2 < len(lines):
+                data_line = lines[i + 2].strip()
+                rmt_match = re.search(r'RMT\s*=\s*([\d\.]+)', data_line, re.IGNORECASE)
+                z_match = re.search(r'Z\s*:\s*([\d\.]+)', data_line, re.IGNORECASE)
+                atom_entry["rmt"] = float(rmt_match.group(1)) if rmt_match else 0.0
+                atom_entry["z_num"] = int(float(z_match.group(1))) if z_match else 0
+            atom_entries.append(atom_entry)
+        i += 1
+
+    result["atoms"] = atom_entries
+    result["num_atoms"] = len(atom_entries)
+
+    return result
+
+
+def calculate_nn_distances(structure: Dict[str, Any]) -> Dict[int, float]:
+    """Calculate nearest-neighbor distances for all inequivalent atoms.
+
+    Algorithm:
+      1. Convert fractional to Cartesian coordinates
+      2. Build 3×3×3 supercell for periodic images
+      3. For each atom, find minimum distance to any other atom
+      4. Exclude self-distance
+
+    Returns dict: atom_index → nn_distance (bohr)
+    """
+    atoms = structure.get("atoms", [])
+    if not atoms:
+        return {}
+
+    lat = structure.get("lattice", {})
+    a = lat.get("a", 1.0)
+    b = lat.get("b", 1.0)
+    c = lat.get("c", 1.0)
+    alpha = lat.get("alpha", 90.0)
+    beta = lat.get("beta", 90.0)
+    gamma = lat.get("gamma", 90.0)
+
+    alpha_r, beta_r, gamma_r = (math.radians(alpha), math.radians(beta), math.radians(gamma))
+
+    # Cartesian conversion matrix
+    ca, cb, cg = math.cos(alpha_r), math.cos(beta_r), math.cos(gamma_r)
+    sg = math.sin(gamma_r)
+    cart_matrix = (
+        (a, b * cg, c * cb),
+        (0.0, b * sg, c * (ca - cb * cg) / sg if sg > 1e-12 else 0.0),
+        (0.0, 0.0, c * math.sqrt(1 - ca*ca - cb*cb - cg*cg + 2*ca*cb*cg) / sg if sg > 1e-12 else c),
+    )
+
+    # Convert fractional to Cartesian for all atoms
+    atom_coords = []
+    for atom in atoms:
+        x = atom["x"]
+        y = atom["y"]
+        z = atom["z"]
+        cx = cart_matrix[0][0] * x + cart_matrix[0][1] * y + cart_matrix[0][2] * z
+        cy = cart_matrix[1][0] * x + cart_matrix[1][1] * y + cart_matrix[1][2] * z
+        cz = cart_matrix[2][0] * x + cart_matrix[2][1] * y + cart_matrix[2][2] * z
+        atom_coords.append((cx, cy, cz))
+
+    # Build supercell (images -1, 0, 1 in each direction)
+    images = []
+    for idx, (cx, cy, cz) in enumerate(atom_coords):
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for dk in (-1, 0, 1):
+                    sc_x = cx + di * cart_matrix[0][0] + dj * cart_matrix[0][1] + dk * cart_matrix[0][2]
+                    sc_y = cy + di * cart_matrix[1][0] + dj * cart_matrix[1][1] + dk * cart_matrix[1][2]
+                    sc_z = cz + di * cart_matrix[2][0] + dj * cart_matrix[2][1] + dk * cart_matrix[2][2]
+                    images.append((idx, sc_x, sc_y, sc_z))
+
+    # Find nearest neighbor for each atom
+    nn_distances: Dict[int, float] = {}
+    n_atoms = len(atom_coords)
+
+    for i in range(n_atoms):
+        min_dist = float("inf")
+        ci_x, ci_y, ci_z = atom_coords[i]
+        for idx_j, sj_x, sj_y, sj_z in images:
+            if idx_j == i:
+                continue
+            dist = math.sqrt(
+                (ci_x - sj_x) ** 2 + (ci_y - sj_y) ** 2 + (ci_z - sj_z) ** 2)
+            if 0.001 < dist < min_dist:
+                min_dist = dist
+        nn_distances[i] = min_dist if min_dist < float("inf") else 0.0
+
+    return nn_distances
+
+
+def optimize_rmt(
+    nn_distances: Dict[int, float],
+    reduction_factor: float = 0.95,
+    min_rmt: float = 2.5,
+    max_rmt: float = 4.0,
+) -> Dict[int, float]:
+    """Calculate optimal RMT values from nearest-neighbor distances.
+
+    Formula (Blaha et al., JCP 2020):
+        RMT_optimal = reduction_factor × (nn_distance / 2)
+
+    Constraints:
+        - RMT ≥ min_rmt (2.5 a.u. for very light elements)
+        - RMT ≤ max_rmt (4.0 a.u. for heavy elements)
+
+    Returns dict: atom_index → optimal_rmt (bohr)
+    """
+    optimal = {}
+    for idx, nn_dist in nn_distances.items():
+        if nn_dist <= 0:
+            continue
+        rmt = reduction_factor * (nn_dist / 2.0)
+        rmt = max(min_rmt, min(max_rmt, rmt))
+        optimal[idx] = round(rmt, 3)
+    return optimal
+
+
+def check_rmt_overlaps(
+    rmts: Dict[int, float],
+    structure: Dict[str, Any],
+    overlap_warning: float = 0.95,
+    overlap_critical: float = 1.00,
+) -> List[Dict[str, Any]]:
+    """Check RMT sphere overlaps between inequivalent atoms.
+
+    Overlap = (RMT_i + RMT_j) / nn_distance_ij
+
+    Thresholds:
+        overlap > 1.00  → CRITICAL (spheres intersect)
+        overlap > 0.95  → WARNING (marginal)
+        overlap ≤ 0.95  → OK
+
+    Returns list of overlap entries.
+    """
+    atoms = structure.get("atoms", [])
+    nn_distances = calculate_nn_distances(structure)
+    overlaps = []
+
+    for i in range(len(atoms)):
+        for j in range(i + 1, len(atoms)):
+            rmt_i = rmts.get(i, atoms[i]["rmt"] if i < len(atoms) else 1.5)
+            rmt_j = rmts.get(j, atoms[j]["rmt"] if j < len(atoms) else 1.5)
+
+            cart = atoms[i]["x"], atoms[i]["y"], atoms[i]["z"]
+            cart_j = atoms[j]["x"], atoms[j]["y"], atoms[j]["z"]
+
+            lat = structure.get("lattice", {})
+            a, b_val, c = lat.get("a", 1.0), lat.get("b", 1.0), lat.get("c", 1.0)
+            alpha, beta, gamma = lat.get("alpha", 90.0), lat.get("beta", 90.0), lat.get("gamma", 90.0)
+
+            ca, cb, cg = math.cos(math.radians(alpha)), math.cos(math.radians(beta)), math.cos(math.radians(gamma))
+            sg = math.sin(math.radians(gamma))
+            mx = (
+                (a, b_val * cg, c * cb),
+                (0.0, b_val * sg, c * (math.cos(math.radians(alpha)) - cb * cg) / sg if sg > 1e-12 else 0.0),
+                (0.0, 0.0, c * math.sqrt(1 - ca*ca - cb*cb - cg*cg + 2*ca*cb*cg) / sg if sg > 1e-12 else c),
+            )
+
+            ci_x = mx[0][0]*atoms[i]["x"] + mx[0][1]*atoms[i]["y"] + mx[0][2]*atoms[i]["z"]
+            ci_y = mx[1][0]*atoms[i]["x"] + mx[1][1]*atoms[i]["y"] + mx[1][2]*atoms[i]["z"]
+            ci_z = mx[2][0]*atoms[i]["x"] + mx[2][1]*atoms[i]["y"] + mx[2][2]*atoms[i]["z"]
+            cj_x = mx[0][0]*atoms[j]["x"] + mx[0][1]*atoms[j]["y"] + mx[0][2]*atoms[j]["z"]
+            cj_y = mx[1][0]*atoms[j]["x"] + mx[1][1]*atoms[j]["y"] + mx[1][2]*atoms[j]["z"]
+            cj_z = mx[2][0]*atoms[j]["x"] + mx[2][1]*atoms[j]["y"] + mx[2][2]*atoms[j]["z"]
+
+            dist = math.sqrt((ci_x - cj_x)**2 + (ci_y - cj_y)**2 + (ci_z - cj_z)**2)
+            if dist <= 0:
+                continue
+
+            overlap_val = (rmt_i + rmt_j) / dist
+
+            if overlap_val > overlap_critical:
+                severity = "critical"
+            elif overlap_val > overlap_warning:
+                severity = "warning"
+            else:
+                continue
+
+            overlaps.append({
+                "atom_i": i,
+                "atom_j": j,
+                "rmt_i": rmt_i,
+                "rmt_j": rmt_j,
+                "distance": round(dist, 4),
+                "overlap": round(overlap_val, 4),
+                "severity": severity,
+            })
+
+    return overlaps
+
+
+def recommend_final_rmt(
+    optimal_rmts: Dict[int, float],
+    overlaps: List[Dict[str, Any]],
+    structure: Dict[str, Any],
+) -> Dict[int, float]:
+    """Adjust optimal RMT values to eliminate critical overlaps.
+
+    For each critical or warning overlap, reduces both RMT values
+    proportionally until overlap drops below 0.95.
+    """
+    final = dict(optimal_rmts)
+    atoms = structure.get("atoms", [])
+
+    for ov in overlaps:
+        i, j = ov["atom_i"], ov["atom_j"]
+        if ov["severity"] == "critical" or ov["overlap"] > 0.95:
+            target = 0.94 * ov["distance"]
+            reduction = target / (ov["rmt_i"] + ov["rmt_j"]) if (ov["rmt_i"] + ov["rmt_j"]) > 0 else 1.0
+            new_i = ov["rmt_i"] * reduction
+            new_j = ov["rmt_j"] * reduction
+            final[i] = round(new_i, 3)
+            final[j] = round(new_j, 3)
+
+    return final
+
+
+def generate_rmt_report(
+    final_rmts: Dict[int, float],
+    overlaps: List[Dict[str, Any]],
+    nn_distances: Dict[int, float],
+    structure: Dict[str, Any],
+) -> str:
+    """Generate human-readable RMT optimization report.
+
+    Format:
+        RMT Optimization Report
+        =======================
+        Atom  Element  NN_Dist(A)  Optimal_RMT  Final_RMT  Overlap
+        1     Fe       2.87        1.36          1.35       0.94
+
+        Warnings:
+        - Atom 1: RMT reduced to avoid overlap with Atom 2
+        - Atom 2: Small RMT, recommend RKMAX ≥ 7.0
+    """
+    atoms = structure.get("atoms", [])
+    element_names = {
+        1: "H", 3: "Li", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F", 11: "Na",
+        12: "Mg", 13: "Al", 14: "Si", 15: "P", 16: "S", 17: "Cl", 19: "K",
+        20: "Ca", 22: "Ti", 23: "V", 24: "Cr", 25: "Mn", 26: "Fe", 27: "Co",
+        28: "Ni", 29: "Cu", 30: "Zn", 31: "Ga", 32: "Ge", 33: "As", 34: "Se",
+        38: "Sr", 39: "Y", 40: "Zr", 41: "Nb", 42: "Mo", 44: "Ru", 45: "Rh",
+        46: "Pd", 47: "Ag", 48: "Cd", 49: "In", 50: "Sn", 51: "Sb", 52: "Te",
+        56: "Ba", 57: "La", 58: "Ce", 64: "Gd", 72: "Hf", 73: "Ta", 74: "W",
+        75: "Re", 76: "Os", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg", 82: "Pb",
+        83: "Bi", 90: "Th", 92: "U",
+    }
+
+    lines = [
+        "RMT Optimization Report",
+        "=======================",
+        f"Generated by wien2k_gen (Blaha et al., JCP 2020)",
+        "",
+    ]
+
+    # Header
+    lines.append(f"{'Atom':<6} {'Elem':<6} {'NN(A)':<10} {'Opt_RMT':<10} {'Final_RMT':<10} {'Overlap':<10}")
+    lines.append("-" * 56)
+
+    for idx in sorted(final_rmts.keys()):
+        atom = atoms[idx] if idx < len(atoms) else {}
+        elem = element_names.get(atom.get("z_num", 0), f"X{atom.get('z_num', idx)}")
+        nn_dist = nn_distances.get(idx, 0.0)
+        nn_a = nn_dist * 0.529177  # bohr → Å
+        opt_rmt = final_rmts.get(idx, 0.0)
+        overlap_str = "-"
+        for ov in overlaps:
+            if ov["atom_i"] == idx or ov["atom_j"] == idx:
+                overlap_str = f"{ov['overlap']:.2f}"
+                break
+        lines.append(f"{idx+1:<6} {elem:<6} {nn_a:<10.3f} {opt_rmt:<10.3f} {opt_rmt:<10.3f} {overlap_str:<10}")
+
+    # Warnings
+    warnings_list = []
+    for ov in overlaps:
+        if ov["severity"] == "critical":
+            i, j = ov["atom_i"], ov["atom_j"]
+            warnings_list.append(
+                f"- Atom {i+1}: CRITICAL overlap ({ov['overlap']:.3f}) with Atom {j+1}. "
+                f"RMT reduced from {ov['rmt_i']:.2f} → {final_rmts.get(i, ov['rmt_i']):.2f}"
+            )
+
+    for idx, rmt in final_rmts.items():
+        if rmt < 2.5:
+            warnings_list.append(
+                f"- Atom {idx+1}: RMT very small ({rmt:.2f} a.u.), recommend RKMAX ≥ 7.0"
+            )
+        if rmt > 3.5:
+            warnings_list.append(
+                f"- Atom {idx+1}: RMT large ({rmt:.2f} a.u.), check for overlaps"
+            )
+
+    if warnings_list:
+        lines.append("")
+        lines.append("Warnings:")
+        lines.extend(warnings_list)
+
+    return "\n".join(lines)

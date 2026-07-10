@@ -18,6 +18,8 @@ References:
 """
 
 from dataclasses import dataclass
+from pathlib import Path
+import re
 from typing import Dict, List, Optional, Tuple
 
 from ..core.topology import Topology
@@ -661,4 +663,286 @@ def generate_numa_aware_machines(
             hostname = f"{hostname_prefix}{node_idx + 1:02d}"
             lines.append(f"lapw1:{hostname}:{cores}")
         lines.append("")
+    return "\n".join(lines)
+
+
+# ===========================================================================
+# Phase 2 — FFD (First Fit Decreasing) K-point Distribution
+# ===========================================================================
+
+def calculate_kpoint_weights(case_name: str) -> List[float]:
+    """Calculate k-point weights from case.klist file.
+
+    Reads k-point multiplicities and weights from WIEN2k klist.
+    Normalizes weights so sum = 1.0
+
+    Falls back to uniform weights if klist is unavailable or malformed.
+    """
+    import math as _math
+
+    weights = []
+    klist_path = Path(f"{case_name}.klist")
+    if not klist_path.exists():
+        klist_path = Path(case_name) / f"{case_name}.klist"
+    if not klist_path.exists():
+        klist_files = sorted(Path(".").glob("*.klist"))
+        if klist_files:
+            klist_path = klist_files[0]
+
+    try:
+        content = klist_path.read_text(encoding="utf-8", errors="replace")
+        lines = [ln.strip() for ln in content.splitlines()
+                 if ln.strip() and not ln.strip().startswith("#")]
+
+        if not lines:
+            return [1.0]
+
+        # Header line: nkpt OR nkpt type
+        header_parts = lines[0].split()
+        nkpt = 0
+        if header_parts and header_parts[0].isdigit():
+            nkpt = int(header_parts[0])
+
+        if nkpt > 0:
+            # Parse k-point lines: x y z weight
+            for line in lines[1:]:
+                parts = line.split()
+                if len(parts) >= 4:
+                    try:
+                        w = float(parts[3])
+                        weights.append(w)
+                    except ValueError:
+                        continue
+
+        if not weights:
+            return [1.0] * max(nkpt, 1)
+
+        # Normalize
+        total = sum(weights)
+        if total > 0:
+            weights = [w / total for w in weights]
+
+        return weights
+
+    except Exception:
+        return [1.0]
+
+
+def ffd_kpoint_distribution(
+    kpoint_weights: List[float],
+    num_ranks: int,
+) -> Dict[str, Any]:
+    """First Fit Decreasing (FFD) algorithm for balanced k-point assignment.
+
+    Algorithm (greedy bin-packing):
+      1. Sort k-points by weight descending
+      2. Maintain rank_loads list (all zeros)
+      3. For each k-point: assign to rank with minimum current load
+      4. Update rank_loads
+      5. Compute balance metrics
+
+    Returns dict with:
+        rank_kpts: Dict[int, List[int]] — k-point indices per rank
+        rank_loads: List[float] — total weight per rank
+        balance_ratio: float — min_load/max_load
+        efficiency: float — parallel efficiency
+        load_variance: float
+        method: str — "ffd"
+    """
+    import math as _math
+
+    if num_ranks <= 0:
+        return {
+            "rank_kpts": {}, "rank_loads": [],
+            "balance_ratio": 1.0, "efficiency": 1.0,
+            "load_variance": 0.0, "method": "ffd",
+        }
+
+    # Sort descending
+    indexed = sorted(enumerate(kpoint_weights), key=lambda x: -x[1])
+
+    rank_loads = [0.0] * num_ranks
+    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(num_ranks)}
+
+    # FFD assignment: always put k-point on least loaded rank
+    for k_idx, weight in indexed:
+        min_rank = 0
+        min_load = rank_loads[0]
+        for r in range(num_ranks):
+            if rank_loads[r] < min_load:
+                min_load = rank_loads[r]
+                min_rank = r
+        rank_loads[min_rank] += weight
+        rank_kpts[min_rank].append(k_idx)
+
+    metrics = calculate_balance_quality(rank_loads)
+    metrics["rank_kpts"] = rank_kpts
+    metrics["method"] = "ffd"
+
+    logger.info(
+        f"FFD distribution: {len(kpoint_weights)} k-points → {num_ranks} ranks, "
+        f"balance_ratio={metrics['balance_ratio']:.3f}, "
+        f"efficiency={metrics['efficiency']:.3f}"
+    )
+
+    return metrics
+
+
+def calculate_balance_quality(rank_loads: List[float]) -> Dict[str, float]:
+    """Calculate load balance quality metrics.
+
+    Returns:
+        balance_ratio: min_load / max_load  (1.0 = perfect)
+        efficiency: sum / (n × max)  (parallel efficiency)
+        load_variance: variance of loads
+        load_std: standard deviation
+        max_load: maximum load value
+        min_load: minimum load value
+    """
+    import math as _math
+
+    n = len(rank_loads)
+    if n == 0:
+        return {"balance_ratio": 1.0, "efficiency": 1.0,
+                "load_variance": 0.0, "load_std": 0.0,
+                "max_load": 0.0, "min_load": 0.0}
+
+    total = sum(rank_loads)
+    max_val = max(rank_loads)
+    min_val = min(rank_loads)
+    mean = total / n
+
+    balance_ratio = min_val / max_val if max_val > 0 else 1.0
+    efficiency = total / (n * max_val) if max_val > 0 else 1.0
+
+    variance = sum((x - mean) ** 2 for x in rank_loads) / n
+    std = _math.sqrt(variance)
+
+    return {
+        "balance_ratio": round(balance_ratio, 4),
+        "efficiency": round(efficiency, 4),
+        "load_variance": round(variance, 6),
+        "load_std": round(std, 4),
+        "max_load": round(max_val, 4),
+        "min_load": round(min_val, 4),
+    }
+
+
+def round_robin_distribution(
+    kpoint_weights: List[float],
+    num_ranks: int,
+) -> Dict[str, Any]:
+    """Round Robin k-point distribution for comparison baseline."""
+    if num_ranks <= 0:
+        return {
+            "rank_kpts": {}, "rank_loads": [],
+            "balance_ratio": 1.0, "efficiency": 1.0,
+            "load_variance": 0.0, "method": "round_robin",
+        }
+
+    rank_loads = [0.0] * num_ranks
+    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(num_ranks)}
+
+    for i, weight in enumerate(kpoint_weights):
+        target_rank = i % num_ranks
+        rank_loads[target_rank] += weight
+        rank_kpts[target_rank].append(i)
+
+    metrics = calculate_balance_quality(rank_loads)
+    metrics["rank_kpts"] = rank_kpts
+    metrics["method"] = "round_robin"
+
+    return metrics
+
+
+def compare_distribution_methods(
+    kpoint_weights: List[float],
+    num_ranks: int,
+) -> Dict[str, Any]:
+    """Compare FFD vs Round-Robin and select the better method.
+
+    Returns dict with ffd and round_robin results plus winner recommendation.
+    """
+    ffd_result = ffd_kpoint_distribution(kpoint_weights, num_ranks)
+    rr_result = round_robin_distribution(kpoint_weights, num_ranks)
+
+    ffd_ratio = ffd_result["balance_ratio"]
+    rr_ratio = rr_result["balance_ratio"]
+    improvement = (ffd_ratio - rr_ratio) / rr_ratio * 100 if rr_ratio > 0 else 0.0
+
+    if ffd_ratio > rr_ratio:
+        winner = "ffd"
+    elif rr_ratio > ffd_ratio:
+        winner = "round_robin"
+    else:
+        winner = "tie"
+
+    logger.info(
+        f"Distribution comparison: FFD ratio={ffd_ratio:.3f}, "
+        f"RoundRobin ratio={rr_ratio:.3f}, "
+        f"improvement={improvement:.1f}%, winner={winner}"
+    )
+
+    if ffd_ratio < 0.90:
+        logger.warning(
+            f"Poor k-point load balance (FFD ratio={ffd_ratio:.3f}). "
+            f"Consider increasing k-point count or adjusting distribution."
+        )
+    if ffd_result["efficiency"] < 0.85:
+        logger.warning(
+            f"Low parallel efficiency ({ffd_result['efficiency']:.3f}). "
+            f"Some ranks are idle."
+        )
+
+    return {
+        "ffd": ffd_result,
+        "round_robin": rr_result,
+        "winner": winner,
+        "improvement_pct": round(improvement, 1),
+        "recommendation": (
+            f"Use {winner.upper()} distribution: "
+            f"balance_ratio={max(ffd_ratio, rr_ratio):.3f}, "
+            f"improvement={improvement:.1f}%"
+        ),
+    }
+
+
+def generate_ffd_machines(
+    rank_kpts: Dict[int, List[int]],
+    rank_loads: List[float],
+    num_ranks: int,
+    hostname_prefix: str = "rank",
+) -> str:
+    """Generate .machines entries from FFD k-point assignment.
+
+    Format:
+        # FFD-optimized k-point distribution
+        # Balance ratio: 0.97, Efficiency: 0.98
+
+        lapw1:rank00:4  # k-points: 1,3,7,12 (weight: 0.25)
+        lapw1:rank01:4  # k-points: 2,5,8,11 (weight: 0.24)
+    """
+    total = sum(rank_loads) if rank_loads else 1.0
+    metrics = calculate_balance_quality(rank_loads)
+
+    lines = [
+        "# FFD-optimized k-point distribution (First Fit Decreasing)",
+        f"# Balance ratio: {metrics['balance_ratio']:.2f}, "
+        f"Efficiency: {metrics['efficiency']:.2f}",
+        "# Generated by wien2k_gen",
+        "",
+    ]
+
+    for rank_idx in sorted(rank_kpts.keys()):
+        kpts = rank_kpts[rank_idx]
+        weight = rank_loads[rank_idx] if rank_idx < len(rank_loads) else 0.0
+        kpt_str = ",".join(str(k + 1) for k in kpts[:8])
+        if len(kpts) > 8:
+            kpt_str += f",...+{len(kpts) - 8}more"
+        hostname = f"{hostname_prefix}{rank_idx:02d}"
+        lines.append(
+            f"lapw1:{hostname}:4  "
+            f"# k-points: {kpt_str} (weight: {weight / total:.3f})"
+        )
+
     return "\n".join(lines)

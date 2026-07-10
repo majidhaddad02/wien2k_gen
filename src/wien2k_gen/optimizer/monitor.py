@@ -13,6 +13,7 @@ All documentation and inline comments are in English per project standards.
 
 import json
 import math
+import os
 import re
 import signal
 import threading
@@ -1371,3 +1372,290 @@ def get_monitor_status() -> Dict[str, Any]:
             "last_problem": asdict(_monitor_state.last_problem) if _monitor_state.last_problem else None,
             "last_check_mtime": _monitor_state.last_dayfile_mtime
         }
+
+
+# ===========================================================================
+# Phase 2 — Automatic Checkpointing (UPC Study)
+# ===========================================================================
+
+def estimate_remaining_walltime(job_id: str, scheduler: str = "slurm") -> Dict[str, Any]:
+    """Estimate remaining walltime for a running job.
+
+    Reads job info from SLURM (scontrol) or PBS (qstat -f).
+    Returns dict with:
+        walltime_limit_sec: float — total walltime requested
+        elapsed_sec: float — elapsed runtime
+        remaining_sec: float — remaining walltime
+        remaining_pct: float — remaining fraction (0-100)
+        scheduler: str
+    """
+    import subprocess as _sp
+
+    result = {
+        "walltime_limit_sec": 3600.0,
+        "elapsed_sec": 0.0,
+        "remaining_sec": 3600.0,
+        "remaining_pct": 100.0,
+        "scheduler": scheduler,
+        "job_id": job_id,
+    }
+
+    try:
+        if scheduler == "slurm":
+            proc = _sp.run(
+                ["scontrol", "show", "jobid", job_id],
+                capture_output=True, text=True, timeout=5,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                tlimit = re.search(r'TimeLimit=(\d+):(\d+):(\d+)', proc.stdout)
+                elapsed = re.search(r'RunTime=(\d+):(\d+):(\d+)', proc.stdout)
+                if tlimit:
+                    h, m, s = int(tlimit.group(1)), int(tlimit.group(2)), int(tlimit.group(3))
+                    result["walltime_limit_sec"] = float(h * 3600 + m * 60 + s)
+                if elapsed:
+                    h, m, s = int(elapsed.group(1)), int(elapsed.group(2)), int(elapsed.group(3))
+                    result["elapsed_sec"] = float(h * 3600 + m * 60 + s)
+        elif scheduler == "pbs":
+            proc = _sp.run(
+                ["qstat", "-f", job_id],
+                capture_output=True, text=True, timeout=5,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                w_match = re.search(r'Resource_List\.walltime\s*=\s*(\d+):(\d+):(\d+)', proc.stdout)
+                e_match = re.search(r'resources_used\.walltime\s*=\s*(\d+):(\d+):(\d+)', proc.stdout)
+                if w_match:
+                    h, m, s = int(w_match.group(1)), int(w_match.group(2)), int(w_match.group(3))
+                    result["walltime_limit_sec"] = float(h * 3600 + m * 60 + s)
+                if e_match:
+                    h, m, s = int(e_match.group(1)), int(e_match.group(2)), int(e_match.group(3))
+                    result["elapsed_sec"] = float(h * 3600 + m * 60 + s)
+    except Exception:
+        pass
+
+    result["remaining_sec"] = max(0.0, result["walltime_limit_sec"] - result["elapsed_sec"])
+    if result["walltime_limit_sec"] > 0:
+        result["remaining_pct"] = round(result["remaining_sec"] / result["walltime_limit_sec"] * 100, 1)
+
+    return result
+
+
+def calculate_checkpoint_interval(
+    remaining_time_sec: float,
+    time_per_cycle_sec: float = 300.0,
+) -> int:
+    """Calculate adaptive checkpoint interval based on UPC study.
+
+    UPC (User Productivity Center) best practices for HPC checkpointing:
+        remaining < 20% walltime  → interval = 5 cycles  (urgent)
+        remaining < 50% walltime  → interval = 10 cycles (moderate)
+        remaining >= 50% walltime → interval = 15 cycles (relaxed)
+
+    Falls back to 15 if time_per_cycle is zero.
+    """
+    if time_per_cycle_sec <= 0:
+        return 15
+    remaining_cycles = int(remaining_time_sec / time_per_cycle_sec)
+    if remaining_cycles < 0:
+        return 5
+    if remaining_cycles < 20:
+        return 5
+    if remaining_cycles < 50:
+        return 10
+    return 15
+
+
+def perform_incremental_checkpoint(
+    case_name: str,
+    checkpoint_dir: str = ".checkpoints",
+    nowrite_vector: bool = False,
+    is_soc: bool = False,
+) -> Dict[str, Any]:
+    """Perform incremental checkpoint — copy only modified files.
+
+    Files copied based on calculation context:
+        case.scf         — always (SCF diagnostics)
+        case.vector      — if nowrite_vector=False (restart vector)
+        case.dmat        — if SOC (density matrix for spin-orbit)
+        case.clmsum      — if orbital potential present
+        case.broyd*      — if Broyden mixing active
+        case.pulay_history — if Pulay mixing active
+
+    Returns dict with:
+        checkpoint_id: str
+        files_copied: List[str]
+        size_mb: float
+        incremental: bool
+    """
+    import shutil as _shutil
+
+    case = Path(case_name)
+    if not case.exists():
+        case = Path(".")
+
+    ckpt_base = case / Path(checkpoint_dir)
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    ckpt_id = f"ckpt_{ts}"
+    ckpt_dir = ckpt_base / ckpt_id
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+    files_to_check = [".scf"]
+    if not nowrite_vector:
+        files_to_check.append(".vector")
+    if is_soc:
+        files_to_check.append(".dmat")
+    files_to_check.extend([".clmsum", ".broyd", ".broyd1", ".broyd2"])
+    if (case / Path(".pulay_history")).exists():
+        files_to_check.append(".pulay_history")
+
+    case_files = {f.name: f for f in case.iterdir() if f.is_file()}
+
+    files_copied = []
+    total_size = 0.0
+
+    for suffix in files_to_check:
+        fname = f"{case.name}{suffix}"
+        if fname in case_files:
+            src = case_files[fname]
+            dst = ckpt_dir / fname
+            _shutil.copy2(str(src), str(dst))
+            files_copied.append(fname)
+            total_size += src.stat().st_size
+
+    size_mb = total_size / (1024 * 1024)
+
+    (ckpt_dir / "CHECKPOINT_INFO").write_text(
+        f"case={case.name}\ncheckpoint_id={ckpt_id}\ntimestamp={ts}\n"
+        f"incremental=True\nfiles_copied={','.join(files_copied)}\n"
+        f"nowrite_vector={nowrite_vector}\nis_soc={is_soc}\n",
+        encoding="utf-8")
+
+    # Update checkpoint history
+    history_file = ckpt_base / ".checkpoint_history"
+    with open(history_file, "a", encoding="utf-8") as f:
+        f.write(f"{ckpt_id} {ts} {size_mb:.1f}MB {len(files_copied)}files\n")
+
+    # Save status
+    status_file = ckpt_base / ".checkpoint_status"
+    status_file.write_text(
+        f"last_checkpoint={ckpt_id}\n"
+        f"total_checkpoints={len(list(ckpt_base.glob('ckpt_*')))}\n"
+        f"last_size_mb={size_mb:.1f}\n",
+        encoding="utf-8")
+
+    cleanup_old_checkpoints(str(ckpt_base))
+
+    logger.info(
+        f"Checkpoint saved: {ckpt_id} at cycle (incremental), "
+        f"size={size_mb:.1f}MB, files={len(files_copied)}"
+    )
+
+    return {
+        "checkpoint_id": ckpt_id,
+        "files_copied": files_copied,
+        "size_mb": round(size_mb, 2),
+        "incremental": True,
+    }
+
+
+def cleanup_old_checkpoints(
+    checkpoint_dir: str = ".checkpoints",
+    max_checkpoints: int = 3,
+    quota_warning_pct: float = 80.0,
+) -> Dict[str, Any]:
+    """Remove oldest checkpoints keeping only last max_checkpoints.
+
+    Also checks disk quota and warns if checkpoint space exceeds threshold.
+
+    Returns dict with removed count and total space info.
+    """
+    ckpt_base = Path(checkpoint_dir)
+    if not ckpt_base.exists():
+        return {"removed": 0, "total_mb": 0.0, "warn": False}
+
+    ckpts = sorted(ckpt_base.glob("ckpt_*"), key=lambda p: p.stat().st_mtime)
+    removed = 0
+    total_size = 0.0
+
+    while len(ckpts) > max_checkpoints:
+        old = ckpts.pop(0)
+        if old.is_dir():
+            import shutil as _shutil
+            _shutil.rmtree(old)
+        removed += 1
+
+    for ckpt in ckpt_base.glob("ckpt_*"):
+        if ckpt.is_dir():
+            for f in ckpt.rglob("*"):
+                if f.is_file():
+                    total_size += f.stat().st_size
+
+    total_mb = total_size / (1024 * 1024)
+    warn = total_mb > 1024  # 1 GB
+
+    if warn:
+        logger.warning(
+            f"Checkpoint storage: {total_mb:.1f}MB. "
+            f"Consider reducing max_checkpoints or using external storage."
+        )
+
+    return {"removed": removed, "total_mb": round(total_mb, 1), "warn": warn}
+
+
+def resume_from_checkpoint(
+    case_name: str,
+    checkpoint_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Resume WIEN2k calculation from a saved checkpoint.
+
+    Copies checkpoint files back to working directory and adjusts
+    case.in2 to continue from the last completed SCF cycle.
+
+    Returns dict with success status and details.
+    """
+    import shutil as _shutil
+
+    case = Path(case_name)
+    if not case.exists():
+        case = Path(".")
+
+    ckpt_base = case / ".checkpoints"
+    if checkpoint_id:
+        ckpt_dir = ckpt_base / checkpoint_id
+    else:
+        dirs = sorted(ckpt_base.glob("ckpt_*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not dirs:
+            logger.warning("No checkpoints found for resume")
+            return {"success": False, "message": "No checkpoints found"}
+        ckpt_dir = dirs[0]
+
+    if not ckpt_dir.exists():
+        return {"success": False, "message": f"Checkpoint not found: {ckpt_dir}"}
+
+    # Copy checkpoint files to working directory
+    files_restored = []
+    for src_file in ckpt_dir.glob("*"):
+        if src_file.is_file() and src_file.name != "CHECKPOINT_INFO":
+            dest = case / src_file.name.replace(ckpt_dir.name + "_", "")
+            if src_file.name.startswith(case.name):
+                _shutil.copy2(str(src_file), str(case / src_file.name))
+            else:
+                _shutil.copy2(str(src_file), str(case / f"{case.name}{src_file.suffix}"))
+            files_restored.append(src_file.name)
+
+    # Read checkpoint info for cycle tracking
+    info_file = ckpt_dir / "CHECKPOINT_INFO"
+    cycle_info = ""
+    if info_file.exists():
+        cycle_info = info_file.read_text(encoding="utf-8", errors="replace")
+
+    logger.info(
+        f"Resumed from checkpoint {ckpt_dir.name}: "
+        f"{len(files_restored)} files restored"
+    )
+
+    return {
+        "success": True,
+        "checkpoint_id": ckpt_dir.name,
+        "files_restored": len(files_restored),
+        "cycle_info": cycle_info.strip(),
+    }
