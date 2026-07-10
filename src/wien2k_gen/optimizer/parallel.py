@@ -20,7 +20,7 @@ References:
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
