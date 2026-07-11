@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim AS base
+ARG PYTHON_VERSION=3.11
+FROM python:${PYTHON_VERSION}-slim AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1

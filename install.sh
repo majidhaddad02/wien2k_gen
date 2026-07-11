@@ -52,8 +52,6 @@ else
   [[ -n "${ZSH_VERSION:-}" ]] && PROFILE_FILE="${HOME}/.zshrc" || PROFILE_FILE="${HOME}/.bashrc"
 fi
 
-LIB_DIR="${INSTALL_PREFIX}/lib/python$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')/site-packages"
-
 log "📦 Install Prefix: ${INSTALL_PREFIX}"
 log "🔗 Bin Directory:  ${BIN_LINK_DIR}"
 
@@ -109,26 +107,32 @@ else
 fi
 
 # ==============================================================================
-# 5. Installation
+# 5. Installation (uses venv, not --prefix)
 # ==============================================================================
-INSTALL_CMD="python3 -m pip install --prefix='${INSTALL_PREFIX}' --no-cache-dir --no-warn-script-location"
+VENV_DIR="${INSTALL_PREFIX}/venv"
+PIP="${VENV_DIR}/bin/pip"
+PYTHON="${VENV_DIR}/bin/python"
+
+log "📦 Creating virtual environment at ${VENV_DIR}..."
+python3 -m venv "${VENV_DIR}"
+"${PIP}" install --upgrade pip setuptools wheel --quiet
 
 if $USE_ONLINE; then
   log "⬇️  Installing from PyPI..."
   if $DRY_RUN; then
-    log "🔍 Dry-run: ${INSTALL_CMD} ."
+    log "🔍 Dry-run: ${PIP} install ."
   else
-    ${INSTALL_CMD} .
+    "${PIP}" install .
   fi
 else
   if [[ ! -d "${OFFLINE_DIR}" ]] || [[ -z "$(ls -A "${OFFLINE_DIR}" 2>/dev/null)" ]]; then
-    error "❌ Offline directory '${OFFLINE_DIR}/' is missing or empty. Cannot proceed."
+    error "❌ Offline directory '${OFFLINE_DIR}/' is missing or empty."
   fi
   log "📦 Installing from offline packages..."
   if $DRY_RUN; then
-    log "🔍 Dry-run: ${INSTALL_CMD} --find-links='${OFFLINE_DIR}' --no-index ."
+    log "🔍 Dry-run: ${PIP} install --find-links='${OFFLINE_DIR}' --no-index ."
   else
-    ${INSTALL_CMD} --find-links="${OFFLINE_DIR}" --no-index .
+    "${PIP}" install --find-links="${OFFLINE_DIR}" --no-index .
   fi
 fi
 success "✅ Package installed."
@@ -139,25 +143,24 @@ success "✅ Package installed."
 log "🔗 Creating symlinks in ${BIN_LINK_DIR}..."
 mkdir -p "${BIN_LINK_DIR}"
 for bin in "${BINARIES[@]}"; do
-  target="${INSTALL_PREFIX}/bin/${bin}"
+  target="${VENV_DIR}/bin/${bin}"
   [[ -f "$target" ]] && ln -sf "$target" "${BIN_LINK_DIR}/${bin}" || warn "⚠️  Missing binary: ${bin}"
 done
 
-# PYTHONPATH setup
-export_line="export PYTHONPATH=\"${LIB_DIR}:\${PYTHONPATH}\""
-if ! grep -qF "${LIB_DIR}" "${PROFILE_FILE}" 2>/dev/null; then
+# PATH setup (venv-based, no PYTHONPATH needed)
+PATH_LINE="export PATH=\"${BIN_LINK_DIR}:\${PATH}\""
+if ! grep -qF "${BIN_LINK_DIR}" "${PROFILE_FILE}" 2>/dev/null; then
   echo -e "\n# ${APP_NAME} v${APP_VERSION} Environment" >> "${PROFILE_FILE}"
-  echo "${export_line}" >> "${PROFILE_FILE}"
-  log "📝 Added PYTHONPATH to ${PROFILE_FILE}. Run: source ${PROFILE_FILE}"
+  echo "${PATH_LINE}" >> "${PROFILE_FILE}"
+  log "📝 Added PATH to ${PROFILE_FILE}. Run: source ${PROFILE_FILE}"
 else
-  log "📝 PYTHONPATH already configured."
+  log "📝 PATH already configured."
 fi
 
 # ==============================================================================
 # 7. Post-Install Verification
 # ==============================================================================
 log "🧪 Running verification..."
-export PYTHONPATH="${LIB_DIR}:${PYTHONPATH:-}"
 BIN_PATH="${BIN_LINK_DIR}/wien2k_gen"
 
 if [[ ! -x "$BIN_PATH" ]]; then
@@ -171,10 +174,15 @@ else
   warn "⚠️  Version mismatch. Output: ${VER_OUT}"
 fi
 
-if python3 -c "import ${APP_NAME}; print('Module import: OK')" >/dev/null 2>&1; then
+if python3 -c "import ${APP_NAME}" 2>/dev/null; then
   success "✅ Python module import passed."
 else
-  error "❌ Module import failed. Check PYTHONPATH or dependencies."
+  # Fallback: try with venv python
+  if "${PYTHON}" -c "import ${APP_NAME}" 2>/dev/null; then
+    success "✅ Python module import passed (venv)."
+  else
+    error "❌ Module import failed."
+  fi
 fi
 
 success "🎉 Installation completed successfully!"

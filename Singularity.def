@@ -3,7 +3,7 @@ From: ubuntu:22.04
 
 %labels
     Maintainer   HPC-Workflow-Team
-    Version      9.8.0
+    Version      0.1.0
     Description  WIEN2k Parallel Config & Job Dispatcher (Production HPC Container)
     WIEN2k_Compat 19.1+ 21.1+ 23.1+
     MPI_Flavors   OpenMPI-4.1 MPICH-4.1 IntelMPI-2021
@@ -269,7 +269,7 @@ BASH
     #!/bin/bash
     # Instance startup: print environment summary
     echo "========================================"
-    echo " WIEN2k Gen HPC Container v9.8.0"
+    echo " WIEN2k Gen HPC Container v0.1.0"
     echo "========================================"
     echo "MPI:  $(which mpirun 2>/dev/null || echo 'default')"
     echo "Python: $(python3 --version)"

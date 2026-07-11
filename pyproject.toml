@@ -4,7 +4,7 @@
 # ==============================================================================
 
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm[toml]>=8.0"]
+requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 # ==============================================================================
@@ -80,9 +80,7 @@ docs = [
     "sphinx-autodoc-typehints"
 ]
 hpc = [
-    "gpytorch>=1.10",
-    "scikit-optimize>=0.9",
-    "botorch>=0.9",
+    "scipy>=1.10",
 ]
 reframe = [
     "reframe-hpc>=4.6",

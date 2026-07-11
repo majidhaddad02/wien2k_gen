@@ -12,7 +12,7 @@ PKG_DIR := $(SRC_DIR)/$(APP_NAME)
 COMPLETIONS_DIR := completions
 OFFLINE_DIR := offline_packages
 
-.PHONY: all install dev test lint format clean build \
+.PHONY: all install dev minimal test lint format clean build \
         install-offline download-offline install-completions \
         run tui wizard docker singularity help
 
@@ -23,12 +23,19 @@ all: install
 # ==============================================================================
 install: $(VENV)/bin/activate
 	@$(VENV)/bin/python -m pip install --upgrade pip setuptools wheel
-	@$(VENV)/bin/python -m pip install -e ".[dev]"
-	@echo "✅ Production & dev dependencies installed."
+	@$(VENV)/bin/python -m pip install -e .
+	@echo "✅ Core dependencies installed."
 
-dev: install
+dev: $(VENV)/bin/activate
+	@$(VENV)/bin/python -m pip install -e ".[dev]"
 	@$(VENV)/bin/pre-commit install
 	@echo "🛠️  Dev environment & pre-commit hooks ready."
+
+minimal: $(VENV)/bin/activate
+	@$(VENV)/bin/python -m pip install --upgrade pip setuptools
+	@$(VENV)/bin/python -m pip install --no-deps -e .
+	@$(VENV)/bin/python -m pip install rich pyyaml numpy psutil
+	@echo "📦 Minimal install: only essential deps (no textual TUI)."
 
 $(VENV)/bin/activate: pyproject.toml
 	@$(PYTHON) -m venv $(VENV)
@@ -115,13 +122,14 @@ clean:
 	rm -rf coverage_html/ $(OFFLINE_DIR)/ $(APP_NAME).sif
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	docker system prune -f 2>/dev/null || true
+	@docker rmi -f $(APP_NAME):latest 2>/dev/null || true
 	@echo "🧹 Cleaned build artifacts, caches, and containers."
 
 help:
 	@echo "📖 Wien2kGen Makefile Targets:"
-	@echo "  make install          → Create venv & install package + dev deps"
-	@echo "  make dev              → Setup pre-commit hooks"
+	@echo "  make install          → Create venv & install core deps"
+	@echo "  make dev              → Install dev deps + pre-commit hooks"
+	@echo "  make minimal          → Install only essential deps (no TUI)"
 	@echo "  make test             → Run pytest with terminal coverage"
 	@echo "  make test-html        → Run pytest with HTML coverage report"
 	@echo "  make lint             → Ruff + MyPy static analysis"
