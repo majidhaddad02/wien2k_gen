@@ -666,7 +666,7 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     """SCF convergence diagnostics with root cause analysis.
 
     Connects backend intelligence (charge sloshing diagnosis, Bayesian tuning,
-    QTL-B root cause) to the terminal UI as Peter Blaha demands.
+    QTL-B root cause) to the terminal UI.
     """
     import re as _re
 
@@ -975,7 +975,7 @@ def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     """Show intelligent optimization advice with Roofline, Amdahl, NUMA analysis.
 
     This is the UI layer that connects the backend intelligence to the user,
-    answering Peter Blaha's critique about hidden backend smarts.
+    providing Roofline, Amdahl, and NUMA analysis in a human-readable format.
     """
     from .core.hardware import (
         calculate_peak_fp64_gflops,

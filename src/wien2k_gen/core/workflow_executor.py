@@ -217,11 +217,12 @@ class WorkflowExecutor:
     def _adjust_mixing(self, attempt: int) -> None:
         """Adjust mixing parameters on retry to stabilise SCF convergence.
 
-        Phase 1 enhancements (Blaha R5):
+        Phase 1 enhancements:
           • detect_system_type() — insulator / semiconductor / metal
-          • Smart Kerker q0 via calculate_optimal_q0() (Winkelmann 2020)
+          • Smart Kerker q0 via calculate_optimal_q0() (Winkelmann et al. 2020)
           • Restarted Pulay mixing for large systems via select_mixing_strategy()
-            and restarted_pulay_mixing() (Pratapa 2015, PRB 92 115160)
+            and restarted_pulay_mixing() (Pratapa & Suryanarayana,
+            Chem. Phys. Lett. 635, 69–74, 2015)
         """
         mixing_file = Path(".mixing_params")
         factors = {1: 0.70, 2: 0.50, 3: 0.30}
@@ -257,7 +258,7 @@ class WorkflowExecutor:
                 f"KERKER {q0:.3f}\n", encoding="utf-8")
             self.status.events.append(
                 f"Kerker mixing enabled: q0={q0:.3f} "
-                f"(Winkelmann 2020, system={system_type}, a={lattice_constant:.3f} bohr)"
+                f"(Winkelmann et al. 2020, PRB 102, 195138; system={system_type}, a={lattice_constant:.3f} bohr)"
             )
         else:
             self.status.events.append(f"Mixing set: beta={new_val:.4f}")
@@ -455,7 +456,8 @@ def run_wien2k_pipeline(
 ) -> Dict[str, Any]:
     """Run a complete WIEN2k pipeline with automatic resource optimization.
 
-    Implements the full workflow that Peter Blaha recommends:
+    Implements the standard WIEN2k SCF workflow (see Blaha et al. 2020,
+    J. Chem. Phys. 152, 074101, Usersguide §4):
         1. init_lapw (if case doesn't exist)
         2. wien2k_gen generate → produces .machines file
         3. run_lapw -p with SCF monitoring
@@ -549,7 +551,7 @@ def run_wien2k_pipeline(
 
 
 # ===========================================================================
-# Phase 1 Scientific Enhancements (Blaha R5 feedback)
+# Phase 1 Scientific Enhancements
 # ===========================================================================
 
 def detect_system_type(case_dir: str = ".") -> str:
@@ -592,7 +594,8 @@ def detect_system_type(case_dir: str = ".") -> str:
 def calculate_optimal_q0(system_type: str, lattice_constant: float = 10.0) -> float:
     """Calculate optimal Kerker q0 based on system type and lattice constant.
 
-    Formula (Winkelmann 2020, CPC 252, 107154):
+    Formula (Winkelmann, Di Napoli, Wortmann & Blügel 2020,
+             Phys. Rev. B 102, 195138. DOI: 10.1103/PhysRevB.102.195138):
         metal:          q0 = 0.4 × (2π / a)       ≈ 0.25 for a=10 bohr
         semiconductor:  q0 = 0.15 × (2π / a)      ≈ 0.09 for a=10 bohr
         insulator:      q0 = 0.05 × (2π / a)      ≈ 0.03 for a=10 bohr
@@ -612,7 +615,7 @@ def calculate_optimal_q0(system_type: str, lattice_constant: float = 10.0) -> fl
 def select_mixing_strategy(n_atoms: int, is_metallic: bool) -> str:
     """Select optimal mixing strategy based on system characteristics.
 
-    Decision matrix (Pratapa 2015, PRB 92 115160):
+    Decision matrix (Pratapa & Suryanarayana, Chem. Phys. Lett. 635, 2015):
         large (>50) + metal       → restarted_pulay + kerker
         large (>50) + non-metal   → restarted_pulay
         small (≤50)               → broyden (default)
@@ -633,7 +636,7 @@ def restarted_pulay_mixing(
 ) -> None:
     """Implement restarted Pulay mixing for large systems.
 
-    Based on Pratapa 2015 (PRB 92, 115160):
+    Based on Pratapa & Suryanarayana (Chem. Phys. Lett. 635, 69–74, 2015):
       1. Store charge density + residual for each SCF cycle
       2. When cycles > history_size, retain only last history_size
       3. Build overlap matrix S_ij = <R_i|R_j> of residuals
@@ -645,14 +648,14 @@ def restarted_pulay_mixing(
 
     Args:
         case_name: WIEN2k case name
-        history_size: number of past cycles retained (default 7, Pratapa 2015)
+        history_size: number of past cycles retained (default 7, Pratapa & Suryanarayana 2015)
         regularization: Tikhonov regularization for singular overlap (default 1e-10)
     """
     history_file = Path(f".pulay_history")
     strategy_file = Path(".mixing_strategy")
 
     strategy_file.write_text(
-        f"Restarted Pulay mixing (Pratapa 2015, PRB 92 115160)\n"
+        f"Restarted Pulay mixing (Pratapa & Suryanarayana, Chem. Phys. Lett. 2015)\n"
         f"history_size={history_size}\n"
         f"regularization={regularization}\n", encoding="utf-8")
 

@@ -134,7 +134,8 @@ def matern_kernel(
     k(r) = (1 + √5·r/ℓ + 5r²/3ℓ²) · exp(-√5·r/ℓ)
 
     Preferred over RBF for modelling non-smooth objective surfaces
-    such as SCF convergence behaviour (Lyngby 2024, arXiv:2403.05678).
+    such as SCF convergence behaviour (Snoek et al. 2012, NIPS 25, 2951–2959;
+    Rasmussen & Williams 2006, Gaussian Processes for Machine Learning).
 
     Args:
         x1: First input matrix (shape (n, d)).
@@ -180,7 +181,7 @@ def compute_q_expected_improvement(
     optimization wallclock from ~20h to ~3h.
 
     Based on Ginsbourger et al. (2010) "Kriging Is Well-Suited to Parallelize
-    Optimization" and Wang et al. (2016).
+    Optimization" and Wang, Clark, Liu & Frazier (2016), arXiv:1602.05149.
 
     Args:
         mu: Posterior mean at candidate points (shape (n,)).
@@ -314,8 +315,9 @@ def add_physics_priors(
     """
     Enforce physically-motivated parameter constraints.
 
-    Based on Blaha et al. (JCP 2020) and WIEN2k User Guide 2023:
-      - RKMAX ≥ 7.0 for light elements (O, F, N) — hard potentials
+    Based on Blaha et al. (2020), J. Chem. Phys. 152, 074101 and
+    WIEN2k User Guide 2023:
+      - RKMAX ≥ 7.0 for light hard elements (O, F, N) — hard potentials
       - RKMAX ≥ 7.0 for SOC calculations — spin-orbit requires high cutoff
       - mixing ≤ 0.3 for metallic systems — Kerker preconditioning needed
       - kpt density ≥ 1000 kpts/Å⁻³ for metals — Fermi surface resolution

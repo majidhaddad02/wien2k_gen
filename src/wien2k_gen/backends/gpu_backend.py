@@ -8,7 +8,7 @@ Key Features:
 - Memory-aware threshold: only offload when GPU memory > nmat^2 * 16 bytes
 - CUDA_VISIBLE_DEVICES round-robin assignment for hybrid MPI+GPU runs
 - WIEN2k/VASP/QE specific machine-file and input-flag generation
-- Mixed-precision recommendations based on Auckenthaler et al. benchmarks
+- Mixed-precision recommendations based on Yu et al. (2021) ELPA-GPU benchmarks
 """
 
 import os
@@ -595,8 +595,8 @@ def get_mixed_precision_recommendation(
 
     Research basis: mixed-precision benchmarks show that exchange-correlation
     integration tolerates FP32 while diagonalization requires FP64 for
-    numerical stability. Speedup estimates from Auckenthaler et al. (2011)
-    and VASP mixed-precision benchmarks.
+    numerical stability. Speedup estimates from Yu et al. (2021),
+    Comput. Phys. Commun. 262, 107808 (ELPA-GPU benchmarks).
 
     Args:
         backend: DFT code name ('wien2k', 'vasp', 'quantum_espresso').

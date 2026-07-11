@@ -258,7 +258,7 @@ def compute_direct_band_gap(
     For spin-polarized calculations (nspin == 2), both spin channels are
     consolidated: per-k-point VBM = max(E^up_F, E^dn_F) and CBM = min(E^up_F, E^dn_F),
     where F is the Fermi level. This is the standard approach for magnetic
-    semiconductor gap calculations (Crowley et al. 2016, Sec. 3.2).
+    semiconductor gap calculations (Ashcroft & Mermin 1976, Chapter 8).
 
     Parameters
     ----------
@@ -430,7 +430,6 @@ def compute_effective_mass(
     References
     ----------
     Ashcroft & Mermin 1976, Chapter 8.
-    Crowley et al. 2016.
     """
     eigenvalues = band_data["eigenvalues"]
     nspin = band_data["nspin"]

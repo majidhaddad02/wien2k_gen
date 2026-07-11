@@ -116,11 +116,15 @@ def _nearest_factorizable(target: int) -> int:
     if _is_blacs_friendly(target):
         return target
 
-    for delta in range(1, target + 1):
-        for candidate in (target - delta, target + delta):
+    sqrt_target = max(4, int(target ** 0.5))
+    # Search outward from sqrt(target) for BLACS-friendly candidates.
+    # Two passes: first search larger values (prefer slight overshoot),
+    # then smaller (fallback to undershoot).
+    for delta in range(0, target):
+        for candidate in (target + delta, target - delta):
             if candidate >= 4 and _is_blacs_friendly(candidate):
                 return candidate
-        if delta > target * 2:
+        if delta > target:
             break
 
     return target
@@ -597,14 +601,25 @@ class Topology:
 
         rank = 0
         if parallelization_mode == "block":
-            # Block distribution: fill node 0, then node 1, etc.
-            # Crucial for WIEN2k k-point parallelization to keep contiguous k-points on the same node
             for i, node in enumerate(self.nodes):
-                while rank < total_ranks and (len(distribution[node]) < max_ranks_per_node[i] or total_ranks <= total_available):
+                while rank < total_ranks and (
+                    len(distribution[node]) < max_ranks_per_node[i]
+                    or total_ranks <= total_available
+                ):
                     distribution[node].append(rank)
                     rank += 1
-                    if len(distribution[node]) >= max_ranks_per_node[i] and total_ranks > total_available:
-                        break # Move to next node if oversubscribing evenly
+                    if (
+                        len(distribution[node]) >= max_ranks_per_node[i]
+                        and total_ranks > total_available
+                    ):
+                        break
+            # Residual: assign any remaining ranks via round-robin
+            while rank < total_ranks:
+                for i, node in enumerate(self.nodes):
+                    if rank >= total_ranks:
+                        break
+                    distribution[node].append(rank)
+                    rank += 1
         else:
             # Cyclic distribution: round-robin across nodes
             while rank < total_ranks:
@@ -995,11 +1010,14 @@ def _detect_nvidia_gpus_topology() -> List[GPUInfo]:
 
             numa_affinity = -1
             try:
-                numa_path = Path(
-                    f"/sys/class/drm/card{line_num}/device/numa_node"
-                )
-                if numa_path.exists():
-                    numa_affinity = int(numa_path.read_text().strip())
+                # Use PCI bus ID to locate correct DRM device,
+                # not nvidia-smi line number (≠ DRM card index).
+                if pci_bus:
+                    pci_dev = Path(f"/sys/bus/pci/devices/{pci_bus}")
+                    if pci_dev.exists():
+                        numa_node = pci_dev / "numa_node"
+                        if numa_node.exists():
+                            numa_affinity = int(numa_node.read_text().strip())
             except Exception:
                 pass
 

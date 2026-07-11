@@ -12,6 +12,7 @@ Production features:
 """
 
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -199,8 +200,8 @@ def execute_qe_calculation(
 
         # Start subprocess with process group isolation
         proc = subprocess.Popen(
-            command,
-            shell=True,
+            shlex.split(command),
+            shell=False,
             env=env,
             stdout=stdout_fh,
             stderr=stderr_fh,

@@ -117,7 +117,8 @@ def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -
     Complexity is O(nmat * nbands * (nbands + niter)) per k-point per iteration,
     significantly cheaper than O(nmat^3) when nbands << nmat.
 
-    Components per iteration per k-point (Blaha et al. 2020, Sec. 6.4.3):
+    Components per iteration per k-point (Davidson method; Blaha et al.
+    2020, J. Chem. Phys. 152, 074101, Usersguide §6.4):
     - Subspace formation (Frobenius orthogonalization): nmat * nbands^2
     - Rayleigh-Ritz diagonalization of expanded subspace: nbands * subspace^2
       where subspace ≈ 2 * nbands (the expanded Davidson subspace)
@@ -144,7 +145,8 @@ def estimate_davidson_flops(nmat: int, nbands: int, nkpt: int, niter: int = 4) -
 
     References
     ----------
-    Blaha et al. 2020, WIEN2k User's Guide, Section 6.4.3.
+    based on Blaha et al. 2020, J. Chem. Phys. 152, 074101 and
+    standard Davidson iteration complexity analysis.
     Saad 2011, "Numerical Methods for Large Eigenvalue Problems", Chapter 4.
     """
     subspace = 2 * nbands

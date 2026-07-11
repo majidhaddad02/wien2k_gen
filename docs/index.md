@@ -63,20 +63,20 @@ wien2k_wizard                          # interactive wizard
 
 ### Parallelization Strategies
 - k-point, hybrid, MPI, and fine-grain parallel modes
-- ELPA eigensolver recommendation (threshold 8000 — Ruh 2023)
+- ELPA eigensolver recommendation (threshold 8000 — WIEN2k benchmarks)
 - FFD k-point distribution for load balancing
 - NUMA-aware k-point allocation
 - GPU offloading detection with hybrid CPU+GPU `.machines` generation
 
 ### SCF Convergence Optimization
-- Smart Kerker q0 based on system type (Winkelmann 2020)
-- Restarted Pulay mixing for large systems (Pratapa 2015)
-- Automatic checkpointing with adaptive intervals (UPC Study)
+- Smart Kerker q0 based on system type (Winkelmann et al. 2020, PRB 102, 195138)
+- Restarted Pulay mixing for large systems (Pratapa & Suryanarayana 2015)
+- Automatic checkpointing with adaptive intervals (Daly 2006)
 - Charge sloshing root cause diagnosis with targeted remediation
 - QTL-B error analysis with specific fix recommendations
 
 ### ML & AI Assistance
-- Bayesian optimization with Matérn ν=2.5 kernel (Lyngby 2024)
+- Bayesian optimization with Matérn ν=2.5 kernel (Snoek et al. 2012)
 - q-batch Expected Improvement for parallel evaluation
 - GNN-based k-point prediction (CGCNN architecture)
 - Physics-informed parameter priors

@@ -298,7 +298,7 @@ class Wien2kBackend(Backend):
         - lapw2: vector ops. Can exploit vector_split for excess cores.
         - Cores beyond k-point saturation use granularity + vector_split, not wasted.
         - Amdahl's Law cap: warns when user requests more cores than useful.
-          (Ref: Amdahl 1967; Hager & Wellein 2010; HPC Wiki Scaling)
+          (Ref: Amdahl 1967; Hager & Wellein 2010, §4.2)
 
         Returns dict with per-processor core counts, kpar, reason, and warnings.
         """
@@ -1026,7 +1026,8 @@ class Wien2kBackend(Backend):
         Also includes NUMA binding hints, memory warnings, and heterogeneous
         cluster node distribution with core ratio scaling.
 
-        Ref: WIEN2k Usersguide 2023 Sections 4.5.8, 6.1; Blaha & Schwarz (2020).
+        Ref: WIEN2k Usersguide 2023 Sections 4.5.8, 6.1;
+        Blaha et al. (2020), J. Chem. Phys. 152, 074101.
         """
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
@@ -1208,8 +1209,9 @@ class Wien2kBackend(Backend):
     ) -> Dict[str, Any]:
         """Complete decision matrix for WIEN2k parallelization strategy.
 
-        Based on Peter Blaha's feedback: WIEN2k has multiple nested
-        parallelization levels that must be combined intelligently.
+        Based on WIEN2k Usersguide 2023 §§4.5.8, 6.1: WIEN2k has
+        multiple nested parallelization levels that must be combined
+        intelligently for optimal performance.
 
         Strategy selection order:
           1. Hybrid functionals (nmat > 5000) → band + k-point parallel

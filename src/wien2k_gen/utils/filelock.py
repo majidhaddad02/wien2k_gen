@@ -196,7 +196,9 @@ class FileLock:
         self._pid_file = self._fallback_dir / "pid"
         
         try:
-            # os.mkdir is atomic on POSIX systems, even on many NFS implementations
+            # os.mkdir is atomic on local POSIX filesystems and Lustre/GPFS.
+    # WARNING: NFSv3 does NOT guarantee atomic mkdir between clients.
+    # Use file locking on a shared filesystem (Lustre MDT-local) for safety.
             self._fallback_dir.mkdir(parents=True, exist_ok=False)
             self._pid_file.write_text(str(os.getpid()), encoding="utf-8")
         except FileExistsError:

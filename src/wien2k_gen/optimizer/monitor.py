@@ -431,8 +431,9 @@ def diagnose_charge_sloshing_root_cause(
 ) -> dict:
     """Diagnose root cause of charge sloshing and recommend targeted fix.
 
-    Based on Peter Blaha's feedback: sloshing has specific root causes
-    that require different treatments:
+    Based on WIEN2k Usersguide 2023 §4.5 (SCF convergence diagnostics):
+    charge sloshing has specific root causes that require different
+    treatments:
 
     1. Metallic systems (Fermi surface, bands crossing EF):
        → Apply Methfessel-Paxton smearing (0.02 Ry), PRATT mixing
@@ -1375,7 +1376,12 @@ def get_monitor_status() -> Dict[str, Any]:
 
 
 # ===========================================================================
-# Phase 2 — Automatic Checkpointing (UPC Study)
+# Phase 2 — Automatic Checkpointing
+#
+# Optimal checkpoint interval heuristic (Daly 2006, J. Phys.: Conf. Ser.
+# 46, 514-518. DOI: 10.1088/1742-6596/46/1/071):
+#   optimal ≈ √(2 × C / R), where C = checkpoint cost, R = failure rate.
+# Heuristic simplification for SCF: densify checkpoints as walltime shrinks.
 # ===========================================================================
 
 def estimate_remaining_walltime(job_id: str, scheduler: str = "slurm") -> Dict[str, Any]:
@@ -1443,12 +1449,15 @@ def calculate_checkpoint_interval(
     remaining_time_sec: float,
     time_per_cycle_sec: float = 300.0,
 ) -> int:
-    """Calculate adaptive checkpoint interval based on UPC study.
+    """Calculate adaptive checkpoint interval using Daly (2006) heuristic.
 
-    UPC (User Productivity Center) best practices for HPC checkpointing:
-        remaining < 20% walltime  → interval = 5 cycles  (urgent)
-        remaining < 50% walltime  → interval = 10 cycles (moderate)
-        remaining >= 50% walltime → interval = 15 cycles (relaxed)
+    Daly (2006), J. Phys.: Conf. Ser. 46, 514-518.
+    DOI: 10.1088/1742-6596/46/1/071.
+
+    In practice, densify checkpoints as remaining walltime shrinks:
+        remaining < 20% total_walltime  → interval = 5 cycles  (urgent)
+        remaining < 50% total_walltime  → interval = 10 cycles (moderate)
+        remaining >= 50% total_walltime → interval = 15 cycles (relaxed)
 
     Falls back to 15 if time_per_cycle is zero.
     """

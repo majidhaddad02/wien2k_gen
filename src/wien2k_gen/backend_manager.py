@@ -108,6 +108,7 @@ class BackendManager:
 
         StubBackend.__name__ = class_name
         StubBackend.__module__ = f"wien2k_gen.backends.{code.value}"
+        StubBackend._is_stub = True  # type: ignore[attr-defined]
         return StubBackend
 
     def auto_detect(self) -> BackendCode:
@@ -158,8 +159,7 @@ class BackendManager:
             raise BackendError(f"Unsupported or unavailable backend: {code.value}")
 
         cls_obj = self._registry[code]
-        # Fail fast if it's a stub
-        if cls_obj.__name__.endswith("StubBackend"):
+        if getattr(cls_obj, "_is_stub", False):
             try:
                 cls_obj()  # Triggers the descriptive ImportError/BackendError
             except Exception as e:

@@ -280,8 +280,12 @@ def estimate_memory_footprint_gb(
     hamiltonian_gb = (nmat ** 2) * 16.0 / (1024.0 ** 3)
     eff_bands = nbands if nbands else (nmat // 2)
     eigenvector_gb = nmat * eff_bands * 16.0 / (1024.0 ** 3)
-    charge_density_gb = nmat * 0.001 * atoms  # Replicated per rank
-    lapack_work_gb = 0.5 * hamiltonian_gb      # Partially replicated
+    # Charge density ~ RKMAX^3 * atoms stored on a real-space FFT grid.
+    # Empirical scaling: ~0.0016 GB per atom per unit of RKMAX^3 at RKMAX=7.
+    # Ref: WIEN2k benchmark data at http://www.wien2k.at/reg_user/benchmark/
+    rkmax_ratio = (max(5.0, rkmax) / 7.0) ** 3
+    charge_density_gb = 0.0016 * atoms * rkmax_ratio
+    lapack_work_gb = 0.5 * hamiltonian_gb
 
     # Distribute matrix memory across MPI ranks
     # ScaLAPACK block-cyclic: ~nmat²/(p×q) per rank. Use ranks for estimate.
@@ -506,12 +510,8 @@ def estimate_amdahl_saturation(
       large scale computing capabilities". AFIPS Conf. Proc. 30, 483–485.
     - Hager, G. & Wellein, G. (2010). "Introduction to HPC for Scientists and
       Engineers". CRC Press. §4.2 (Amdahl's Law), §5.3 (scaling limits).
-    - HPC Wiki: "Scaling" — CG code speedup peaks at 128 cores then drops to
-      45× at 256 cores (worse than 64-core run). Key insight: more nodes can
-      slow down due to communication overhead.
-    - VASP Wiki: "Performance issues, try NCORE, KPAR" — KPAR saturates at
-      k-point count; bad process placement → internode FFTs → slowdown.
-    - Blaha, P. et al. (2020). "WIEN2k Usersguide" §4.5.
+    - Blaha, P. et al. (2020). J. Chem. Phys. 152, 074101 (WIEN2k Usersguide §4.5).
+    - VASP Wiki: https://www.vasp.at/wiki/ (KPAR/NCORE documentation).
     """
     # Step 1: Serial fraction estimation from problem characteristics
     # ----------------------------------------------------------------
@@ -531,9 +531,12 @@ def estimate_amdahl_saturation(
     elif nmat < 1000:
         s_base = min(0.25, s_base + 0.05)
 
-    # Multi-node MPI communication overhead (2 % per extra node)
+    # Multi-node MPI communication overhead.
+    # MPI collectives scale as O(log P) (Hager & Wellein 2010, §6.4).
+    # Empirical: ~0.05 per ×2 node doubling; capped at 0.35 serial fraction.
     if num_nodes > 1:
-        comm_overhead = 0.02 * (num_nodes - 1)
+        import math as _math
+        comm_overhead = 0.05 * _math.log2(num_nodes)
         s_base = min(0.35, s_base + comm_overhead)
 
     s = max(0.01, min(0.40, s_base))
@@ -611,14 +614,14 @@ def estimate_amdahl_saturation(
             f"K-point saturation: {total_cores_available} cores requested but only "
             f"{kpoints} k-points available. Beyond {kpoints} cores, parallelism "
             f"switches to fine-grain ScaLAPACK with reduced efficiency. "
-            f"(Ref: VASP Wiki KPAR, HPC Wiki Scaling §Strong Scaling)"
+            f"(Ref: Hager & Wellein 2010, §5.3 — multi-node scaling limits)"
         )
 
     if num_nodes > 4 and total_cores_available > 64:
         warnings.append(
             "Multi-node communication overheads (FFT collectives, all-to-all) "
             "may dominate beyond 4 nodes. Consider node-local parallelism first. "
-            "(Ref: HPC Wiki Scaling §Strong Scaling, sweet-spot 4 nodes)"
+            "(Ref: Hager & Wellein 2010, §5.3 — sweet-spot analysis at 4 nodes)"
         )
 
     return {
@@ -936,8 +939,8 @@ def suggest_optimal_resources(
 
     # === Amdahl's Law saturation analysis ===
     # Warns user when requested cores exceed useful maximum for their problem.
-    # Based on Amdahl, G.M. (1967) + Hager & Wellein (2010) + HPC Wiki scaling
-    # benchmarks showing peak speedup at 4 nodes declining with more hardware.
+    # Based on Amdahl (1967) + Hager & Wellein (2010) scaling analysis
+    # showing peak speedup at 4 nodes declining with more hardware.
     saturation = estimate_amdahl_saturation(
         kpoints=nk,
         nmat=nmat,

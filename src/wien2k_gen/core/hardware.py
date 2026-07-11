@@ -243,6 +243,24 @@ class HardwareInfoProvider(ABC):
 # SysFS-backed Hardware Information Provider
 # =============================================================================
 
+
+def _get_threads_per_core(node_path: Path) -> int:
+    """Read threads-per-core (SMT factor) from sysfs topology.
+
+    Walks cpu*/topology/thread_siblings_list under the NUMA node path.
+    Returns 1 if topology information is unavailable (treat as no SMT).
+    """
+    seen_topo: set = set()
+    try:
+        for cpu_dir in sorted(node_path.glob("cpu[0-9]*")):
+            topo = cpu_dir / "topology" / "thread_siblings_list"
+            if topo.exists():
+                seen_topo.add(topo.read_text().strip())
+        return max(1, len(seen_topo))
+    except (OSError, ValueError, PermissionError):
+        return 1
+
+
 class SysFSHardwareInfo(HardwareInfoProvider):
     """
     Concrete implementation using sysfs, /proc, /sys and subprocess calls.
@@ -382,9 +400,13 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         base_freq = freq_info.get("base", 2000.0)
         max_freq = freq_info.get("max", 0.0)
 
-        effective_freq = max(base_freq, max_freq)
+        # scaling_max_freq is the single-core turbo maximum. On multi-core
+        # chips (e.g., EPYC 64-core) the all-core sustained frequency under
+        # AVX load can be 20-40% lower. Use base_freq as the conservative
+        # estimate and apply per-architecture throttle factors below.
+        effective_freq = base_freq
         if effective_freq == 0.0:
-            effective_freq = base_freq
+            effective_freq = max(base_freq, max_freq)
 
         fma = self.get_fma_units_per_core()
         vec_width = int(self.get_vector_isa_and_width()["width_bits"])
@@ -509,7 +531,11 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     node_data["cpus"] = cpu_range
                     cpu_ids = parse_cpu_list(cpu_range)
                     node_data["cpu_ids"] = cpu_ids
-                    node_data["cores"] = len(cpu_ids)
+                    # Count physical cores, not logical CPUs (SMT-aware).
+                    # On SMT-enabled systems, cpulist includes HT siblings.
+                    # Default to 1 thread/core when topology info is unavailable.
+                    tpc = _get_threads_per_core(node_path)
+                    node_data["cores"] = max(1, len(cpu_ids) // max(1, tpc))
 
                 meminfo_path = node_path / "meminfo"
                 if meminfo_path.exists():
@@ -730,7 +756,17 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             if "AMD" in raw:
                 return "epyc" if "EPYC" in raw else "amd_ryzen"
             elif "Intel" in raw:
-                return "xeon" if "Xeon" in raw else "intel_consumer"
+                if "Xeon" in raw:
+                    # Check for hybrid (P-core + E-core) Xeon generations
+                    # Intel Thread Director exposes heterogeneous topology
+                    # via /sys/devices/system/cpu/types
+                    if Path("/sys/devices/system/cpu/types").exists():
+                        return "xeon_hybrid"
+                    return "xeon"
+                # Alder Lake / Raptor Lake: P-core + E-core
+                if Path("/sys/devices/system/cpu/types").exists():
+                    return "intel_hybrid"
+                return "intel_consumer"
             elif "aarch64" in raw or "ARM" in raw:
                 return "arm_neoverse" if "Neoverse" in raw else "arm"
         return "unknown"

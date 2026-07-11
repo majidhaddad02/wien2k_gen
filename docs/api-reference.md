@@ -245,7 +245,7 @@ Detects system type from `.scf` band gap. Returns `"metal"`, `"semiconductor"`, 
 - gap ≤ 0.1 eV or DOS(E_F) > 0 → metal
 
 #### `calculate_optimal_q0(system_type, lattice_constant=10.0) -> float`
-Smart Kerker q0 based on system type (Winkelmann 2020, CPC 252, 107154).
+Smart Kerker q0 based on system type (Winkelmann et al. 2020, Phys. Rev. B 102, 195138).
 
 **Formulas:**
 - metal: `q₀ = 0.4 × (2π/a)`
@@ -256,7 +256,7 @@ Smart Kerker q0 based on system type (Winkelmann 2020, CPC 252, 107154).
 Selects mixing strategy based on system size and type.
 Returns `"restarted_pulay_kerker"`, `"restarted_pulay"`, or `"broyden"`.
 
-**Decision matrix (Pratapa 2015, PRB 92 115160):**
+**Decision matrix (Pratapa & Suryanarayana, Chem. Phys. Lett. 635, 2015):**
 - large (>50 atoms) + metal → restarted_pulay_kerker
 - large (>50 atoms) + non-metal → restarted_pulay
 - small (≤50 atoms) → broyden
@@ -327,7 +327,7 @@ from wien2k_gen.optimizer.bayesian import (
 ```
 
 #### `matern_kernel(x1, x2, length_scales, nu=2.5) -> np.ndarray`
-Matérn ν=2.5 kernel: `(1 + √5·r + 5r²/3) × exp(-√5·r)`. Preferred over RBF for non-smooth SCF convergence surfaces (Lyngby 2024).
+Matérn ν=2.5 kernel: `(1 + √5·r + 5r²/3) × exp(-√5·r)`. Preferred over RBF for non-smooth SCF convergence surfaces (Snoek et al. 2012, NIPS 25, 2951–2959).
 
 #### `rbf_kernel_ard(x1, x2, length_scales) -> np.ndarray`
 RBF kernel with Automatic Relevance Determination (per-dimension length scales).
@@ -384,7 +384,7 @@ from wien2k_gen.optimizer.parallel import (
 #### `recommend_elpa_solver(nmat, nkpt, is_soc=False, is_hybrid=False, num_cores=0) -> Optional[str]`
 ELPA solver stage recommendation. Returns `"elpa2"`, `"elpa1"`, or `None`.
 
-**Thresholds (Ruh 2023):**
+**Thresholds (based on WIEN2k benchmarks, wien2k.at/reg_user/benchmark/):**
 - nmat > 8000 → elpa2
 - nmat > 5000 + cores > 64 → elpa2
 - nmat > 5000 or SOC+nmat>2000 → elpa2
@@ -470,7 +470,7 @@ Restores SCF state from most recent checkpoint.
 Reads walltime from SLURM `scontrol` or PBS `qstat -f`. Returns `walltime_limit_sec`, `elapsed_sec`, `remaining_sec`, `remaining_pct`.
 
 #### `calculate_checkpoint_interval(remaining_time_sec, time_per_cycle_sec=300.0) -> int`
-Adaptive checkpoint interval (UPC Study):
+Adaptive checkpoint interval (Daly 2006, J. Phys.: Conf. Ser. 46, 514-518):
 - remaining < 20% → 5 cycles
 - remaining < 50% → 10 cycles
 - remaining ≥ 50% → 15 cycles
@@ -511,7 +511,7 @@ Scans siteconfig, binaries, and parallel_options for GPU flags.
 Returns `{"gpu_enabled": bool, "vendor": str, "gpu_binaries": [...], "compile_flags": [...]}`.
 
 #### `analyze_offload_potential(nmat, num_kpoints, system_type="unknown", gpu_info=None) -> OffloadAnalysis`
-Per-lapw-stage GPU offload analysis based on arXiv:2401.13772 benchmarks.
+Per-lapw-stage GPU offload analysis (see Yu et al. 2021, Comput. Phys. Commun. 262, 107808; WIEN2k benchmarks at wien2k.at/reg_user/benchmark/).
 Returns speedup estimates, memory requirements, and OOM risk.
 
 #### `estimate_gpu_memory(nmat, num_kpoints_per_gpu) -> float`

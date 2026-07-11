@@ -178,12 +178,12 @@ class BayesianParameterTuner:
             cmd = [
                 "x", "kgen", str(kx), str(ky), str(kz),
             ]
-            if case.parent != Path("."):
-                cmd = ["cd", str(case.parent), "&&"] + cmd
+            cwd = case.parent if case.parent != Path(".") else None
 
             subprocess.run(
-                " ".join(str(c) for c in cmd), shell=True,
+                cmd, shell=False,
                 capture_output=True, text=True, timeout=120,
+                cwd=cwd,
             )
 
             with tempfile.NamedTemporaryFile(mode="w", suffix=".in1", delete=False) as f:
@@ -287,7 +287,8 @@ class BayesianParameterTuner:
     def _apply_physics_constraints(self, config: Dict[str, Any]) -> Dict[str, Any]:
         """Enforce physical validity of optimized parameters.
 
-        Based on Peter Blaha's feedback:
+        Based on Blaha et al. (2020), J. Chem. Phys. 152, 074101
+        and WIEN2k User Guide 2023:
         - Heavy elements (Z > 70): enforce min RKMAX >= 7 (insufficient
           basis for 4f/5f electrons otherwise).
         - Soft elements (Z <= 10): enforce max RKMAX <= 9 (APW+lo

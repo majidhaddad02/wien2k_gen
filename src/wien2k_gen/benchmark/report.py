@@ -460,7 +460,8 @@ class ScalingType:
 def identify_scaling_bottlenecks(series: ScalingSeries) -> dict:
     """Analyze scaling efficiency to identify bottlenecks.
 
-    Bottleneck detection rules (from Blaha & Schwarz 2020):
+    Bottleneck detection rules (from Blaha et al. 2020,
+    J. Chem. Phys. 152, 074101, WIEN2k Usersguide §4.5):
     - Efficiency < 50% at 2× nodes → strong bottleneck (I/O or memory)
     - Efficiency < 80% at 4× nodes → moderate bottleneck
     - Efficiency > 90% at max nodes → excellent scaling

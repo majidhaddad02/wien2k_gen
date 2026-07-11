@@ -162,7 +162,6 @@ class TestAmdahlSaturation:
     References:
     - Amdahl, G.M. (1967). AFIPS Conf. Proc. 30, 483-485.
     - Hager & Wellein (2010). "Introduction to HPC". CRC Press. §4.2.
-    - HPC Wiki: "Scaling" — CG speedup peaks at 128 cores, drops at 256.
     """
 
     def test_small_atoms_gives_high_serial_fraction(self):

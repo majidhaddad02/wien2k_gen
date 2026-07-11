@@ -175,7 +175,7 @@ line-ending = "auto"
 # Static Type Checking (Mypy)
 # ==============================================================================
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.9"
 mypy_path = "src"
 strict = true
 warn_return_any = true

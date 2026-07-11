@@ -223,7 +223,7 @@ wien2k_wizard
 
 ### Advanced Options (Step 3.5):
 
-- **ELPA Solver**: Enable for large systems (nmat > 8000) based on Ruh 2023 benchmarks
+- **ELPA Solver**: Enable for large systems (nmat > 8000) based on WIEN2k benchmarks
 - **Bayesian Optimization**: Automatically tune RKMAX and mixing parameters
 - **Weighted K-points**: FFD bin-packing for load-balanced k-point distribution
 - **Struct Validation**: Automatic RMT overlap detection with warnings
@@ -254,7 +254,7 @@ For any given parallel mode and core count:
 
 ## SCF Convergence Diagnostics
 
-### Smart Kerker q0 (Winkelmann 2020)
+### Smart Kerker q0 (Winkelmann et al. 2020, PRB 102, 195138)
 
 The system type is auto-detected from the band gap in `case.scf`:
 
@@ -282,8 +282,8 @@ The lattice constant `a` is extracted from the `.struct` file. The q0 parameter 
 | Strategy | When Applied | Algorithm | Reference |
 |----------|-------------|-----------|-----------|
 | **Broyden** | Small systems (≤50 atoms) | Default WIEN2k mixing | — |
-| **Kerker** | Metallic systems | Preconditioned mixing with q0 control | Winkelmann 2020 |
-| **Restarted Pulay** | Large systems (>50 atoms) | history_size=7, Tikhonov reg=1e-10 | Pratapa 2015 |
+| **Kerker** | Metallic systems | Preconditioned mixing with q0 control | Winkelmann et al. 2020 |
+| **Restarted Pulay** | Large systems (>50 atoms) | history_size=7, Tikhonov reg=1e-10 | Pratapa & Suryanarayana 2015 |
 | **Pulay + Kerker** | Large + metallic | Combined restart + preconditioning | — |
 
 The mixing strategy is selected automatically by `_adjust_mixing()` in the workflow executor based on:
@@ -341,7 +341,7 @@ The Bayesian hyperparameter optimizer tunes 5 parameters simultaneously:
 | GMAX | [10.0, 20.0] | Continuous |
 | LMAX APW | [8, 12] | Discrete |
 
-Uses Matérn ν=2.5 kernel (Lyngby 2024) for modeling non-smooth SCF convergence surfaces. Supports q-batch Expected Improvement for parallel evaluation of up to 4 candidates simultaneously.
+Uses Matérn ν=2.5 kernel (Snoek et al. 2012) for modeling non-smooth SCF convergence surfaces. Supports q-batch Expected Improvement for parallel evaluation of up to 4 candidates simultaneously.
 
 ### GPU Offloading
 

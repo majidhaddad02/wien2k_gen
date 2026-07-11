@@ -98,7 +98,7 @@ def __getattr__(name: str) -> Any:
     if name == "run_sbatch_wizard":
         from .wizard_sbatch import run_sbatch_wizard
         return run_sbatch_wizard
-    if name == "launch_tui":
+    if name == "launch_monitor":
         from .core.terminal_monitor import launch_monitor
         return launch_monitor
         

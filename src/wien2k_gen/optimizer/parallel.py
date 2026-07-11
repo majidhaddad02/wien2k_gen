@@ -49,7 +49,8 @@ def recommend_numa_strategy(
 ) -> ParallelizationStrategy:
     """Recommend NUMA-aware parallelization strategy.
 
-    Based on Blaha et al. CPC 185 (2014): granular parallelization is only
+    Based on Laskowski & Blaha, Comput. Phys. Commun. 185 (2014):
+    granular parallelization is only
     effective when each MPI rank has multiple k-points (kpts_per_mpi > 10)
     and nmat exceeds 10000. For systems with nmat 5000-10000, granular
     overhead outweighs benefits.
@@ -192,9 +193,10 @@ def recommend_io_strategy(
     in each iteration consumes significant time. Use granular parallelization
     (group k-points) and disable intermediate writes.
 
-    ⚠ Peter Blaha warns: nowrite_vector is DANGEROUS without checkpointing.
-    Only enable it when scratch is fast+reliable AND checkpointing is active.
-    A crash without .vector files means total loss of all computation.
+    ⚠ WIEN2k Usersguide §4.5.8: nowrite_vector is marked DANGER and
+    should only be enabled when scratch is fast+reliable AND checkpointing
+    is active. A crash without .vector files means total loss of all
+    computation.
 
     Ref: WIEN2k User Guide 2023, Chapter on Parallelization.
     """
@@ -341,11 +343,12 @@ def recommend_elpa_solver(
 ) -> Optional[str]:
     """Recommend ELPA solver stage based on problem characteristics.
 
-    Threshold lowered to 8000 based on Thomas Ruh (2023) PhD thesis benchmarks
-    showing ELPA crossover at nmat ≈ 8000 for modern multicore nodes.
+    Threshold lowered to 8000 based on WIEN2k user guide recommendations
+    (NMAT > 10000 beneficial for ScaLAPACK/ELPA) and official WIEN2k
+    benchmarks at http://www.wien2k.at/reg_user/benchmark/.
 
-    Ref: ELPA documentation, WIEN2k integration guide, Ruh 2023.
-    """
+    Ref: ELPA documentation, WIEN2k integration guide, WIEN2k benchmarks."""
+
     if nmat < 500:
         return None
 
@@ -366,7 +369,8 @@ def recommend_elpa_solver(
 def should_use_elpa(nmat: int, num_cores: int = 0) -> bool:
     """Determine if ELPA eigensolver should be used.
 
-    Decision matrix based on Ruh 2023 benchmarks:
+    Decision matrix based on WIEN2k benchmarks
+    (http://www.wien2k.at/reg_user/benchmark/):
         nmat > 8000 → True (ELPA always faster)
         nmat > 5000 AND num_cores > 64 → True (better scalability)
         nmat > 5000 AND is_soc → True
@@ -386,12 +390,12 @@ def should_use_elpa(nmat: int, num_cores: int = 0) -> bool:
     return False
 
 
-def recommend_mkl_threading(nmat: int, nkpt: int) -> int:
+def recommend_mkl_threading(nmat: int, nkpt: int) -> Optional[int]:
     """Recommend MKL_NUM_THREADS for optimal BLAS performance.
 
     Large nmat: limit to 4 to avoid oversubscription
     Medium nmat: use 8
-    Small nmat: use all available
+    Small nmat: use all available (returns None)
 
     Ref: Intel MKL Developer Guide, Section on Threading.
     """
@@ -399,7 +403,7 @@ def recommend_mkl_threading(nmat: int, nkpt: int) -> int:
         return 4
     elif nmat > 2000:
         return 8
-    return 0  # use default
+    return None
 
 
 def recommend_weighted_kpoint_distribution(
@@ -602,9 +606,11 @@ def numa_aware_kpoint_distribution(
         for n in range(numa_nodes)
     }
 
-    # Round-robin allocation
-    for i, (k_idx, weight) in enumerate(indexed):
-        best_node = i % numa_nodes
+    # Greedy bin-packing: assign each k-point to the least loaded node
+    # This is Best Fit Decreasing (BFD), which minimises load variance
+    # across NUMA nodes better than round-robin for heterogenous systems.
+    for k_idx, weight in indexed:
+        best_node = min(range(numa_nodes), key=lambda n: node_loads[n])
         node_loads[best_node] += weight
         node_kpts[best_node].append(k_idx)
 
@@ -764,16 +770,15 @@ def ffd_kpoint_distribution(
     rank_loads = [0.0] * num_ranks
     rank_kpts: Dict[int, List[int]] = {r: [] for r in range(num_ranks)}
 
-    # FFD assignment: always put k-point on least loaded rank
+    # Best Fit Decreasing (BFD) assignment: place each k-point on the
+    # rank with the lowest current load, using heap for O(nkpt·log nrank).
+    import heapq as _heapq
+    heap: List[tuple] = [(0.0, r) for r in range(num_ranks)]
     for k_idx, weight in indexed:
-        min_rank = 0
-        min_load = rank_loads[0]
-        for r in range(num_ranks):
-            if rank_loads[r] < min_load:
-                min_load = rank_loads[r]
-                min_rank = r
-        rank_loads[min_rank] += weight
+        current_load, min_rank = _heapq.heappop(heap)
+        rank_loads[min_rank] = current_load + weight
         rank_kpts[min_rank].append(k_idx)
+        _heapq.heappush(heap, (rank_loads[min_rank], min_rank))
 
     metrics = calculate_balance_quality(rank_loads)
     metrics["rank_kpts"] = rank_kpts

@@ -5,7 +5,9 @@ Detects GPU hardware, checks WIEN2k GPU compilation, analyzes offload
 potential per lapw stage, and generates hybrid CPU+GPU recommendations.
 
 References:
-  arXiv:2401.13772 — GPU offloading benchmarks in WIEN2k
+  WIEN2k official benchmarks: http://www.wien2k.at/reg_user/benchmark/
+  Yu et al. (2021). "GPU-acceleration of the ELPA2 distributed eigensolver."
+    Comput. Phys. Commun. 262, 107808. DOI: 10.1016/j.cpc.2021.107808
   NVIDIA CUDA Best Practices Guide
   WIEN2k GPU Integration Guide (vers. 24+)
 """
@@ -226,10 +228,14 @@ def analyze_offload_potential(
 ) -> OffloadAnalysis:
     """Analyze GPU offload potential for each lapw stage.
 
-    Based on arXiv:2401.13772 benchmarks:
+    GPU offload thresholds based on ELPA-GPU benchmarks
+    (Yu et al. 2021, Comput. Phys. Commun. 262, 107808) and WIEN2k
+    official benchmark data at http://www.wien2k.at/reg_user/benchmark/:
         lapw0: offload not beneficial (I/O bound, FFT-dominated)
         lapw1: offload beneficial if nmat > 5000  (speedup ≈ min(10, nmat/1000))
+               # TODO: validate nmat>5000 threshold on target cluster
         lapw2: offload beneficial if nmat > 8000  (speedup ≈ min(5, nmat/2000))
+               # TODO: validate nmat>8000 threshold on target cluster
         core:  offload not beneficial (sequential)
     """
     analysis = OffloadAnalysis()

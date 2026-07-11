@@ -58,7 +58,7 @@ wien2k_wizard                           # interactive configuration
 ### Parallelization & Performance
 - NUMA-aware resource allocation with `numactl` + `lscpu` integration
 - Granular parallelism (`WIEN_GRANULARITY`) with 3× memory safety factor and OOM warnings
-- ELPA eigensolver recommendation with threshold 8000 (Ruh 2023 benchmarks)
+- ELPA eigensolver recommendation with threshold 8000 (see WIEN2k benchmarks: wien2k.at/reg_user/benchmark/)
 - Weighted k-point distribution (First Fit Decreasing bin-packing algorithm)
 - NUMA-aware k-point distribution with balance ratio scoring
 - Hybrid MPI+OpenMP for LAPW0 FFT-dominated workloads
@@ -66,17 +66,17 @@ wien2k_wizard                           # interactive configuration
 - Weak/strong scaling bottleneck identification
 
 ### SCF Convergence & Physics
-- Smart Kerker mixing q0 based on system type (Winkelmann 2020):
+- Smart Kerker mixing q0 based on system type (Winkelmann et al. 2020, PRB 102, 195138):
   - metal: `q0 = 0.4 × 2π/a` | semiconductor: `0.15 × 2π/a` | insulator: `0.05 × 2π/a`
-- Restarted Pulay mixing for large systems (>50 atoms) — Pratapa 2015, PRB 92 115160
+- Restarted Pulay mixing for large systems (>50 atoms) — Pratapa & Suryanarayana, Chem. Phys. Lett. 635, 69–74 (2015)
 - Charge sloshing root cause diagnosis (metallic/symmetry/core-overlap/mixing)
 - QTL-B error root cause analysis with targeted fixes
 - SCF divergence detection (catastrophic/monotonic_drift/charge_sloshing/stalled)
-- Automatic checkpointing with incremental file copy (UPC Study best practices)
+- Automatic checkpointing with incremental file copy (Daly 2006, J. Phys.: Conf. Ser. 46, 514-518)
 - Adaptive checkpoint intervals: <20% walltime → 5 cycles, <50% → 10, else → 15
 
 ### ML & AI-Assisted Optimization
-- Bayesian hyperparameter optimization with Matérn ν=2.5 kernel (Lyngby 2024)
+- Bayesian hyperparameter optimization with Matérn ν=2.5 kernel (Snoek et al. 2012)
 - Expected Improvement (EI) and q-batch EI acquisition functions
 - Latin Hypercube Sampling for uniform search space coverage
 - Physics-informed priors (element-aware RKMAX/mixing/kpt constraints)
