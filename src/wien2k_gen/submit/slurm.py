@@ -19,7 +19,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict
+from typing import Optional, TypedDict
 
 from ..core.hardware import (
     get_interconnect_info,
@@ -60,7 +60,7 @@ class SlurmDirectives:
     account: Optional[str] = None
     preemption_grace_sec: Optional[int] = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         result = {}
         for key, val in self.__dict__.items():
             if val is not None:
@@ -78,8 +78,8 @@ class SubmissionResult(TypedDict, total=False):
     job_id: Optional[int]
     script_path: Path
     dry_run_content: Optional[str]
-    errors: List[str]
-    warnings: List[str]
+    errors: list[str]
+    warnings: list[str]
     estimated_start_time: Optional[datetime.datetime]
 
 
@@ -94,8 +94,8 @@ class SlurmJobSpec:
     exec_command: str
     directives: SlurmDirectives = field(default_factory=SlurmDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
-    modules_to_load: List[str] = field(default_factory=list)
-    environment_vars: Dict[str, str] = field(default_factory=dict)
+    modules_to_load: list[str] = field(default_factory=list)
+    environment_vars: dict[str, str] = field(default_factory=dict)
     preemption_grace_sec: int = 60
     checkpoint_fn_name: str = "checkpoint_save"
     dry_run: bool = False
@@ -120,7 +120,7 @@ def _validate_memory_string(mem_str: str) -> bool:
     return bool(re.match(pattern, mem_str))
 
 
-def _check_scheduler_limits(spec: SlurmJobSpec) -> List[str]:
+def _check_scheduler_limits(spec: SlurmJobSpec) -> list[str]:  # noqa: C901
     """
     Validate job spec against common SLURM partition limits & hardware constraints.
     Returns list of warning/error messages.
@@ -134,7 +134,6 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> List[str]:
     if directives.mem_per_node and not _validate_memory_string(directives.mem_per_node):
         warnings_list.append(f"Invalid memory format: {directives.mem_per_node}. Expected e.g., 64G.")
 
-    requested_nodes = directives.nodes or 1
     requested_tasks = directives.ntasks or 0
     requested_cpus = directives.cpus_per_task or 1
     total_requested_cores = requested_tasks * requested_cpus
@@ -200,7 +199,7 @@ def _format_sbatch_directives(directives: SlurmDirectives) -> str:
         ("export",        directives.export or "ALL",                      "--export={value}"),
     ]
 
-    for key, val, fmt in sbatch_map:
+    for _key, val, fmt in sbatch_map:
         if val and str(val).strip():
             lines.append(f"#SBATCH {fmt.format(value=val)}")
 
@@ -406,7 +405,7 @@ def generate_sbatch_script(spec: SlurmJobSpec) -> str:
 # Submission API
 # =============================================================================
 
-def submit_slurm_job(
+def submit_slurm_job(  # noqa: C901
     spec: SlurmJobSpec,
     script_path: Optional[Path] = None,
     dry_run: bool = False,

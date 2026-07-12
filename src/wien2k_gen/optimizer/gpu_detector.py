@@ -15,13 +15,12 @@ References:
 from __future__ import annotations
 
 import json
-import math
 import os
 import re
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..logging_config import get_logger
 
@@ -64,12 +63,12 @@ class OffloadAnalysis:
 # GPU Hardware Detection
 # ---------------------------------------------------------------------------
 
-def detect_gpu_hardware() -> List[GPUInfo]:
+def detect_gpu_hardware() -> list[GPUInfo]:  # noqa: C901
     """Detect GPU hardware via nvidia-smi, rocminfo, or sycl-ls.
 
     Returns list of GPUInfo for each detected GPU.
     """
-    gpus: List[GPUInfo] = []
+    gpus: list[GPUInfo] = []
 
     # NVIDIA
     try:
@@ -155,7 +154,7 @@ def detect_gpu_hardware() -> List[GPUInfo]:
 # WIEN2k GPU Compilation Check
 # ---------------------------------------------------------------------------
 
-def check_wien2k_gpu_support(wienroot: Optional[str] = None) -> Dict[str, Any]:
+def check_wien2k_gpu_support(wienroot: str | None = None) -> dict[str, Any]:  # noqa: C901
     """Check if WIEN2k is compiled with GPU support.
 
     Scans siteconfig, Makefile, and binaries for GPU flags.
@@ -164,7 +163,7 @@ def check_wien2k_gpu_support(wienroot: Optional[str] = None) -> Dict[str, Any]:
         wienroot = os.environ.get("WIENROOT", "")
 
     root = Path(wienroot) if wienroot else Path("/opt/wien2k")
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "gpu_enabled": False,
         "vendor": "none",
         "gpu_binaries": [],
@@ -224,7 +223,7 @@ def analyze_offload_potential(
     nmat: int,
     num_kpoints: int,
     system_type: str = "unknown",
-    gpu_info: Optional[List[GPUInfo]] = None,
+    gpu_info: list[GPUInfo] | None = None,
 ) -> OffloadAnalysis:
     """Analyze GPU offload potential for each lapw stage.
 
@@ -265,8 +264,7 @@ def analyze_offload_potential(
     kpts_per_gpu = num_kpoints
     analysis.gpu_memory_required_mb = estimate_gpu_memory(nmat, kpts_per_gpu)
 
-    if analysis.gpu_memory_available_mb > 0:
-        if analysis.gpu_memory_required_mb > 0.90 * analysis.gpu_memory_available_mb:
+    if analysis.gpu_memory_available_mb > 0 and analysis.gpu_memory_required_mb > 0.90 * analysis.gpu_memory_available_mb:
             analysis.oom_risk = True
             analysis.recommendation = (
                 f"GPU memory tight: required={analysis.gpu_memory_required_mb:.0f}MB, "
@@ -276,10 +274,10 @@ def analyze_offload_potential(
     parts = []
     if analysis.lapw1_offload:
         parts.append(
-            f"lapw1 → GPU (speedup: {analysis.lapw1_speedup:.1f}×)")
+            f"lapw1 -> GPU (speedup: {analysis.lapw1_speedup:.1f}x)")
     if analysis.lapw2_offload:
         parts.append(
-            f"lapw2 → GPU (speedup: {analysis.lapw2_speedup:.1f}×)")
+            f"lapw2 -> GPU (speedup: {analysis.lapw2_speedup:.1f}x)")
     parts.append("lapw0 → CPU (I/O bound)")
 
     analysis.recommendation = ", ".join(parts)
@@ -289,7 +287,7 @@ def analyze_offload_potential(
 def estimate_gpu_memory(nmat: int, num_kpoints_per_gpu: int) -> float:
     """Estimate GPU memory requirements in MB.
 
-    Formula: GPU_mem = nmat² × 16 bytes × kpts_per_gpu × safety / (1024²)
+    Formula: GPU_mem = nmat^2 x 16 bytes x kpts_per_gpu x safety / (1024^2)
 
     The 16 bytes comes from double-precision complex numbers
     (2 doubles per complex = 16 bytes).
@@ -304,11 +302,11 @@ def estimate_gpu_memory(nmat: int, num_kpoints_per_gpu: int) -> float:
 # ---------------------------------------------------------------------------
 
 def recommend_gpu_strategy(
-    gpu_info: List[GPUInfo],
-    wien2k_gpu: Dict[str, Any],
+    gpu_info: list[GPUInfo],
+    wien2k_gpu: dict[str, Any],
     nmat: int,
     num_kpoints: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generate intelligent GPU offloading recommendation.
 
     Scenarios:
@@ -319,7 +317,7 @@ def recommend_gpu_strategy(
     """
     gpu_available = bool(gpu_info) and any(g.detected for g in gpu_info)
     wien2k_has_gpu = wien2k_gpu.get("gpu_enabled", False)
-    total_gpu_mem = sum(g.memory_mb for g in gpu_info) if gpu_info else 0
+    sum(g.memory_mb for g in gpu_info) if gpu_info else 0
 
     offload = analyze_offload_potential(nmat, num_kpoints, gpu_info=gpu_info)
 
@@ -336,7 +334,7 @@ def recommend_gpu_strategy(
             "reason": "GPU present but WIEN2k not compiled with GPU support",
             "recommendation": (
                 f"GPU detected ({[g.model for g in gpu_info]}) but WIEN2k is CPU-only. "
-                f"Recompile with -DUSE_CUDA or -DUSE_HIP for {offload.lapw1_speedup:.0f}-{offload.lapw2_speedup:.0f}× speedup."
+                f"Recompile with -DUSE_CUDA or -DUSE_HIP for {offload.lapw1_speedup:.0f}-{offload.lapw2_speedup:.0f}x speedup."
             ),
         }
 
@@ -367,9 +365,9 @@ def recommend_gpu_strategy(
             "strategy": "full_gpu_offload",
             "reason": f"Large system (nmat={nmat}) with GPU available",
             "recommendation": (
-                f"Full GPU offload: lapw1 (speedup {offload.lapw1_speedup:.0f}×), "
-                f"lapw2 (speedup {offload.lapw2_speedup:.0f}×). "
-                f"Expected total speedup: {offload.lapw1_speedup:.0f}-{offload.lapw2_speedup:.0f}×"
+                f"Full GPU offload: lapw1 (speedup {offload.lapw1_speedup:.0f}x), "
+                f"lapw2 (speedup {offload.lapw2_speedup:.0f}x). "
+                f"Expected total speedup: {offload.lapw1_speedup:.0f}-{offload.lapw2_speedup:.0f}x"
             ),
             "offload": offload,
         }
@@ -378,7 +376,7 @@ def recommend_gpu_strategy(
         "strategy": "selective_gpu",
         "reason": "GPU available, moderate system size",
         "recommendation": (
-            f"GPU offload for lapw1 only (speedup {offload.lapw1_speedup:.0f}×). "
+            f"GPU offload for lapw1 only (speedup {offload.lapw1_speedup:.0f}x). "
             f"lapw2 remains on CPU."
         ),
         "offload": offload,
@@ -390,7 +388,7 @@ def recommend_gpu_strategy(
 # ---------------------------------------------------------------------------
 
 def generate_hybrid_machines(
-    gpu_info: List[GPUInfo],
+    gpu_info: list[GPUInfo],
     cpu_cores: int,
     num_kpoints: int,
     nmat: int,
@@ -414,16 +412,16 @@ def generate_hybrid_machines(
 
     # GPU ranks for lapw1
     if offload.lapw1_offload:
-        lines.append(f"# GPU ranks for lapw1 (diagonalization)")
+        lines.append("# GPU ranks for lapw1 (diagonalization)")
         for gpu_id in range(num_gpus):
             lines.append(f"lapw1:gpu{gpu_id}:1  # GPU-accelerated")
         lines.append("")
 
     # CPU ranks for lapw2 and lapw0
     if offload.lapw2_offload:
-        lines.append(f"# CPU ranks for lapw2 (FFT-bound)")
+        lines.append("# CPU ranks for lapw2 (FFT-bound)")
     else:
-        lines.append(f"# CPU ranks for all remaining tasks")
+        lines.append("# CPU ranks for all remaining tasks")
     cpu_per_task = max(1, cpu_cores // max(num_kpoints, 1))
     for i in range(min(num_kpoints, cpu_cores)):
         lines.append(f"lapw2:cpu{i:02d}:{cpu_per_task}")
@@ -447,7 +445,7 @@ def run_gpu_benchmark(
     gpu_id: int = 0,
     n_sampling_steps: int = 100,
     n_kpoints: int = 1,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run quick GPU vs CPU benchmark for lapw1.
 
     Uses subset of k-points and sampling steps for fast comparison.
@@ -471,7 +469,7 @@ def run_gpu_benchmark(
 
     try:
         t0 = _time.time()
-        proc = subprocess.run(
+        subprocess.run(
             [f"{case_name}lapw1", "-p"],
             env=env_cpu,
             capture_output=True, text=True, timeout=300,
@@ -487,7 +485,7 @@ def run_gpu_benchmark(
 
     try:
         t0 = _time.time()
-        proc = subprocess.run(
+        subprocess.run(
             [f"{case_name}lapw1gpu", "-p"],
             env=env_gpu,
             capture_output=True, text=True, timeout=300,
@@ -507,7 +505,7 @@ def run_gpu_benchmark(
 
     logger.info(
         f"GPU benchmark: CPU={result['cpu_time_s']}s, "
-        f"GPU={result['gpu_time_s']}s, speedup={result['speedup']}×"
+        f"GPU={result['gpu_time_s']}s, speedup={result['speedup']}x"
     )
 
     return result

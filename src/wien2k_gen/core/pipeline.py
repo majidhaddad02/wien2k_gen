@@ -16,7 +16,7 @@ Key Improvements Applied:
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 # =============================================================================
 # Type Definitions with Fallbacks (Ensures module works if types.py is missing)
@@ -25,7 +25,7 @@ try:
     from ..types import PipelineResult, ProblemSize, ResourceSuggestion
 except ImportError:
     from dataclasses import dataclass, field
-    from typing import Any, Dict, List, Optional, Union
+    from typing import Any, Optional, Union
 
     @dataclass
     class ProblemSize:
@@ -44,13 +44,13 @@ except ImportError:
         recommended_total_cores: int = 1
         omp_threads_per_rank: int = 1
         mpi_ranks_per_node: int = 1
-        cores_per_node: List[int] = field(default_factory=list)
+        cores_per_node: list[int] = field(default_factory=list)
         vector_split_active: bool = False
-        warnings: List[str] = field(default_factory=list)
+        warnings: list[str] = field(default_factory=list)
         reason: str = ""
         confidence: float = 1.0
 
-        def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> dict[str, Any]:
             """Convert dataclass to dictionary for backend consumption."""
             from dataclasses import asdict
             return asdict(self)
@@ -62,9 +62,9 @@ except ImportError:
         suggestion: Optional[ResourceSuggestion] = None
         config_path: Optional[str] = None
         dry_run_content: Optional[str] = None
-        validation_errors: List[str] = field(default_factory=list)
-        warnings: List[str] = field(default_factory=list)
-        metadata: Dict[str, Any] = field(default_factory=dict)
+        validation_errors: list[str] = field(default_factory=list)
+        warnings: list[str] = field(default_factory=list)
+        metadata: dict[str, Any] = field(default_factory=dict)
 
 # =============================================================================
 # Core Imports
@@ -134,7 +134,7 @@ def preflight_check(
     topo: Topology,
     suggestion: ResourceSuggestion,
     problem_size: Optional[ProblemSize] = None
-) -> List[str]:
+) -> list[str]:
     """
     Validate resources against hardware/scheduler limits before execution.
     Enhanced with scratch space, NUMA awareness, and memory heuristics.
@@ -189,13 +189,13 @@ def preflight_check(
 # =============================================================================
 # Main Pipeline Orchestrator
 # =============================================================================
-def run_pipeline(
+def run_pipeline(  # noqa: C901
     topo: Topology,
     output_format: str = "json",
     dry_run: bool = False,
     export_path: Optional[str] = None,
     operation_id: Optional[str] = None,
-    user_suggestion: Optional[Union[Dict[str, Any], ResourceSuggestion]] = None
+    user_suggestion: Optional[Union[dict[str, Any], ResourceSuggestion]] = None
 ) -> PipelineResult:
     """
     Execute the full configuration generation pipeline: Detect -> Advise -> Validate -> Build -> Export.
@@ -212,7 +212,7 @@ def run_pipeline(
     logger.info(f"[{op_id}] Starting WIEN2kGen Pipeline...")
 
     # Initialize warnings early to prevent UnboundLocalError in except block
-    warnings_list: List[str] = []
+    warnings_list: list[str] = []
 
     try:
         backend = _get_current_backend()

@@ -15,12 +15,13 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import math
 import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 from ..core.constants import RYDBERG_TO_EV
 from ..logging_config import get_logger
@@ -42,9 +43,9 @@ class SCFParseResult(TypedDict, total=False):
     wall_time_sec: float
     max_force_ry_au: Optional[float]
     charge_convergence: float
-    stage_timings: Dict[str, float]  # e.g., {'lapw0': 12.5, 'lapw1': 45.2}
-    errors: List[str]
-    warnings: List[str]
+    stage_timings: dict[str, float]  # e.g., {'lapw0': 12.5, 'lapw1': 45.2}
+    errors: list[str]
+    warnings: list[str]
     raw_snippet: str
 
 
@@ -67,11 +68,11 @@ class AnalysisReport:
     code_backend: str
     parsing: Optional[SCFParseResult] = None
     scaling: Optional[ScalingMetrics] = None
-    recommendations: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     rich_tree: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dictionary."""
         return {
             "timestamp": self.timestamp,
@@ -125,10 +126,8 @@ def _parse_wien2k_scf(content: str) -> SCFParseResult:
     stage_pattern = r'(\w+)\s+:\s+cpu\s+time\s+:\s+([\d\.]+)'
     for match in re.finditer(stage_pattern, content, re.IGNORECASE):
         stage = match.group(1).lower()
-        try:
+        with contextlib.suppress(ValueError):
             result["stage_timings"][stage] = float(match.group(2))
-        except ValueError:
-            pass
 
     # Total CPU/Wall
     cpu_match = re.search(r':CPU\s+:\s+TOTAL\s+CPU\s+TIME\s+FOR\s+SCF\s+IS\s*([\d\.]+)', content, re.IGNORECASE)
@@ -151,7 +150,7 @@ def _parse_wien2k_scf(content: str) -> SCFParseResult:
     return result
 
 
-def _parse_vasp_outcar(content: str) -> SCFParseResult:
+def _parse_vasp_outcar(content: str) -> SCFParseResult:  # noqa: C901
     """Extract VASP convergence & timing from OUTCAR or vasprun.xml (text fallback)."""
     result: SCFParseResult = {
         "code": "vasp",
@@ -205,9 +204,8 @@ def _parse_vasp_outcar(content: str) -> SCFParseResult:
 
     if "error" in content.lower() and "warning" not in content.lower():
         result["errors"].append("Critical error in OUTCAR.")
-    if "ZHEGV" in content or "diago_david" in content:
-        if "failed" in content.lower():
-            result["errors"].append("Diagonalization failure. Check KPAR/NCORE or mixing.")
+    if ("ZHEGV" in content or "diago_david" in content) and "failed" in content.lower():
+        result["errors"].append("Diagonalization failure. Check KPAR/NCORE or mixing.")
 
     return result
 
@@ -412,7 +410,6 @@ def calculate_weak_scaling_metrics(
             "recommendation": "Invalid timing data."
         }
 
-    ideal_time = base_time_sec
     speedup = base_time_sec / scaled_time_sec
     efficiency = speedup * 100.0
 
@@ -458,7 +455,7 @@ def calculate_weak_scaling_metrics(
 
 
 def visualize_scaling(
-    scaling_data: Dict[int, float],  # {cores: time_sec}
+    scaling_data: dict[int, float],  # {cores: time_sec}
     title: str = "Parallel Scaling Analysis"
 ) -> str:
     """
@@ -501,9 +498,9 @@ def visualize_scaling(
 # Report Generation & Aggregation
 # =============================================================================
 
-def generate_report(
+def generate_report(  # noqa: C901
     parsed_scf: SCFParseResult,
-    scaling_data: Optional[Dict[int, float]] = None,
+    scaling_data: Optional[dict[int, float]] = None,
     include_recommendations: bool = True,
     verbose: bool = False,
 ) -> AnalysisReport:

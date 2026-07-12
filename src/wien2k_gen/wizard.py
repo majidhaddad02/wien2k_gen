@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -49,7 +49,7 @@ PROFILES_DIR = Path.home() / ".config" / "wien2k_gen" / "profiles"
 # Helper Functions
 # =============================================================================
 
-def detect_wienroot_candidates() -> List[str]:
+def detect_wienroot_candidates() -> list[str]:
     """Suggest likely WIENROOT locations based on system paths."""
     candidates = []
     env = os.environ.get("WIENROOT")
@@ -72,7 +72,7 @@ def validate_wienroot(path: str) -> bool:
     return (p / "run_lapw").exists() or (p / "siteconfig_lapw").exists()
 
 
-def check_scratch_health(path: str) -> Dict[str, Any]:
+def check_scratch_health(path: str) -> dict[str, Any]:
     """Verify scratch path exists, is writable, and has space."""
     p = Path(path)
     info = {
@@ -145,7 +145,7 @@ def _open_editor_for_manual_review(filepath: Path) -> None:
         console.print(f"[yellow]Editor error: {e}. Edit manually: {filepath}[/yellow]")
 
 
-def run_wizard(topo=None) -> None:
+def run_wizard(topo=None) -> None:  # noqa: C901
     """
     Step-by-step interactive configuration with automatic and manual modes,
     plus profile loading at startup and full optimizer integration.

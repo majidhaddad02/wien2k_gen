@@ -10,11 +10,12 @@ Provides production-grade energy monitoring for HPC workloads:
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..logging_config import get_logger
 
@@ -32,9 +33,9 @@ HAS_NVIDIA_SMI: bool = False
 
 _RAPL_BASE = Path("/sys/class/powercap")
 
-def _detect_rapl_zones() -> Dict[str, Path]:
+def _detect_rapl_zones() -> dict[str, Path]:
     """Detect available RAPL energy zones from sysfs."""
-    zones: Dict[str, Path] = {}
+    zones: dict[str, Path] = {}
     if not _RAPL_BASE.exists():
         return zones
     for entry in sorted(_RAPL_BASE.iterdir()):
@@ -70,7 +71,7 @@ def _detect_nvidia_smi() -> bool:
         return False
 
 
-_RAPL_ZONES: Dict[str, Path] = {}
+_RAPL_ZONES: dict[str, Path] = {}
 _NVIDIA_AVAILABLE = False
 
 try:
@@ -127,7 +128,7 @@ class EnergyMeasurement:
 # RAPL Energy Counter Reading
 # =============================================================================
 
-def get_rapl_energy_uj() -> Dict[str, float]:
+def get_rapl_energy_uj() -> dict[str, float]:
     """
     Read all RAPL MSR energy counters from sysfs in microjoules.
 
@@ -137,7 +138,7 @@ def get_rapl_energy_uj() -> Dict[str, float]:
         Keys: zone names (e.g. "package-0", "core", "dram").
         Values: cumulative energy in microjoules.
     """
-    result: Dict[str, float] = {}
+    result: dict[str, float] = {}
     for zone_name, energy_path in _RAPL_ZONES.items():
         try:
             value = float(energy_path.read_text().strip())
@@ -223,10 +224,8 @@ def get_nvidia_power_watts() -> Optional[float]:
         for line in result.stdout.strip().split("\n"):
             line = line.strip()
             if line:
-                try:
+                with contextlib.suppress(ValueError):
                     total += float(line)
-                except ValueError:
-                    pass
         return round(total, 2) if total > 0 else None
     except (subprocess.SubprocessError, FileNotFoundError, OSError) as e:
         logger.debug("nvidia-smi power query failed: %s", e)
@@ -274,11 +273,11 @@ class _EnergySection:
 
     def __init__(self, label: str = "unnamed") -> None:
         self.label = label
-        self._start_energy_uj: Dict[str, float] = {}
+        self._start_energy_uj: dict[str, float] = {}
         self._start_gpu_power_w: Optional[float] = None
         self._start_time: float = 0.0
         self._max_power: float = 0.0
-        self._energy_readings: List[Dict[str, float]] = []
+        self._energy_readings: list[dict[str, float]] = []
         self.result: EnergyMeasurement = EnergyMeasurement()
 
     def __enter__(self) -> "_EnergySection":
@@ -402,7 +401,7 @@ def measure_energy_section(start: bool, label: str = "unnamed") -> Optional[_Ene
 # - AMD EPYC Milan/Genoa
 # - NVIDIA A100 (for GPU-accelerated builds)
 
-_EMPIRICAL_ENERGY_TABLE: Dict[str, Dict[str, float]] = {
+_EMPIRICAL_ENERGY_TABLE: dict[str, dict[str, float]] = {
     "xeon": {
         "base_joules_per_element": 1.2e-8,
         "exponent": 2.8,
@@ -456,7 +455,7 @@ def estimate_energy_per_scf_cycle(
     base = params["base_joules_per_element"]
     exponent = params["exponent"]
 
-    # Diagonalization: O(nmat^3) × k-points
+    # Diagonalization: O(nmat^3) x k-points
     scf_joules = base * (nmat ** exponent) * nkpt
 
     # Apply power cap awareness if available
@@ -475,7 +474,7 @@ def estimate_energy_per_scf_cycle(
 # Combined Energy Profile
 # =============================================================================
 
-def get_energy_profile() -> Dict[str, Any]:
+def get_energy_profile() -> dict[str, Any]:
     """
     Build a comprehensive energy profile of the current node.
 
@@ -486,7 +485,7 @@ def get_energy_profile() -> Dict[str, Any]:
         "dram_energy_j", "core_energy_j", "gpu_power_w",
         "power_cap_w", "rapl_zones".
     """
-    profile: Dict[str, Any] = {
+    profile: dict[str, Any] = {
         "has_rapl": HAS_RAPL,
         "has_nvidia_smi": HAS_NVIDIA_SMI,
         "package_energy_j": None,

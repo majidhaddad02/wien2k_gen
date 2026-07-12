@@ -1,9 +1,8 @@
 """Integration tests for WIEN2k flag detection and execution command generation."""
 
-import tempfile
 from pathlib import Path
 
-from wien2k_gen.types import CalculationType, Wien2kFlags, Wien2kVersion
+from wien2k_gen.types import CalculationType, Wien2kFlags
 
 
 def _touch(path: Path) -> Path:

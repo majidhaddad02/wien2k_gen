@@ -17,10 +17,10 @@ References:
   WIEN2k User Guide 2023, Sections 4-6
 """
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
-import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -33,7 +33,7 @@ class ParallelizationStrategy:
     mode: str  # "pure_mpi", "hybrid", "kpoint", "numa_aware"
     mpi_ranks: int
     omp_threads: int
-    cores_per_node: List[int]
+    cores_per_node: list[int]
     numa_binding: bool
     granularity: int
     efficiency_pct: float
@@ -92,7 +92,7 @@ def recommend_numa_strategy(
             granularity=granularity,
             efficiency_pct=85.0,
             recommendation=(
-                f"NUMA-aware granular: {ranks} ranks × {omp} threads, granular={granularity} "
+                f"NUMA-aware granular: {ranks} ranks x {omp} threads, granular={granularity} "
                 f"across {numa_nodes} NUMA nodes. Expected ~30% improvement for very large "
                 f"systems (nmat={nmat}). Use `numactl --membind` for memory locality."
             ),
@@ -110,7 +110,7 @@ def recommend_numa_strategy(
             granularity=1,
             efficiency_pct=80.0,
             recommendation=(
-                f"Standard NUMA: {ranks} ranks × {omp} threads. "
+                f"Standard NUMA: {ranks} ranks x {omp} threads. "
                 f"nmat={nmat} below granular threshold (10000); granular overhead avoided."
             ),
         )
@@ -162,7 +162,7 @@ def recommend_lapw0_strategy(
             granularity=1,
             efficiency_pct=85.0,
             recommendation=(
-                f"Hybrid MPI+OpenMP for LAPW0: {numa_nodes} ranks × "
+                f"Hybrid MPI+OpenMP for LAPW0: {numa_nodes} ranks x "
                 f"{min(total_cores // numa_nodes, 16)} threads. "
                 f"Optimal for FFT grid > 1M points ({fft_total} points). "
                 f"Cache reuse in FFT benefits from OpenMP."
@@ -177,7 +177,7 @@ def recommend_lapw0_strategy(
         numa_binding=False,
         granularity=1,
         efficiency_pct=70.0,
-        recommendation=f"Pure OpenMP for LAPW0: 1 rank × {total_cores} threads.",
+        recommendation=f"Pure OpenMP for LAPW0: 1 rank x {total_cores} threads.",
     )
 
 
@@ -186,7 +186,7 @@ def recommend_io_strategy(
     nkpt: int,
     atoms: int,
     scratch_fs: str = "tmpfs",
-) -> Dict[str, object]:
+) -> dict[str, object]:
     """Recommend I/O optimization strategy.
 
     For large systems, I/O can be the main bottleneck. Writing .vector files
@@ -200,7 +200,7 @@ def recommend_io_strategy(
 
     Ref: WIEN2k User Guide 2023, Chapter on Parallelization.
     """
-    result: Dict[str, object] = {}
+    result: dict[str, object] = {}
 
     if nmat > 10000:
         result["granularity"] = 16
@@ -251,10 +251,10 @@ def recommend_io_strategy(
     return result
 
 
-def recommend_rkmax(
-    atomic_numbers: List[int],
+def recommend_rkmax(  # noqa: C901
+    atomic_numbers: list[int],
     calculation_type: str = "scf",
-    rmt_ratios: Optional[List[float]] = None,
+    rmt_ratios: Optional[list[float]] = None,
     is_soc: bool = False,
 ) -> float:
     """Recommend RKMAX based on atomic composition.
@@ -274,7 +274,7 @@ def recommend_rkmax(
         return 7.0
 
     max_z = max(atomic_numbers)
-    avg_z = sum(atomic_numbers) / len(atomic_numbers)
+    sum(atomic_numbers) / len(atomic_numbers)
 
     if max_z > 70:
         base = 8.0
@@ -315,13 +315,13 @@ def recommend_rkmax(
 def recommend_gmax(rkmax: float, calculation_type: str = "scf") -> float:
     """Recommend GMAX based on RKMAX and calculation type.
 
-    GMAX = 2.0 × RKMAX (default)
-    GMAX = 2.5 × RKMAX (forces)
-    GMAX = 3.0 × RKMAX (EFG, hyperfine)
+    GMAX = 2.0 x RKMAX (default)
+    GMAX = 2.5 x RKMAX (forces)
+    GMAX = 3.0 x RKMAX (EFG, hyperfine)
 
     Ref: Schwarz et al., CPC 147 (2002) 71-76.
     """
-    factors: Dict[str, float] = {
+    factors: dict[str, float] = {
         "scf": 2.0,
         "dos": 2.0,
         "band": 2.0,
@@ -409,9 +409,9 @@ def recommend_mkl_threading(nmat: int, nkpt: int) -> Optional[int]:
 def recommend_weighted_kpoint_distribution(
     nkpt: int,
     nmpi: int,
-    k_weights: Optional[List[float]] = None,
+    k_weights: Optional[list[float]] = None,
     symmetry_weight: bool = True,
-) -> Dict[int, List[int]]:
+) -> dict[int, list[int]]:
     """Distribute k-points weighted by computational cost per k-point.
 
     Equal distribution of k-points across MPI ranks assumes all k-points
@@ -446,7 +446,7 @@ def recommend_weighted_kpoint_distribution(
     )
 
     rank_loads = [0.0] * nmpi
-    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(nmpi)}
+    rank_kpts: dict[int, list[int]] = {r: [] for r in range(nmpi)}
 
     for k_idx, weight in weighted:
         min_rank = min(range(nmpi), key=lambda r: rank_loads[r])
@@ -471,7 +471,7 @@ def recommend_weighted_kpoint_distribution(
     return rank_kpts
 
 
-def _estimate_kpoint_weights(nkpt: int, symmetry_weight: bool = True) -> List[float]:
+def _estimate_kpoint_weights(nkpt: int, symmetry_weight: bool = True) -> list[float]:
     """Estimate k-point computational weights from symmetry heuristics.
 
     Without explicit IBZ data, we estimate on the assumption that
@@ -494,7 +494,7 @@ def _estimate_kpoint_weights(nkpt: int, symmetry_weight: bool = True) -> List[fl
     return weights
 
 
-def detect_numa_topology() -> Dict[str, Any]:
+def detect_numa_topology() -> dict[str, Any]:  # noqa: C901
     """Detect NUMA topology via numactl or hwloc.
 
     Returns dict with:
@@ -503,7 +503,7 @@ def detect_numa_topology() -> Dict[str, Any]:
         total_cores: int — total physical cores
         detected: bool — whether NUMA was detected
     """
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "num_nodes": 1,
         "cores_per_node": [1],
         "total_cores": 1,
@@ -574,9 +574,9 @@ def detect_numa_topology() -> Dict[str, Any]:
 def numa_aware_kpoint_distribution(
     kpoints: int,
     numa_nodes: int,
-    cores_per_node: List[int],
-    k_weights: Optional[List[float]] = None,
-) -> Dict[str, Any]:
+    cores_per_node: list[int],
+    k_weights: Optional[list[float]] = None,
+) -> dict[str, Any]:
     """Distribute k-points across NUMA nodes for local memory access.
 
     Algorithm:
@@ -600,8 +600,8 @@ def numa_aware_kpoint_distribution(
     indexed = sorted(enumerate(k_weights), key=lambda x: -x[1])
 
     node_loads = [0.0] * numa_nodes
-    node_kpts: Dict[int, List[int]] = {n: [] for n in range(numa_nodes)}
-    node_cores: Dict[int, int] = {
+    node_kpts: dict[int, list[int]] = {n: [] for n in range(numa_nodes)}
+    node_cores: dict[int, int] = {
         n: cores_per_node[n] if n < len(cores_per_node) else 1
         for n in range(numa_nodes)
     }
@@ -643,8 +643,8 @@ def numa_aware_kpoint_distribution(
 
 def generate_numa_aware_machines(
     case_name: str,
-    node_kpts: Dict[int, List[int]],
-    node_cores: Dict[int, int],
+    node_kpts: dict[int, list[int]],
+    node_cores: dict[int, int],
     hostname_prefix: str = "node",
 ) -> str:
     """Generate .machines entries with explicit NUMA grouping.
@@ -665,7 +665,7 @@ def generate_numa_aware_machines(
         kpt_list = node_kpts[node_idx]
         lines.append(f"# NUMA Node {node_idx} — {len(kpt_list)} k-points")
         entries_needed = max(len(kpt_list), 1)
-        for i in range(entries_needed):
+        for _i in range(entries_needed):
             hostname = f"{hostname_prefix}{node_idx + 1:02d}"
             lines.append(f"lapw1:{hostname}:{cores}")
         lines.append("")
@@ -676,7 +676,7 @@ def generate_numa_aware_machines(
 # Phase 2 — FFD (First Fit Decreasing) K-point Distribution
 # ===========================================================================
 
-def calculate_kpoint_weights(case_name: str) -> List[float]:
+def calculate_kpoint_weights(case_name: str) -> list[float]:  # noqa: C901
     """Calculate k-point weights from case.klist file.
 
     Reads k-point multiplicities and weights from WIEN2k klist.
@@ -684,7 +684,6 @@ def calculate_kpoint_weights(case_name: str) -> List[float]:
 
     Falls back to uniform weights if klist is unavailable or malformed.
     """
-    import math as _math
 
     weights = []
     klist_path = Path(f"{case_name}.klist")
@@ -735,9 +734,9 @@ def calculate_kpoint_weights(case_name: str) -> List[float]:
 
 
 def ffd_kpoint_distribution(
-    kpoint_weights: List[float],
+    kpoint_weights: list[float],
     num_ranks: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """First Fit Decreasing (FFD) algorithm for balanced k-point assignment.
 
     Algorithm (greedy bin-packing):
@@ -755,7 +754,6 @@ def ffd_kpoint_distribution(
         load_variance: float
         method: str — "ffd"
     """
-    import math as _math
 
     if num_ranks <= 0:
         return {
@@ -768,12 +766,12 @@ def ffd_kpoint_distribution(
     indexed = sorted(enumerate(kpoint_weights), key=lambda x: -x[1])
 
     rank_loads = [0.0] * num_ranks
-    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(num_ranks)}
+    rank_kpts: dict[int, list[int]] = {r: [] for r in range(num_ranks)}
 
     # Best Fit Decreasing (BFD) assignment: place each k-point on the
     # rank with the lowest current load, using heap for O(nkpt·log nrank).
     import heapq as _heapq
-    heap: List[tuple] = [(0.0, r) for r in range(num_ranks)]
+    heap: list[tuple] = [(0.0, r) for r in range(num_ranks)]
     for k_idx, weight in indexed:
         current_load, min_rank = _heapq.heappop(heap)
         rank_loads[min_rank] = current_load + weight
@@ -793,12 +791,12 @@ def ffd_kpoint_distribution(
     return metrics
 
 
-def calculate_balance_quality(rank_loads: List[float]) -> Dict[str, float]:
+def calculate_balance_quality(rank_loads: list[float]) -> dict[str, float]:
     """Calculate load balance quality metrics.
 
     Returns:
         balance_ratio: min_load / max_load  (1.0 = perfect)
-        efficiency: sum / (n × max)  (parallel efficiency)
+        efficiency: sum / (n x max)  (parallel efficiency)
         load_variance: variance of loads
         load_std: standard deviation
         max_load: maximum load value
@@ -834,9 +832,9 @@ def calculate_balance_quality(rank_loads: List[float]) -> Dict[str, float]:
 
 
 def round_robin_distribution(
-    kpoint_weights: List[float],
+    kpoint_weights: list[float],
     num_ranks: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Round Robin k-point distribution for comparison baseline."""
     if num_ranks <= 0:
         return {
@@ -846,7 +844,7 @@ def round_robin_distribution(
         }
 
     rank_loads = [0.0] * num_ranks
-    rank_kpts: Dict[int, List[int]] = {r: [] for r in range(num_ranks)}
+    rank_kpts: dict[int, list[int]] = {r: [] for r in range(num_ranks)}
 
     for i, weight in enumerate(kpoint_weights):
         target_rank = i % num_ranks
@@ -861,9 +859,9 @@ def round_robin_distribution(
 
 
 def compare_distribution_methods(
-    kpoint_weights: List[float],
+    kpoint_weights: list[float],
     num_ranks: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Compare FFD vs Round-Robin and select the better method.
 
     Returns dict with ffd and round_robin results plus winner recommendation.
@@ -913,8 +911,8 @@ def compare_distribution_methods(
 
 
 def generate_ffd_machines(
-    rank_kpts: Dict[int, List[int]],
-    rank_loads: List[float],
+    rank_kpts: dict[int, list[int]],
+    rank_loads: list[float],
     num_ranks: int,
     hostname_prefix: str = "rank",
 ) -> str:

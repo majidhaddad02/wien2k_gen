@@ -21,7 +21,7 @@ import math
 import random
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from ..core.hardware import (
     get_hardware_profile,
@@ -52,13 +52,13 @@ class BenchmarkResult(TypedDict, total=False):
     """Structured result from a synthetic benchmark run."""
     run_id: str
     problem_params: SyntheticWorkloadParams
-    hardware_profile: Dict[str, Any]
+    hardware_profile: dict[str, Any]
     theoretical_time_sec: float
     simulated_time_sec: float
     speedup: float
     efficiency_percent: float
     bottleneck: str  # 'cpu', 'memory', 'io', 'mpi'
-    metadata: Dict[str, Any]
+    metadata: dict[str, Any]
     timestamp: float
 
 
@@ -227,7 +227,7 @@ def _calculate_mpi_messages(nmat: int, cores: int, mode: str) -> int:
     return cores
 
 
-def _get_logp_params_for_interconnect(hw_profile: Dict[str, Any]) -> LogPParameters:
+def _get_logp_params_for_interconnect(hw_profile: dict[str, Any]) -> LogPParameters:
     """
     Select appropriate LogP parameters based on detected hardware interconnect.
 
@@ -439,7 +439,7 @@ def generate_strong_scaling_suite(
     base_problem: SyntheticWorkloadParams,
     topo: Topology,
     max_cores: Optional[int] = None
-) -> List[BenchmarkResult]:
+) -> list[BenchmarkResult]:
     """
     Generate a suite of results simulating strong scaling.
     Fixed problem size, increasing core count.
@@ -490,7 +490,7 @@ def generate_weak_scaling_suite(
     base_problem: SyntheticWorkloadParams,
     topo: Topology,
     scaling_factor: int = 4
-) -> List[BenchmarkResult]:
+) -> list[BenchmarkResult]:
     """
     Generate a suite simulating weak scaling.
     Increase problem size proportional to core count to maintain load balance.

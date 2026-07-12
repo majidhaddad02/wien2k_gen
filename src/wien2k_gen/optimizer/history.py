@@ -18,10 +18,10 @@ import sqlite3
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -60,16 +60,16 @@ class ExecutionRecord:
     efficiency_pct: float = 0.0
     convergence_cycles: int = 0
     memory_gb_used: float = 0.0
-    node_list: List[str] = field(default_factory=list)
+    node_list: list[str] = field(default_factory=list)
     success: bool = False
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary with JSON-safe types."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ExecutionRecord":
+    def from_dict(cls, data: dict[str, Any]) -> "ExecutionRecord":
         """Deserialize from dictionary with proper type coercion."""
         record = cls()
         for key, value in data.items():
@@ -175,7 +175,7 @@ class ExecutionHistory:
             db_path = DEFAULT_HISTORY_DB
         self.db_path = Path(db_path)
         self._lock = threading.RLock()
-        self._connections: List[sqlite3.Connection] = []
+        self._connections: list[sqlite3.Connection] = []
         self._closed = False
         self._init_db()
 
@@ -223,10 +223,8 @@ class ExecutionHistory:
             if len(self._connections) < MAX_POOL_SIZE:
                 self._connections.append(conn)
             else:
-                try:
+                with suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
 
     @contextmanager
     def _conn(self):
@@ -252,10 +250,8 @@ class ExecutionHistory:
         with self._lock:
             self._closed = True
             for conn in self._connections:
-                try:
+                with suppress(Exception):
                     conn.close()
-                except Exception:
-                    pass
             self._connections.clear()
 
     # =========================================================================
@@ -303,9 +299,9 @@ class ExecutionHistory:
         logger.debug(f"Recorded execution {record.run_id} (mode={record.mode}, cores={record.total_cores})")
         return record.run_id
 
-    def query(self, filters: Optional[Dict[str, Any]] = None,
+    def query(self, filters: Optional[dict[str, Any]] = None,
               order_by: Optional[str] = None,
-              limit: Optional[int] = None) -> List[ExecutionRecord]:
+              limit: Optional[int] = None) -> list[ExecutionRecord]:
         """
         Flexible parameterized query against execution history.
 
@@ -320,10 +316,10 @@ class ExecutionHistory:
             List of matching ExecutionRecord instances.
         """
         sql = "SELECT * FROM execution_history"
-        params: List[Any] = []
+        params: list[Any] = []
 
         if filters:
-            clauses: List[str] = []
+            clauses: list[str] = []
             for key, value in filters.items():
                 comparison = "="
                 col = key
@@ -371,7 +367,7 @@ class ExecutionHistory:
         backend: str,
         limit: int = 10,
         require_success: bool = True,
-    ) -> List[ExecutionRecord]:
+    ) -> list[ExecutionRecord]:
         """
         Find historically similar runs based on problem size and backend.
 
@@ -399,7 +395,7 @@ class ExecutionHistory:
               AND nmat BETWEEN ? AND ?
               AND nkpt BETWEEN ? AND ?
         """
-        params: List[Any] = [backend, nmat_low, nmat_high, nkpt_low, nkpt_high]
+        params: list[Any] = [backend, nmat_low, nmat_high, nkpt_low, nkpt_high]
 
         if require_success:
             sql += " AND success = 1"
@@ -446,7 +442,7 @@ class ExecutionHistory:
         best = min(similar, key=lambda r: r.walltime_sec if r.walltime_sec > 0 else float("inf"))
         return best
 
-    def get_statistics(self) -> Dict[str, Any]:
+    def get_statistics(self) -> dict[str, Any]:
         """
         Compute aggregate statistics over all recorded runs.
 
@@ -465,7 +461,7 @@ class ExecutionHistory:
                 "SELECT COUNT(*) FROM execution_history WHERE success = 1"
             ).fetchone()[0]
 
-            stats: Dict[str, Any] = {
+            stats: dict[str, Any] = {
                 "total_runs": total,
                 "successful_runs": successful,
                 "failed_runs": total - successful,
@@ -584,7 +580,7 @@ def suggest_from_history(
     nkpt: int,
     backend: str,
     topo_cores: int,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Derive a configuration suggestion from historically successful runs.
 
@@ -641,7 +637,7 @@ def suggest_from_history(
 
         # Count mode popularity weighted by recency and efficiency
         now = time.time()
-        mode_scores: Dict[str, float] = {"kpoint": 0.0, "hybrid": 0.0, "mpi": 0.0}
+        mode_scores: dict[str, float] = {"kpoint": 0.0, "hybrid": 0.0, "mpi": 0.0}
 
         for rec in candidates:
             age_days = max(1, (now - rec.timestamp) / 86400.0)

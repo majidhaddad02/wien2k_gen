@@ -1,5 +1,5 @@
 """
-LSF Job Submission Provider – Production-Grade Integration for IBM Spectrum LSF.
+LSF Job Submission Provider - Production-Grade Integration for IBM Spectrum LSF.
 Implements the standard SubmitProvider interface with LSF-specific directives,
 job array support, and optional jsrun integration for IBM Spectrum LSF on POWER.
 
@@ -21,7 +21,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 
 # =============================================================================
-# Abstract Base Class – SubmitProvider
+# Abstract Base Class - SubmitProvider
 # =============================================================================
 
 class SubmitProvider(ABC):
@@ -51,9 +51,9 @@ class SubmitProvider(ABC):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
-        modules_to_load: Optional[List[str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None,
+        directives: Optional[dict[str, Any]] = None,
+        modules_to_load: Optional[list[str]] = None,
+        environment_vars: Optional[dict[str, str]] = None,
         working_dir: Optional[Path] = None,
     ) -> str:
         """Generate a complete submission script with scheduler directives."""
@@ -63,11 +63,11 @@ class SubmitProvider(ABC):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
+        directives: Optional[dict[str, Any]] = None,
         script_path: Optional[Path] = None,
         dry_run: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Submit job to the scheduler and return structured result."""
 
     @abstractmethod
@@ -75,7 +75,7 @@ class SubmitProvider(ABC):
         """Cancel a running or pending job by its scheduler ID."""
 
     @abstractmethod
-    def status(self, job_id: str) -> Dict[str, Any]:
+    def status(self, job_id: str) -> dict[str, Any]:
         """Query the current status of a job by its scheduler ID."""
 
     @abstractmethod
@@ -110,7 +110,7 @@ class LSFDirectives:
     pre_exec: Optional[str] = None
     post_exec: Optional[str] = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         result = {}
         for key, val in self.__dict__.items():
             if val is not None:
@@ -128,8 +128,8 @@ class LSFJobSpec:
     exec_command: str
     directives: LSFDirectives = field(default_factory=LSFDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
-    modules_to_load: List[str] = field(default_factory=list)
-    environment_vars: Dict[str, str] = field(default_factory=dict)
+    modules_to_load: list[str] = field(default_factory=list)
+    environment_vars: dict[str, str] = field(default_factory=dict)
     scratch_enabled: bool = True
     preemption_grace_sec: int = 60
     dry_run: bool = False
@@ -154,7 +154,7 @@ def _validate_lsf_memory(mem_str: str) -> bool:
     return bool(re.match(pattern, mem_str))
 
 
-def _check_lsf_limits(spec: LSFJobSpec) -> List[str]:
+def _check_lsf_limits(spec: LSFJobSpec) -> list[str]:
     """Validate job spec against common LSF queue limits and hardware constraints."""
     warnings_list = []
     directives = spec.directives
@@ -204,9 +204,9 @@ class LSFSubmitProvider(SubmitProvider):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
-        modules_to_load: Optional[List[str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None,
+        directives: Optional[dict[str, Any]] = None,
+        modules_to_load: Optional[list[str]] = None,
+        environment_vars: Optional[dict[str, str]] = None,
         working_dir: Optional[Path] = None,
     ) -> str:
         """Generate a complete LSF submission script with #BSUB directives and execution body."""
@@ -237,7 +237,7 @@ class LSFSubmitProvider(SubmitProvider):
 # Scheduler: IBM Spectrum LSF
 # =============================================================================="""
 
-    def _format_bsub_directives(self, spec: LSFJobSpec) -> str:
+    def _format_bsub_directives(self, spec: LSFJobSpec) -> str:  # noqa: C901
         """Format #BSUB directives with proper spacing and defaults."""
         lines = []
         directives = spec.directives
@@ -344,7 +344,7 @@ class LSFSubmitProvider(SubmitProvider):
 
         return "\n".join(lines)
 
-    def _inject_scratch_setup(self) -> List[str]:
+    def _inject_scratch_setup(self) -> list[str]:
         """Generate LSF scratch directory setup for multi-host I/O staging."""
         return [
             "# ==============================================================================",
@@ -380,7 +380,7 @@ class LSFSubmitProvider(SubmitProvider):
             'trap cleanup_scratch EXIT',
         ]
 
-    def _inject_preemption_handler(self, spec: LSFJobSpec) -> List[str]:
+    def _inject_preemption_handler(self, spec: LSFJobSpec) -> list[str]:
         """Generate signal trap for graceful preemption and SIGTERM handling."""
         return [
             "# ==============================================================================",
@@ -395,7 +395,7 @@ class LSFSubmitProvider(SubmitProvider):
             "trap _preemption_handler TERM USR2 XCPU",
         ]
 
-    def _inject_jsrun_command(self, spec: LSFJobSpec) -> List[str]:
+    def _inject_jsrun_command(self, spec: LSFJobSpec) -> list[str]:
         """Generate jsrun-based launch command for IBM Spectrum LSF on POWER."""
         nprocs = spec.directives.nprocs or 1
         nodes = spec.directives.nodes or 1
@@ -419,11 +419,11 @@ class LSFSubmitProvider(SubmitProvider):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
+        directives: Optional[dict[str, Any]] = None,
         script_path: Optional[Path] = None,
         dry_run: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit an LSF job or generate a script for review.
 
@@ -448,7 +448,7 @@ class LSFSubmitProvider(SubmitProvider):
             validate_constraints=kwargs.get("validate_constraints", True),
         )
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "success": False,
             "job_id": None,
             "script_path": script_path or Path(f"lsf_submit_{spec.directives.job_name or 'job'}.sh"),
@@ -547,7 +547,7 @@ class LSFSubmitProvider(SubmitProvider):
             logger.error(f"Failed to cancel job {job_id}: {exc}")
             return False
 
-    def status(self, job_id: str) -> Dict[str, Any]:
+    def status(self, job_id: str) -> dict[str, Any]:
         """
         Query the current status of an LSF job.
 
@@ -558,7 +558,7 @@ class LSFSubmitProvider(SubmitProvider):
             Dict with keys: job_id, state, queue, exit_code, running.
             State is one of: PEND, RUN, DONE, EXIT, PSUSP, USUSP, SSUSP, UNKWN.
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "job_id": job_id,
             "state": "UNKWN",
             "queue": "",

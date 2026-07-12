@@ -1,5 +1,5 @@
 """
-parser.py – Quantum ESPRESSO Output Parser
+parser.py - Quantum ESPRESSO Output Parser
 Extracts convergence status, energies, forces, stresses, timing, and errors
 from QE pw.x/ph.x/cp.x output logs with version-agnostic regex matching.
 Production features:
@@ -10,10 +10,11 @@ Production features:
 • Graceful fallbacks for truncated, corrupted, or non-standard logs
 """
 
+import contextlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple, TypedDict
+from typing import Optional, TypedDict
 
 from ...core.constants import RYDBERG_TO_EV
 from ...logging_config import get_logger
@@ -33,14 +34,14 @@ class QEParseResult(TypedDict, total=False):
     total_energy_ry: Optional[float]
     total_energy_ev: Optional[float]
     fermi_energy_ry: Optional[float]
-    forces: List[List[float]]  # shape: (natoms, 3)
-    stress: List[List[float]]  # shape: (3, 3)
+    forces: list[list[float]]  # shape: (natoms, 3)
+    stress: list[list[float]]  # shape: (3, 3)
     scf_cycles: int
     relaxation_steps: int
     cpu_time_sec: float
     wall_time_sec: float
-    errors: List[str]
-    warnings: List[str]
+    errors: list[str]
+    warnings: list[str]
     log_snippet: str
 
 
@@ -59,7 +60,7 @@ class StepMetrics:
 # Core Parsing Logic
 # =============================================================================
 
-def _extract_energy_block(content: str) -> Tuple[Optional[float], Optional[float]]:
+def _extract_energy_block(content: str) -> tuple[Optional[float], Optional[float]]:
     """
     Extract total and Fermi energies from QE output.
     Handles both 'total energy' and '!    total energy' formats across QE versions.
@@ -74,10 +75,8 @@ def _extract_energy_block(content: str) -> Tuple[Optional[float], Optional[float
         content, re.IGNORECASE
     )
     if total_match:
-        try:
+        with contextlib.suppress(ValueError):
             total_energy = float(total_match.group(1))
-        except ValueError:
-            pass
 
     # Fallback: older format without '!'
     if total_energy is None:
@@ -86,10 +85,8 @@ def _extract_energy_block(content: str) -> Tuple[Optional[float], Optional[float
             content, re.IGNORECASE
         )
         if total_match_old:
-            try:
+            with contextlib.suppress(ValueError):
                 total_energy = float(total_match_old.group(1))
-            except ValueError:
-                pass
 
     # Fermi energy pattern
     fermi_match = re.search(
@@ -107,7 +104,7 @@ def _extract_energy_block(content: str) -> Tuple[Optional[float], Optional[float
     return total_energy, fermi_energy
 
 
-def _extract_forces(content: str, natoms: Optional[int]) -> List[List[float]]:
+def _extract_forces(content: str, natoms: Optional[int]) -> list[list[float]]:
     """
     Extract final atomic forces from 'Final forces' or 'Forces acting on atoms' blocks.
     Returns list of [fx, fy, fz] per atom.
@@ -132,7 +129,7 @@ def _extract_forces(content: str, natoms: Optional[int]) -> List[List[float]]:
     return forces
 
 
-def _extract_stress(content: str) -> List[List[float]]:
+def _extract_stress(content: str) -> list[list[float]]:
     """
     Extract stress tensor from 'Total stress' block.
     Returns 3x3 matrix in kBar or Ry/Bohr^3 (QE standard).
@@ -156,7 +153,7 @@ def _extract_stress(content: str) -> List[List[float]]:
     return stress
 
 
-def _extract_timing(content: str) -> Tuple[float, float]:
+def _extract_timing(content: str) -> tuple[float, float]:
     """
     Extract CPU and WALL time from final timing block.
     QE prints: 'CPU     time (sec):   XXX.XX' and 'WALL    time (sec):   XXX.XX'
@@ -166,17 +163,13 @@ def _extract_timing(content: str) -> Tuple[float, float]:
 
     cpu_match = re.search(r'CPU\s+time\s+\(sec\):\s*([\d\.]+)', content)
     if cpu_match:
-        try:
+        with contextlib.suppress(ValueError):
             cpu_time = float(cpu_match.group(1))
-        except ValueError:
-            pass
 
     wall_match = re.search(r'WALL\s+time\s+\(sec\):\s*([\d\.]+)', content)
     if wall_match:
-        try:
+        with contextlib.suppress(ValueError):
             wall_time = float(wall_match.group(1))
-        except ValueError:
-            pass
 
     return cpu_time, wall_time
 
@@ -205,16 +198,12 @@ def _check_convergence(content: str, calc_type: str) -> bool:
         return True
     if 'job done' in lower and 'end of job' in lower:
         return True
-    if calc_type in ('relax', 'vc-relax'):
-        if 'bfgs converged' in lower or 'final convergence achieved' in lower:
-            return True
-    if calc_type == 'scf':
-        if 'convergence threshold' in lower and 'met' in lower:
-            return True
-    return False
+    if calc_type in ('relax', 'vc-relax') and ('bfgs converged' in lower or 'final convergence achieved' in lower):
+        return True
+    return bool(calc_type == 'scf' and 'convergence threshold' in lower and 'met' in lower)
 
 
-def _detect_errors_warnings(content: str) -> Tuple[List[str], List[str]]:
+def _detect_errors_warnings(content: str) -> tuple[list[str], list[str]]:
     """
     Scan output for critical errors and non-fatal warnings.
     Uses pattern matching against known QE failure modes.

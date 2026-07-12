@@ -21,11 +21,13 @@ References:
 
 from __future__ import annotations
 
+import contextlib
 import math
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 __all__ = [
     "CaseData",
@@ -39,11 +41,11 @@ __all__ = [
 @dataclass
 class LDAUData:
     """LDA/U calculation parameters extracted from case.inm / case.inorb."""
-    u_ry: List[float] = field(default_factory=list)
-    j_ry: List[float] = field(default_factory=list)
-    ueff_ry: List[float] = field(default_factory=list)
-    l_orbital: List[int] = field(default_factory=list)
-    atoms: List[int] = field(default_factory=list)
+    u_ry: list[float] = field(default_factory=list)
+    j_ry: list[float] = field(default_factory=list)
+    ueff_ry: list[float] = field(default_factory=list)
+    l_orbital: list[int] = field(default_factory=list)
+    atoms: list[int] = field(default_factory=list)
     double_counting: str = "AMF"
     file_present: bool = False
 
@@ -56,7 +58,7 @@ class CaseData:
     atoms_inequiv: int = 0
     kpoints: int = 0
     nmat: int = 0
-    nbands: Optional[int] = None
+    nbands: int | None = None
     rkmax: float = 7.0
     lmax: int = 10
     v_nmt: float = 4.0
@@ -72,7 +74,7 @@ class CaseData:
     has_forces: bool = False
     ldau: LDAUData = field(default_factory=LDAUData)
     volume_bohr3: float = 0.0
-    lattice_vectors: List[Tuple[float, ...]] = field(default_factory=list)
+    lattice_vectors: list[tuple[float, ...]] = field(default_factory=list)
     scf_iterations: int = 0
     fermi_energy_ry: float = 0.0
     total_energy_ry: float = 0.0
@@ -92,11 +94,11 @@ class CaseFileParser:
         ldau = CaseFileParser.parse_inm(Path("case.inm"))
     """
 
-    def __init__(self, case_dir: Optional[Path] = None) -> None:
+    def __init__(self, case_dir: Path | None = None) -> None:
         if case_dir is None:
             case_dir = Path.cwd()
         self.case_dir = Path(case_dir)
-        self._case_name: Optional[str] = None
+        self._case_name: str | None = None
 
     @property
     def case_name(self) -> str:
@@ -108,7 +110,7 @@ class CaseFileParser:
                 self._case_name = ""
         return self._case_name
 
-    def _read_optional(self, glob_pat: str) -> Optional[Tuple[Path, str]]:
+    def _read_optional(self, glob_pat: str) -> tuple[Path, str] | None:
         files = sorted(self.case_dir.glob(glob_pat))
         if not files:
             return None
@@ -123,8 +125,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in1(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+    def parse_in1(filepath: Path) -> dict[str, Any]:  # noqa: C901
+        result: dict[str, Any] = {
             "nbands": None, "rkmax": 7.0, "lmax": 10,
             "v_nmt": 4.0, "gmax": 12.0, "format_type": "unknown",
         }
@@ -178,7 +180,7 @@ class CaseFileParser:
 
         # GMAX: appears as a single float on a line after the per-l QN block
         # Pattern: float value >= 4.0 on a line by itself after all QN lines
-        gmax_candidates: List[float] = []
+        gmax_candidates: list[float] = []
         in_qn_block = False
         qn_block_ended = False
         for line in lines[3:]:
@@ -225,8 +227,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in2(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+    def parse_in2(filepath: Path) -> dict[str, Any]:  # noqa: C901
+        result: dict[str, Any] = {
             "fft_nx": 0, "fft_ny": 0, "fft_nz": 0,
             "gmax": 12.0, "tetra_method": False, "nmat_estimated": 0,
         }
@@ -244,7 +246,7 @@ class CaseFileParser:
             result["tetra_method"] = True
 
         # Look for GMAX (line 2 in standard format, float >= 4)
-        for i, line in enumerate(lines[:5]):
+        for _i, line in enumerate(lines[:5]):
             parts = line.split()
             if len(parts) == 1:
                 try:
@@ -282,7 +284,7 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_inm(filepath: Path) -> LDAUData:
+    def parse_inm(filepath: Path) -> LDAUData:  # noqa: C901
         """Parse LDA+U parameters from case.inm.
 
         WIEN2k .inm format (Blaha et al. 2020, Usersguide Section 6.1):
@@ -332,8 +334,7 @@ class CaseFileParser:
             if not parts:
                 continue
             try:
-                nums = [float(p) if "." in p or "e" in p.lower() else float(p)
-                        for p in parts]
+                nums = [float(p) for p in parts]
             except ValueError:
                 try:
                     nums = [float(p) for p in parts[:6]]
@@ -386,8 +387,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_scf(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+    def parse_scf(filepath: Path) -> dict[str, Any]:
+        result: dict[str, Any] = {
             "nmat": 0, "fermi_energy_ry": 0.0,
             "total_energy_ry": 0.0, "scf_iterations": 0,
         }
@@ -404,18 +405,14 @@ class CaseFileParser:
         # :FER (Fermi energy)
         m = re.search(r':FER\s*:.*=\s*([\d.E+\-]+)', content)
         if m:
-            try:
+            with contextlib.suppress(ValueError):
                 result["fermi_energy_ry"] = float(m.group(1))
-            except ValueError:
-                pass
 
         # :ENE (Total energy)
         m = re.search(r':ENE\s*:.*=\s*([\-\d.E+\-]+)', content)
         if m:
-            try:
+            with contextlib.suppress(ValueError):
                 result["total_energy_ry"] = float(m.group(1))
-            except ValueError:
-                pass
 
         # :ITER (SCF iterations)
         m = re.search(r':LABEL\d*\s*:\s*ITERATION\s+(\d+)', content)
@@ -429,8 +426,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_struct(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
+    def parse_struct(filepath: Path) -> dict[str, Any]:  # noqa: C901
+        result: dict[str, Any] = {
             "atoms": 0, "atoms_inequiv": 0,
             "volume_bohr3": 0.0, "lattice_vectors": [],
             "spacegroup": "",
@@ -492,7 +489,7 @@ class CaseFileParser:
                 alpha, beta, gamma = (float(parts[3]), float(parts[4]), float(parts[5]))
                 import math
                 alpha_r, beta_r, gamma_r = (math.radians(alpha), math.radians(beta), math.radians(gamma))
-                # Volume = a*b*c * sqrt(1 - cos²α - cos²β - cos²γ + 2cosα cosβ cosγ)
+                # Volume = a*b*c * sqrt(1 - cos^2 a - cos^2 B - cos^2 y + 2cos a cos B cos y)
                 ca, cb, cg = math.cos(alpha_r), math.cos(beta_r), math.cos(gamma_r)
                 vol = a * b * c * math.sqrt(1 - ca*ca - cb*cb - cg*cg + 2*ca*cb*cg)
                 result["volume_bohr3"] = vol
@@ -507,8 +504,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_klist(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, int] = {"kpoints": 0}
+    def parse_klist(filepath: Path) -> dict[str, Any]:
+        result: dict[str, int] = {"kpoints": 0}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
@@ -533,8 +530,8 @@ class CaseFileParser:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def parse_in0(filepath: Path) -> Dict[str, Any]:
-        result: Dict[str, Any] = {"rkmax": 7.0, "is_hybrid": False}
+    def parse_in0(filepath: Path) -> dict[str, Any]:
+        result: dict[str, Any] = {"rkmax": 7.0, "is_hybrid": False}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
@@ -569,7 +566,7 @@ class CaseFileParser:
     # Parse all
     # ------------------------------------------------------------------
 
-    def parse_all(self) -> CaseData:
+    def parse_all(self) -> CaseData:  # noqa: C901
         """Parse all available case.* files and return a complete CaseData."""
         data = CaseData(case_name=self.case_name)
 
@@ -632,9 +629,8 @@ class CaseFileParser:
 
         # .inc (hybrid functional)
         r = self._read_optional("*.inc")
-        if r is not None:
-            if re.search(r'\bHYBR', r[1], re.IGNORECASE):
-                data.is_hybrid = True
+        if r is not None and re.search(r'\bHYBR', r[1], re.IGNORECASE):
+            data.is_hybrid = True
 
         # .inst (spin polarization)
         r = self._read_optional("*.inst")
@@ -670,10 +666,8 @@ class CaseFileParser:
         if wienroot:
             version_file = Path(wienroot, "VERSION")
             if version_file.exists():
-                try:
+                with contextlib.suppress(Exception):
                     data.wien2k_version = version_file.read_text().strip().split()[0]
-                except Exception:
-                    pass
 
         # nbands fallback
         if data.nbands is None and data.nmat > 0:
@@ -682,12 +676,12 @@ class CaseFileParser:
         return data
 
 
-def parse_case_directory(path: Optional[Path] = None) -> CaseData:
+def parse_case_directory(path: Path | None = None) -> CaseData:
     """Convenience function: parse all WIEN2k input files in a directory."""
     return CaseFileParser(path).parse_all()
 
 
-def detect_wien2k_version() -> str:
+def detect_wien2k_version() -> str:  # noqa: C901
     """Detect WIEN2k version from WIENROOT environment and installed files.
 
     WIEN2k version history and key changes:
@@ -758,9 +752,7 @@ def wien2k_supports(capability: str) -> bool:
     val = caps.get(capability)
     if isinstance(val, bool):
         return val
-    if val is None:
-        return False
-    return True
+    return val is not None
 
 
 # ------------------------------------------------------------------
@@ -786,7 +778,7 @@ class Vector:
         )
 
 
-def try_float(s: str) -> Optional[float]:
+def try_float(s: str) -> float | None:
     """Try to parse a float, returning None on failure."""
     try:
         return float(s)
@@ -794,7 +786,7 @@ def try_float(s: str) -> Optional[float]:
         return None
 
 
-def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
+def check_struct_quality(struct_path: Path) -> dict[str, Any]:  # noqa: C901
     """Check WIEN2k .struct file for common issues.
 
     Ref: Blaha et al., WIEN2k User Guide — struct preparation.
@@ -808,7 +800,7 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
         errors: List[str]
         rmt_data: List[dict] — per-atom RMT/Z/position info
     """
-    result: Dict[str, Any] = {"warnings": [], "errors": [], "rmt_data": []}
+    result: dict[str, Any] = {"warnings": [], "errors": [], "rmt_data": []}
 
     try:
         content = struct_path.read_text(encoding="utf-8", errors="replace")
@@ -882,7 +874,7 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
     for idx, (pos, rmt, z) in enumerate(zip(atom_positions, atom_rmts, atom_zs)):
         result["rmt_data"].append({
             "index": idx, "x": pos[0], "y": pos[1], "z": pos[2],
-            "rmt": rmt, "z": z,
+            "rmt": rmt, "charge": z,
         })
 
     # Check RMT overlaps between inequivalent atoms
@@ -909,7 +901,7 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
                 result["errors"].append(
                     f"CRITICAL: RMT spheres overlap by {overlap_pct:.0f}% "
                     f"between atom {i} (RMT={atom_rmts[i]:.2f}) and atom {j} "
-                    f"(RMT={atom_rmts[j]:.2f}). Reduce RMT to < 0.85×nearest-neighbor distance."
+                    f"(RMT={atom_rmts[j]:.2f}). Reduce RMT to < 0.85xnearest-neighbor distance."
                 )
             elif overlap_pct > 10:
                 result["warnings"].append(
@@ -925,12 +917,11 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
     # Warn about small RMT for light hard elements (O, F, N)
     hard_z = {8, 9, 7}
     for idx, (rmt, z) in enumerate(zip(atom_rmts, atom_zs)):
-        if z in hard_z:
-            if rmt < 1.4:
-                result["warnings"].append(
-                    f"Atom {idx} (Z={z}) has very small RMT={rmt:.2f} bohr. "
-                    f"Hard potentials of light elements need RKMAX ≥ 7.0 for convergence."
-                )
+        if z in hard_z and rmt < 1.4:
+            result["warnings"].append(
+                f"Atom {idx} (Z={z}) has very small RMT={rmt:.2f} bohr. "
+                f"Hard potentials of light elements need RKMAX ≥ 7.0 for convergence."
+            )
 
     # Wyckoff / symmetry heuristic
     if "MULT" in content and "NONEQUIV.ATOMS" in content:
@@ -950,7 +941,7 @@ def check_struct_quality(struct_path: Path) -> Dict[str, Any]:
 # Phase 2 — setrmt Algorithm (JCP 2020)
 # ===========================================================================
 
-def parse_crystal_structure(struct_path: Path) -> Dict[str, Any]:
+def parse_crystal_structure(struct_path: Path) -> dict[str, Any]:
     """Parse WIEN2k .struct file for crystal structure data.
 
     Extracts:
@@ -967,7 +958,7 @@ def parse_crystal_structure(struct_path: Path) -> Dict[str, Any]:
         return {}
 
     lines = content.splitlines()
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "lattice": {"a": 1.0, "b": 1.0, "c": 1.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0},
         "atoms": [],
         "spacegroup": "",
@@ -1019,12 +1010,12 @@ def parse_crystal_structure(struct_path: Path) -> Dict[str, Any]:
     return result
 
 
-def calculate_nn_distances(structure: Dict[str, Any]) -> Dict[int, float]:
+def calculate_nn_distances(structure: dict[str, Any]) -> dict[int, float]:  # noqa: C901
     """Calculate nearest-neighbor distances for all inequivalent atoms.
 
     Algorithm:
       1. Convert fractional to Cartesian coordinates
-      2. Build 3×3×3 supercell for periodic images
+      2. Build 3x3x3 supercell for periodic images
       3. For each atom, find minimum distance to any other atom
       4. Exclude self-distance
 
@@ -1076,7 +1067,7 @@ def calculate_nn_distances(structure: Dict[str, Any]) -> Dict[int, float]:
                     images.append((idx, sc_x, sc_y, sc_z))
 
     # Find nearest neighbor for each atom
-    nn_distances: Dict[int, float] = {}
+    nn_distances: dict[int, float] = {}
     n_atoms = len(atom_coords)
 
     for i in range(n_atoms):
@@ -1095,15 +1086,15 @@ def calculate_nn_distances(structure: Dict[str, Any]) -> Dict[int, float]:
 
 
 def optimize_rmt(
-    nn_distances: Dict[int, float],
+    nn_distances: dict[int, float],
     reduction_factor: float = 0.95,
     min_rmt: float = 2.5,
     max_rmt: float = 4.0,
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """Calculate optimal RMT values from nearest-neighbor distances.
 
     Formula (Blaha et al., JCP 2020):
-        RMT_optimal = reduction_factor × (nn_distance / 2)
+        RMT_optimal = reduction_factor x (nn_distance / 2)
 
     Constraints:
         - RMT ≥ min_rmt (2.5 a.u. for very light elements)
@@ -1122,11 +1113,11 @@ def optimize_rmt(
 
 
 def check_rmt_overlaps(
-    rmts: Dict[int, float],
-    structure: Dict[str, Any],
+    rmts: dict[int, float],
+    structure: dict[str, Any],
     overlap_warning: float = 0.95,
     overlap_critical: float = 1.00,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Check RMT sphere overlaps between inequivalent atoms.
 
     Overlap = (RMT_i + RMT_j) / nn_distance_ij
@@ -1139,7 +1130,7 @@ def check_rmt_overlaps(
     Returns list of overlap entries.
     """
     atoms = structure.get("atoms", [])
-    nn_distances = calculate_nn_distances(structure)
+    calculate_nn_distances(structure)
     overlaps = []
 
     for i in range(len(atoms)):
@@ -1147,8 +1138,8 @@ def check_rmt_overlaps(
             rmt_i = rmts.get(i, atoms[i]["rmt"] if i < len(atoms) else 1.5)
             rmt_j = rmts.get(j, atoms[j]["rmt"] if j < len(atoms) else 1.5)
 
-            cart = atoms[i]["x"], atoms[i]["y"], atoms[i]["z"]
-            cart_j = atoms[j]["x"], atoms[j]["y"], atoms[j]["z"]
+            atoms[i]["x"], atoms[i]["y"], atoms[i]["z"]
+            atoms[j]["x"], atoms[j]["y"], atoms[j]["z"]
 
             lat = structure.get("lattice", {})
             a, b_val, c = lat.get("a", 1.0), lat.get("b", 1.0), lat.get("c", 1.0)
@@ -1196,17 +1187,17 @@ def check_rmt_overlaps(
 
 
 def recommend_final_rmt(
-    optimal_rmts: Dict[int, float],
-    overlaps: List[Dict[str, Any]],
-    structure: Dict[str, Any],
-) -> Dict[int, float]:
+    optimal_rmts: dict[int, float],
+    overlaps: list[dict[str, Any]],
+    structure: dict[str, Any],
+) -> dict[int, float]:
     """Adjust optimal RMT values to eliminate critical overlaps.
 
     For each critical or warning overlap, reduces both RMT values
     proportionally until overlap drops below 0.95.
     """
     final = dict(optimal_rmts)
-    atoms = structure.get("atoms", [])
+    structure.get("atoms", [])
 
     for ov in overlaps:
         i, j = ov["atom_i"], ov["atom_j"]
@@ -1222,10 +1213,10 @@ def recommend_final_rmt(
 
 
 def generate_rmt_report(
-    final_rmts: Dict[int, float],
-    overlaps: List[Dict[str, Any]],
-    nn_distances: Dict[int, float],
-    structure: Dict[str, Any],
+    final_rmts: dict[int, float],
+    overlaps: list[dict[str, Any]],
+    nn_distances: dict[int, float],
+    structure: dict[str, Any],
 ) -> str:
     """Generate human-readable RMT optimization report.
 
@@ -1255,7 +1246,7 @@ def generate_rmt_report(
     lines = [
         "RMT Optimization Report",
         "=======================",
-        f"Generated by wien2k_gen (Blaha et al., JCP 2020)",
+        "Generated by wien2k_gen (Blaha et al., JCP 2020)",
         "",
     ]
 

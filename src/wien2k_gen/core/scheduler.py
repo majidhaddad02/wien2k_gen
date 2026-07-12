@@ -25,7 +25,7 @@ import socket
 import time
 from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from ..logging_config import get_logger
 from ..utils.filelock import FileLock
@@ -74,7 +74,7 @@ def _compute_env_hash() -> str:
     content += f"|hostname={socket.gethostname()}|pid={os.getpid()}"
     return hashlib.sha256(content.encode()).hexdigest()[:16]
 
-def _load_cached_detection() -> Optional[Dict[str, Any]]:
+def _load_cached_detection() -> Optional[dict[str, Any]]:
     """Load cached detection result if within TTL and env hash matches."""
     if not _DETECTION_CACHE_FILE.exists():
         return None
@@ -102,7 +102,7 @@ def _load_cached_detection() -> Optional[Dict[str, Any]]:
         logger.debug(f"Cache load failed or lock unavailable: {e}")
         return None
 
-def _save_cached_detection(result_data: Dict[str, Any]) -> None:
+def _save_cached_detection(result_data: dict[str, Any]) -> None:
     """Persist detection result with timestamp and environment hash."""
     lock_path = str(_DETECTION_CACHE_FILE) + ".lock"
     try:
@@ -119,7 +119,7 @@ def _save_cached_detection(result_data: Dict[str, Any]) -> None:
 # =============================================================================
 # Robust SLURM Node List Expansion
 # =============================================================================
-def _expand_slurm_nodelist(nodelist: str) -> List[str]:
+def _expand_slurm_nodelist(nodelist: str) -> list[str]:  # noqa: C901
     """
     Expand SLURM compact node lists (e.g., 'node[01-04,10],gpu[5-6]') into a sorted unique list.
     Handles nested brackets, comma-separated ranges, and zero-padding.
@@ -191,7 +191,7 @@ class SchedulerHints:
     interconnect_provider: str = "unknown"
     numa_aware: bool = False
 
-def _detect_slurm() -> Optional[Dict[str, Any]]:
+def _detect_slurm() -> Optional[dict[str, Any]]:
     """Detect SLURM allocation and extract topology + constraints."""
     if not os.getenv("SLURM_JOB_ID"):
         return None
@@ -257,7 +257,7 @@ def _detect_slurm() -> Optional[Dict[str, Any]]:
         logger.error(f"SLURM topology extraction failed: {e}", exc_info=True)
         return None
 
-def _detect_pbs() -> Optional[Dict[str, Any]]:
+def _detect_pbs() -> Optional[dict[str, Any]]:
     """Detect PBS/Torque allocation from environment and nodefile."""
     if not os.getenv("PBS_JOBID"):
         return None
@@ -292,7 +292,7 @@ def _detect_pbs() -> Optional[Dict[str, Any]]:
         logger.error(f"PBS topology extraction failed: {e}", exc_info=True)
         return None
 
-def _detect_lsf() -> Optional[Dict[str, Any]]:
+def _detect_lsf() -> Optional[dict[str, Any]]:
     """Detect IBM LSF allocation."""
     if not os.getenv("LSB_JOBID"):
         return None
@@ -331,7 +331,7 @@ def _detect_lsf() -> Optional[Dict[str, Any]]:
         logger.error(f"LSF topology extraction failed: {e}", exc_info=True)
         return None
 
-def _detect_sge() -> Optional[Dict[str, Any]]:
+def _detect_sge() -> Optional[dict[str, Any]]:
     """
     Detect SGE (Son of Grid Engine) / Grid Engine / UGE environment.
 
@@ -361,8 +361,8 @@ def _detect_sge() -> Optional[Dict[str, Any]]:
     logger.info(f"Detected SGE/GridEngine environment: JOB_ID={job_id}")
 
     try:
-        nodes: List[str] = []
-        cores_per_node_accum: Dict[str, int] = {}
+        nodes: list[str] = []
+        cores_per_node_accum: dict[str, int] = {}
         total_cores = 0
 
         if pe_hostfile and Path(pe_hostfile).exists():
@@ -411,7 +411,7 @@ def _detect_sge() -> Optional[Dict[str, Any]]:
         logger.error(f"SGE topology extraction failed: {e}", exc_info=True)
         return None
 
-def _detect_local() -> Dict[str, Any]:
+def _detect_local() -> dict[str, Any]:
     """Fallback for standalone workstation or development node."""
     phys_cores = get_physical_cores()
     logger.info("Falling back to local/single-node environment")
@@ -455,7 +455,7 @@ def _register_checkpoint_signals(checkpoint_fn: Optional[Callable] = None) -> No
 # =============================================================================
 # Main Detection Orchestrator
 # =============================================================================
-def detect(
+def detect(  # noqa: C901
     max_cores: Optional[int] = None,
     force_refresh: bool = False,
     register_signals: bool = True
@@ -481,7 +481,7 @@ def detect(
             return Topology(**cached)
             
     # Run detectors in priority order
-    detectors: List[Callable] = [_detect_slurm, _detect_pbs, _detect_lsf, _detect_sge]
+    detectors: list[Callable] = [_detect_slurm, _detect_pbs, _detect_lsf, _detect_sge]
     detected_env = None
 
     for detector in detectors:

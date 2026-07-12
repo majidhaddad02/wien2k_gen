@@ -11,7 +11,7 @@ All documentation and inline comments are in English per project standards.
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
@@ -19,7 +19,7 @@ from ..core.constants import HBAR2_OVER_ME_EV_ANG2, RYDBERG_TO_EV
 from ..exceptions import MissingInputError
 
 
-def _read_file_lines(filepath: Path) -> List[str]:
+def _read_file_lines(filepath: Path) -> list[str]:
     """Read all lines from a file, stripping trailing whitespace."""
     if not filepath.exists():
         raise MissingInputError(f"Required WIEN2k output file not found: {filepath}")
@@ -27,7 +27,7 @@ def _read_file_lines(filepath: Path) -> List[str]:
         return [line.rstrip() for line in fh.readlines()]
 
 
-def _extract_fermi_from_scf(case_name: str, path: str) -> float:
+def _extract_fermi_from_scf(case_name: str, path: str) -> float:  # noqa: C901
     """
     Extract the Fermi energy from the SCF output file.
 
@@ -61,7 +61,7 @@ def _extract_fermi_from_scf(case_name: str, path: str) -> float:
         for line in lines:
             if ":FER" in line and "F E R M I" not in line:
                 tokens = line.strip(":").split()
-                for i, tok in enumerate(tokens):
+                for _i, tok in enumerate(tokens):
                     if tok in (":FER", "F E R M I"):
                         continue
                     try:
@@ -81,7 +81,7 @@ def _extract_fermi_from_scf(case_name: str, path: str) -> float:
     return fermi_ry * RYDBERG_TO_EV
 
 
-def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
+def parse_band_structure(case_name: str, path: str) -> dict[str, Any]:  # noqa: C901
     """
     Parse WIEN2k band structure from ``case.energy`` and ``case.klist_band``.
 
@@ -127,8 +127,8 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
             nspin = 2
 
     # Parse eigenvalues from case.energy
-    eigenvalues_raw: List[List[float]] = []
-    current_band: List[float] = []
+    eigenvalues_raw: list[list[float]] = []
+    current_band: list[float] = []
 
     for line in energy_lines:
         line = line.strip()
@@ -159,16 +159,12 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
 
     # Spin-polarized files have alternating spin-up/spin-down blocks
     nkpt_est: int = 0
-    nbnd_est: int = 0
     if eigenvalues_raw:
         longest = max(eigenvalues_raw, key=len)
-        nbnd_est = len(longest) // 2 if eigenvalues_raw else 0
+        len(longest) // 2 if eigenvalues_raw else 0
 
         # Count k-points from band blocks
-        if nspin == 2:
-            nkpt_est = len(eigenvalues_raw) // 2
-        else:
-            nkpt_est = len(eigenvalues_raw)
+        nkpt_est = len(eigenvalues_raw) // 2 if nspin == 2 else len(eigenvalues_raw)
 
     # Reconstruct full matrix
     if nspin == 2:
@@ -179,8 +175,8 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
         eigenvalues = np.zeros((nspin, nkpt, nbnd), dtype=np.float64)
         for ib in range(nbnd):
             for ik in range(nkpt):
-                spin_up_idx = ib * 2 * nkpt + ik
-                spin_dn_idx = ib * 2 * nkpt + nkpt + ik
+                ib * 2 * nkpt + ik
+                ib * 2 * nkpt + nkpt + ik
                 # This indexing is complex; use a simpler approach
                 pass
 
@@ -214,8 +210,8 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
     eigenvalues *= RYDBERG_TO_EV
 
     # Parse k-points from klist_band
-    k_points_list: List[List[float]] = []
-    k_labels: List[str] = []
+    k_points_list: list[list[float]] = []
+    k_labels: list[str] = []
 
     if klist_path.exists():
         klist_lines = _read_file_lines(klist_path)
@@ -247,8 +243,8 @@ def parse_band_structure(case_name: str, path: str) -> Dict[str, Any]:
 
 
 def compute_direct_band_gap(
-    band_data: Dict[str, Any],
-) -> Tuple[float, bool, Optional[int], Optional[int]]:
+    band_data: dict[str, Any],
+) -> tuple[float, bool, Optional[int], Optional[int]]:
     """
     Compute the direct band gap from pre-parsed band structure data.
 
@@ -291,12 +287,10 @@ def compute_direct_band_gap(
             energies = eigenvalues[ispin]
             for ib in range(nbnd):
                 e = energies[ik, ib]
-                if e <= fermi + 0.01:
-                    if e > vbm_per_k[ik]:
-                        vbm_per_k[ik] = e
-                if e > fermi - 0.01:
-                    if e < cbm_per_k[ik]:
-                        cbm_per_k[ik] = e
+                if e <= fermi + 0.01 and e > vbm_per_k[ik]:
+                    vbm_per_k[ik] = e
+                if e > fermi - 0.01 and e < cbm_per_k[ik]:
+                    cbm_per_k[ik] = e
 
     per_k_gaps = cbm_per_k - vbm_per_k
     direct_k_idx = int(np.argmin(per_k_gaps))
@@ -308,8 +302,8 @@ def compute_direct_band_gap(
 
 
 def compute_band_gap(
-    band_data: Dict[str, Any],
-) -> Dict[str, Any]:
+    band_data: dict[str, Any],
+) -> dict[str, Any]:
     """
     Compute both direct and indirect band gaps from band structure data.
 
@@ -354,12 +348,10 @@ def compute_band_gap(
             energies = eigenvalues[ispin]
             for ib in range(nbnd):
                 e = energies[ik, ib]
-                if e <= fermi + 0.01:
-                    if e > vbm_per_k[ik]:
-                        vbm_per_k[ik] = e
-                if e > fermi - 0.01:
-                    if e < cbm_per_k[ik]:
-                        cbm_per_k[ik] = e
+                if e <= fermi + 0.01 and e > vbm_per_k[ik]:
+                    vbm_per_k[ik] = e
+                if e > fermi - 0.01 and e < cbm_per_k[ik]:
+                    cbm_per_k[ik] = e
 
     per_k_gaps = cbm_per_k - vbm_per_k
     direct_k_idx = int(np.argmin(per_k_gaps))
@@ -393,8 +385,8 @@ def compute_band_gap(
     }
 
 
-def compute_effective_mass(
-    band_data: Dict[str, Any],
+def compute_effective_mass(  # noqa: C901
+    band_data: dict[str, Any],
     band_index: int,
     kpoint_index: int,
     direction: str = "central",
@@ -432,15 +424,11 @@ def compute_effective_mass(
     Ashcroft & Mermin 1976, Chapter 8.
     """
     eigenvalues = band_data["eigenvalues"]
-    nspin = band_data["nspin"]
     nkpt = band_data["nkpt"]
     nbnd = band_data["nbnd"]
     k_points = band_data.get("k_points", np.zeros((nkpt, 3)))
 
-    if nspin == 2:
-        energies = eigenvalues[0]
-    else:
-        energies = eigenvalues[0]
+    energies = eigenvalues[0]
 
     if band_index < 0 or band_index >= nbnd:
         raise ValueError(
@@ -541,7 +529,7 @@ def detect_semiconductor(gap: float) -> str:
     return "insulator"
 
 
-def parse_dos(case_name: str, path: str) -> Dict[str, Any]:
+def parse_dos(case_name: str, path: str) -> dict[str, Any]:  # noqa: C901
     """
     Parse WIEN2k density-of-states files.
 
@@ -570,7 +558,7 @@ def parse_dos(case_name: str, path: str) -> Dict[str, Any]:
         - ``nspin`` (int): 1 or 2.
     """
     base = Path(path)
-    dos1_paths: List[Path] = [
+    dos1_paths: list[Path] = [
         base / f"{case_name}.dos1evup",
         base / f"{case_name}.dos1evdn",
         base / f"{case_name}.dos1ev",
@@ -596,7 +584,7 @@ def parse_dos(case_name: str, path: str) -> Dict[str, Any]:
             f"Expected case.dos1ev or case.dos1evup."
         )
 
-    def _parse_dos_file(filepath: Path) -> Tuple[np.ndarray, np.ndarray]:
+    def _parse_dos_file(filepath: Path) -> tuple[np.ndarray, np.ndarray]:
         """Parse a single DOS file returning (energies, dos_values)."""
         data = np.loadtxt(filepath, dtype=np.float64)
         if data.ndim == 1:
@@ -641,7 +629,7 @@ def parse_dos(case_name: str, path: str) -> Dict[str, Any]:
     }
 
 
-def _parse_dos1_with_idos(filepath: Path) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _parse_dos1_with_idos(filepath: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Parse a dos1ev file that includes the integrated DOS column.
 
@@ -664,7 +652,7 @@ def _parse_dos1_with_idos(filepath: Path) -> Tuple[np.ndarray, np.ndarray, np.nd
     return energies, dos, idos_vals
 
 
-def _extract_gap_from_output1(case_name: str, path: str) -> Tuple[float, bool, Optional[int], Optional[int]]:
+def _extract_gap_from_output1(case_name: str, path: str) -> tuple[float, bool, Optional[int], Optional[int]]:
     """
     Attempt to read the reported band gap from case.output1.
 
@@ -707,10 +695,9 @@ def _extract_gap_from_output1(case_name: str, path: str) -> Tuple[float, bool, O
         if m:
             gap_ev = float(m.group(2))
         m2 = transition_pattern.match(line)
-        if m2:
-            if ":GAP" in line:
-                vbm_k = int(m2.group(1))
-                cbm_k = int(m2.group(2))
+        if m2 and ":GAP" in line:
+            vbm_k = int(m2.group(1))
+            cbm_k = int(m2.group(2))
         if direct_pattern.search(line) and "gap" in line.lower():
             is_direct = True
 

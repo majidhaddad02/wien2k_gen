@@ -18,7 +18,7 @@ All documentation and inline comments are in English per project standards.
 import importlib
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Optional, Union
 
 from .backends.base import Backend
 from .exceptions import BackendError, MissingInputError
@@ -39,7 +39,7 @@ class BackendManager:
     """
     _instance: Optional["BackendManager"] = None
     _lock = threading.RLock()
-    _registry: Dict[BackendCode, Type[Backend]] = {}
+    _registry: dict[BackendCode, type[Backend]] = {}  # noqa: RUF012
     _loaded = False
     _current_code: Optional[BackendCode] = None
     _cached_instance: Optional[Backend] = None
@@ -94,10 +94,10 @@ class BackendManager:
 
             self._loaded = True
 
-    def _make_stub_backend(self, code: BackendCode, class_name: str, error: Exception) -> Type[Backend]:
+    def _make_stub_backend(self, code: BackendCode, class_name: str, error: Exception) -> type[Backend]:
         """Create a stub class that raises a clear, actionable error on instantiation."""
         class StubBackend(Backend):
-            def detect_problem_size(self) -> Dict[str, Any]:
+            def detect_problem_size(self) -> dict[str, Any]:
                 raise BackendError(f"{code.value} backend is unavailable. Please install missing dependencies.")
             
             def generate_input(self, topo: Any, suggestion: Any) -> str:
@@ -146,7 +146,7 @@ class BackendManager:
         logger.info(f"Auto-detected backend from filesystem: {detected.value}")
         return detected
 
-    def get_backend_class(self, code: Optional[Union[BackendCode, str]] = None) -> Type[Backend]:
+    def get_backend_class(self, code: Optional[Union[BackendCode, str]] = None) -> type[Backend]:
         """Return backend class by code. Auto-loads registry if needed."""
         self._load_backends()
         
@@ -194,7 +194,7 @@ class BackendManager:
             self._cached_instance = None  # Force recreation on next get_backend()
             logger.info(f"Backend switched to: {target_code.value}")
 
-    def list_available(self) -> List[BackendCode]:
+    def list_available(self) -> list[BackendCode]:
         """Return list of successfully loaded (non-stub) backends."""
         self._load_backends()
         return [code for code, cls in self._registry.items() if not cls.__name__.endswith("StubBackend")]
@@ -219,7 +219,7 @@ def get_current_backend() -> Backend:
     return BackendManager.instance().get_backend()
 
 
-def get_backend_class(code: Optional[Union[BackendCode, str]] = None) -> Type[Backend]:
+def get_backend_class(code: Optional[Union[BackendCode, str]] = None) -> type[Backend]:
     """Convenience function to get the backend class."""
     return BackendManager.instance().get_backend_class(code)
 
@@ -229,7 +229,7 @@ def set_backend(code: Union[BackendCode, str]) -> None:
     BackendManager.instance().set_backend(code)
 
 
-def list_backends() -> List[BackendCode]:
+def list_backends() -> list[BackendCode]:
     """Convenience function to list available backends."""
     return BackendManager.instance().list_available()
 

@@ -50,24 +50,24 @@ from .synthetic import (
 # Explicit Public API Declaration
 # =============================================================================
 __all__ = [
-    # Synthetic
-    "SyntheticWorkloadParams",
+    "BenchmarkExecutionState",
     "BenchmarkResult",
-    "SimulationConfig",
-    "WorkloadSimulator",
-    "generate_strong_scaling_suite",
-    "generate_weak_scaling_suite",
     # Real & Calibration
     "RealBenchmarkConfig",
     "RealBenchmarkResult",
-    "BenchmarkExecutionState",
     "RealBenchmarkRunner",
-    "calibrate_real_vs_synthetic",
     # Reports
     "ScalingDataPoint",
     "ScalingSeries",
-    "generate_text_report",
+    "SimulationConfig",
+    # Synthetic
+    "SyntheticWorkloadParams",
+    "WorkloadSimulator",
+    "calibrate_real_vs_synthetic",
     "generate_charts",
     "generate_report",
+    "generate_strong_scaling_suite",
+    "generate_text_report",
+    "generate_weak_scaling_suite",
     "load_series_from_yaml",
 ]

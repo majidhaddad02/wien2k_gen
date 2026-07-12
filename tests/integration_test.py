@@ -4,24 +4,19 @@ Verifies end-to-end connectivity between core modules, CLI, configuration,
 optimization engine, and type system without requiring hardware or cluster access.
 """
 
-import os
 import json
-import tempfile
+from typing import Any
+from unittest.mock import MagicMock, patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any
+
+from wien2k_gen.cli import create_parser
+from wien2k_gen.config import ConfigManager, load_config
+from wien2k_gen.core.scheduler import apply_max_cores, detect
+from wien2k_gen.optimizer.advisor import suggest_optimal_resources
 
 # Project imports
-from wien2k_gen.types import (
-    TopologyData, ResourceSuggestion, BackendCode, ExecutionMode, 
-    PipelineResult, BenchmarkResult, SubmissionConfig
-)
-from wien2k_gen.core.scheduler import detect, detect_slurm, detect_pbs, apply_max_cores
-from wien2k_gen.optimizer.advisor import suggest_optimal_resources
-from wien2k_gen.config import AppConfig, ConfigManager, load_config
-from wien2k_gen.cli import create_parser
-
+from wien2k_gen.types import ExecutionMode, PipelineResult, ResourceSuggestion, TopologyData
 
 # =============================================================================
 # Fixtures for Integration
@@ -49,7 +44,7 @@ def sample_topology() -> TopologyData:
     )
 
 @pytest.fixture
-def sample_hardware_profile() -> Dict[str, Any]:
+def sample_hardware_profile() -> dict[str, Any]:
     return {
         "cpu_arch": "x86_64", "physical_cores": 64, "memory_gb": 256.0,
         "peak_fp64_gflops": 800.0, "numa_nodes": 2, "interconnect_type": "infiniband",

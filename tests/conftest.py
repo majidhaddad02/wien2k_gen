@@ -5,14 +5,12 @@ and deterministic data generators for all test modules.
 """
 
 import os
-import json
+from typing import Any
+from unittest.mock import patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any
 
 from wien2k_gen.types import TopologyData
-
 
 # =============================================================================
 # Core Data Fixtures
@@ -30,7 +28,7 @@ def standard_topology() -> TopologyData:
     )
 
 @pytest.fixture
-def mock_hardware_profile() -> Dict[str, Any]:
+def mock_hardware_profile() -> dict[str, Any]:
     return {
         "cpu_arch": "x86_64", "physical_cores": 64, "logical_cores": 128,
         "sockets": 2, "cores_per_socket": 32, "memory_gb": 256.0,

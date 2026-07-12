@@ -5,21 +5,19 @@ heterogeneous node detection, and GPU topology detection.
 Uses mock subprocess calls to avoid hardware dependencies.
 """
 
-import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from pathlib import Path
 
 from wien2k_gen.core.topology import (
-    Topology,
-    NUMANode,
-    NodeSpec,
     GPUInfo,
-    GPUTopology,
-    detect_gpu_topology,
-    _detect_nvidia_gpus_topology,
-    TopologyValidationError,
+    NodeSpec,
+    NUMANode,
+    Topology,
     TopologyType,
+    TopologyValidationError,
+    _detect_nvidia_gpus_topology,
+    detect_gpu_topology,
 )
 
 

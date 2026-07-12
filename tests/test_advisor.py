@@ -5,16 +5,15 @@ memory/time estimation, and edge-case resilience.
 
 Uses mock-driven execution to isolate advisor logic from hardware/filesystem dependencies.
 """
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from typing import Dict, Any
 
 from wien2k_gen.core.topology import Topology
 from wien2k_gen.optimizer.advisor import (
-    suggest_optimal_resources,
-    estimate_memory_footprint_gb,
     estimate_amdahl_saturation,
-    _get_current_backend,
+    estimate_memory_footprint_gb,
+    suggest_optimal_resources,
 )
 
 
@@ -221,7 +220,7 @@ class TestAmdahlSaturation:
         assert result["sweet_spot_cores"] <= result["max_efficient_cores"]
 
     def test_severe_saturation_detected(self):
-        """2× over max efficient → severe saturation."""
+        """2x over max efficient -> severe saturation."""
         result = estimate_amdahl_saturation(
             kpoints=4, nmat=500, atoms=2,
             total_cores_available=256, num_nodes=8,

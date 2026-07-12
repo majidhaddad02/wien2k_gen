@@ -16,7 +16,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from ..core.topology import GPUInfo, Topology
 from ..logging_config import get_logger
@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 # GPU Detection
 # =============================================================================
 
-def detect_gpu() -> List[GPUInfo]:
+def detect_gpu() -> list[GPUInfo]:
     """
     Detect all GPUs in the system using vendor-specific tools.
 
@@ -37,7 +37,7 @@ def detect_gpu() -> List[GPUInfo]:
     Returns:
         List of GPUInfo dataclass instances with name, memory, and topology data.
     """
-    gpus: List[GPUInfo] = []
+    gpus: list[GPUInfo] = []
 
     nvidia_gpus = _detect_nvidia_gpus()
     if nvidia_gpus:
@@ -54,7 +54,7 @@ def detect_gpu() -> List[GPUInfo]:
     return gpus
 
 
-def _detect_nvidia_gpus() -> List[GPUInfo]:
+def _detect_nvidia_gpus() -> list[GPUInfo]:
     """Detect NVIDIA GPUs using nvidia-smi."""
     try:
         result = subprocess.run(
@@ -102,7 +102,7 @@ def _detect_nvidia_gpus() -> List[GPUInfo]:
         return []
 
 
-def _detect_amd_gpus() -> List[GPUInfo]:
+def _detect_amd_gpus() -> list[GPUInfo]:
     """Detect AMD GPUs using rocm-smi."""
     try:
         result = subprocess.run(
@@ -148,7 +148,7 @@ def _detect_amd_gpus() -> List[GPUInfo]:
         return []
 
 
-def _detect_sysfs_gpus() -> List[GPUInfo]:
+def _detect_sysfs_gpus() -> list[GPUInfo]:
     """Detect GPUs via sysfs as a last-resort fallback."""
     gpus = []
     drm_path = Path("/sys/class/drm")
@@ -314,7 +314,7 @@ def detect_infinity_fabric_active() -> bool:
     return False
 
 
-def get_gpu_interconnect_info() -> Dict[str, Any]:
+def get_gpu_interconnect_info() -> dict[str, Any]:
     """
     Detect GPU interconnect type and bandwidth.
 
@@ -355,7 +355,7 @@ def get_gpu_recommendation(
     nmat: int,
     nkpt: int,
     mode: str,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Determine whether and how to use GPUs for a given DFT calculation.
 
@@ -468,7 +468,7 @@ def get_gpu_recommendation(
 
 def generate_gpu_machines(
     topo: Topology,
-    suggestion: Dict[str, Any],
+    suggestion: dict[str, Any],
 ) -> str:
     """
     Generate GPU-aware parallel configuration for the target DFT code.
@@ -504,9 +504,9 @@ def generate_gpu_machines(
 
 
 def _generate_wien2k_gpu_machines(
-    nodes: List[str],
-    cores_per_node: List[int],
-    gpu_rec: Dict[str, Any],
+    nodes: list[str],
+    cores_per_node: list[int],
+    gpu_rec: dict[str, Any],
 ) -> str:
     """Generate .machines content with gpu: prefix for WIEN2k GPU runs."""
     lines = [
@@ -534,7 +534,7 @@ def _generate_wien2k_gpu_machines(
 
 def _generate_vasp_gpu_input(
     gpu_count: int,
-    suggestion: Dict[str, Any],
+    suggestion: dict[str, Any],
 ) -> str:
     """Generate VASP INCAR GPU parameters (NCORE, KPAR)."""
     total_cores = suggestion.get("recommended_total_cores", 1)
@@ -557,7 +557,7 @@ def _generate_vasp_gpu_input(
 
 def _generate_qe_gpu_input(
     gpu_count: int,
-    suggestion: Dict[str, Any],
+    suggestion: dict[str, Any],
 ) -> str:
     """Generate Quantum ESPRESSO GPU input flags."""
     lines = [
@@ -581,8 +581,8 @@ def _generate_qe_gpu_input(
 class MixedPrecisionConfig:
     """Configuration for mixed-precision DFT execution."""
     use_mixed: bool
-    fp64_ops: List[str]
-    fp32_ops: List[str]
+    fp64_ops: list[str]
+    fp32_ops: list[str]
     speedup_estimate: float
 
 

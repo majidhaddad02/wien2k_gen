@@ -8,11 +8,12 @@ Measurement methods (in priority order):
 1. likwid-perfctr CLI — FLOPS, bandwidth, cache misses
 2. perf stat (Linux perf subsystem)
 3. /sys/devices/system/node/node*/meminfo for NUMA-local bandwidth
-4. Theoretical peak × efficiency factor fallback
+4. Theoretical peak x efficiency factor fallback
 
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import hashlib
 import json
 import os
@@ -23,7 +24,7 @@ import time
 from datetime import datetime
 from functools import cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..logging_config import get_logger
 
@@ -105,7 +106,7 @@ logger.debug(
 # Helper: Safe Command Execution
 # =============================================================================
 
-def _run_cmd_safe(cmd: List[str], timeout: int = 30) -> Optional[str]:
+def _run_cmd_safe(cmd: list[str], timeout: int = 30) -> Optional[str]:
     """Safely execute a shell command with timeout and stderr suppression."""
     env = os.environ.copy()
     env["LC_ALL"] = "C"
@@ -129,10 +130,8 @@ def _hardware_fingerprint() -> str:
     Used to invalidate cached measurements when hardware changes.
     """
     components = []
-    try:
+    with contextlib.suppress(Exception):
         components.append(Path("/proc/cpuinfo").read_text().split("\n")[0])
-    except Exception:
-        pass
     try:
         cpu_model = _run_cmd_safe(["lscpu"], timeout=5)
         if cpu_model:
@@ -183,7 +182,7 @@ class PerfCounterInterface:
         return _PERF_TOOL_AVAILABLE == "sysfs" and HAS_PERF_COUNTERS
 
     @staticmethod
-    def list_available_tools() -> List[str]:
+    def list_available_tools() -> list[str]:
         """Return list of detected hardware counter tools."""
         tools = []
         if PerfCounterInterface.is_likwid_available():
@@ -222,7 +221,7 @@ class PerfCounterCache:
     def __init__(self) -> None:
         if self._initialized:
             return
-        self._cache: Dict[str, Any] = {}
+        self._cache: dict[str, Any] = {}
         self._fingerprint = _hardware_fingerprint()
         self._load()
         self._initialized = True
@@ -311,7 +310,7 @@ def _get_cpu_freq_mhz() -> float:
     return 2000.0
 
 
-def calculations_from_cpu_frequency() -> Dict[str, float]:
+def calculations_from_cpu_frequency() -> dict[str, float]:
     """
     Estimate bandwidth and FLOPS from CPU frequency and known microarchitecture
     parameters. Used as fallback when no hardware counter tools are available.
@@ -331,20 +330,16 @@ def calculations_from_cpu_frequency() -> Dict[str, float]:
         for line in raw.split("\n"):
             low = line.lower().strip()
             if "socket(s)" in low and "per" not in low:
-                try:
+                with contextlib.suppress(ValueError):
                     sockets = int(line.split(":")[-1].strip())
-                except ValueError:
-                    pass
             elif "core(s) per socket" in low:
-                try:
+                with contextlib.suppress(ValueError):
                     cores_per_socket = int(line.split(":")[-1].strip())
-                except ValueError:
-                    pass
 
     # Estimate memory bandwidth: ~50 GB/s per socket for modern EPYC/Xeon
     bw_gb_s = sockets * 50.0 * 0.7
 
-    # Estimate peak FP64: assumed 2 FMA units × 256-bit × 2 ops/cycle
+    # Estimate peak FP64: assumed 2 FMA units x 256-bit x 2 ops/cycle
     # AVX2 ceiling: 2 * (256/64) * 2 = 16 FLOPs/cycle/core
     ops_per_cycle = 16.0
     gflops = sockets * cores_per_socket * freq_mhz * 1e6 * ops_per_cycle / 1e9
@@ -430,12 +425,12 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> float:
     Estimate NUMA-local memory bandwidth from sysfs node meminfo counters.
     Takes two snapshots with a delay and computes delta.
     """
-    snapshot_before: Dict[int, int] = {}
-    snapshot_after: Dict[int, int] = {}
+    snapshot_before: dict[int, int] = {}
+    snapshot_after: dict[int, int] = {}
     node_paths = sorted(Path("/sys/devices/system/node").glob("node*"))
 
-    def _read_snapshot() -> Dict[int, int]:
-        snap: Dict[int, int] = {}
+    def _read_snapshot() -> dict[int, int]:
+        snap: dict[int, int] = {}
         for node_dir in node_paths:
             meminfo = node_dir / "meminfo"
             if not meminfo.exists():
@@ -446,10 +441,8 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> float:
                 for line in meminfo.read_text().splitlines():
                     parts = line.split()
                     if len(parts) >= 4 and "MemTotal" not in line:
-                        try:
+                        with contextlib.suppress(ValueError):
                             total_mem += int(parts[-2])
-                        except ValueError:
-                            pass
                 snap[nid] = total_mem
             except (OSError, ValueError):
                 pass
@@ -469,7 +462,7 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> float:
     return round(max(bw_gb_s, 5.0), 2)  # floor of 5 GB/s to prevent absurdly low values
 
 
-def measure_memory_bandwidth(use_cache: bool = True) -> float:
+def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
     """
     Measure sustained memory bandwidth in GB/s.
 
@@ -658,9 +651,9 @@ def measure_peak_flops(use_cache: bool = True) -> float:
 # Cache Bandwidth Measurement (L1/L2/L3)
 # =============================================================================
 
-def _parse_likwid_cache_bw(output: str) -> Dict[str, float]:
+def _parse_likwid_cache_bw(output: str) -> dict[str, float]:
     """Parse likwid MEM_DP output for L1/L2/L3 bandwidth values."""
-    result: Dict[str, float] = {}
+    result: dict[str, float] = {}
     for line in output.split("\n"):
         for cache_name, key in [("L1", "l1"), ("L2", "l2"), ("L3", "l3")]:
             match = re.search(
@@ -673,12 +666,12 @@ def _parse_likwid_cache_bw(output: str) -> Dict[str, float]:
     return result
 
 
-def _perf_cache_events(sample_sec: float = 2.0) -> Dict[str, float]:
+def _perf_cache_events(sample_sec: float = 2.0) -> dict[str, float]:
     """
     Estimate L1/L2/L3 cache bandwidth from perf stat cache counters.
     Returns dict with keys "l1", "l2", "l3" in GB/s.
     """
-    result: Dict[str, float] = {}
+    result: dict[str, float] = {}
     events = [
         "L1-dcache-loads",
         "L1-dcache-load-misses",
@@ -702,7 +695,7 @@ def _perf_cache_events(sample_sec: float = 2.0) -> Dict[str, float]:
             if match:
                 loads[key] = int(match.group(1).replace(",", "").replace(".", ""))
 
-    # L1 bandwidth: L1 hits × cache line size (64B)
+    # L1 bandwidth: L1 hits x cache line size (64B)
     l1_hits = max(0, loads["L1"] - loads["L1_misses"])
     l1_accesses = loads["L1"]
     if l1_accesses > 0:
@@ -720,7 +713,7 @@ def _perf_cache_events(sample_sec: float = 2.0) -> Dict[str, float]:
     return result
 
 
-def measure_cache_bandwidth(use_cache: bool = True) -> Dict[str, float]:
+def measure_cache_bandwidth(use_cache: bool = True) -> dict[str, float]:
     """
     Measure L1/L2/L3 cache bandwidths in GB/s.
 
@@ -746,7 +739,7 @@ def measure_cache_bandwidth(use_cache: bool = True) -> Dict[str, float]:
             logger.debug("Returning cached cache bandwidths")
             return cached
 
-    result: Dict[str, float] = {}
+    result: dict[str, float] = {}
     tool_used = "none"
 
     if PerfCounterInterface.is_likwid_available():
@@ -784,7 +777,7 @@ def measure_cache_bandwidth(use_cache: bool = True) -> Dict[str, float]:
 # Combined Roofline Data
 # =============================================================================
 
-def get_real_roofline_data(use_cache: bool = True) -> Dict[str, Any]:
+def get_real_roofline_data(use_cache: bool = True) -> dict[str, Any]:
     """
     Combine measured peak FLOPS and sustained memory bandwidth into a single
     roofline data dict. Cached for 5 minutes by default.
@@ -809,7 +802,7 @@ def get_real_roofline_data(use_cache: bool = True) -> Dict[str, Any]:
     active_tools = PerfCounterInterface.list_available_tools()
     tool_used = active_tools[0] if active_tools else "fallback"
 
-    cache_bw: Dict[str, float] = {}
+    cache_bw: dict[str, float] = {}
     try:
         cache_bw = measure_cache_bandwidth(use_cache=False)
     except Exception as e:

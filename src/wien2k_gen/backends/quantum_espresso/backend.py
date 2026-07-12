@@ -1,5 +1,5 @@
 """
-Quantum ESPRESSO Backend – Production-Grade Configuration Generator for HPC Clusters.
+Quantum ESPRESSO Backend - Production-Grade Configuration Generator for HPC Clusters.
 Implements QE 6.7/7.x specific logic for:
 • Robust parsing of .in/.pwi/.pw.in input files to extract problem parameters
 • Optimal allocation of npool, ndiag, nband, ntg with strict divisibility enforcement
@@ -24,7 +24,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from ...core.hardware import (
     get_interconnect_info,
@@ -51,15 +51,15 @@ class QEParallelConfig(TypedDict, total=False):
     nband: int
     ntg: int
     total_mpi_ranks: int
-    warnings: List[str]
+    warnings: list[str]
 
 
 class OutputParseResult(TypedDict, total=False):
     """Structured output for QE log parsing."""
     exists: bool
     converged: Optional[bool]
-    errors: List[str]
-    timing: Dict[str, float]
+    errors: list[str]
+    timing: dict[str, float]
     content_snippet: str
     scf_cycles: int
 
@@ -92,7 +92,7 @@ class QuantumEspressoBackend(Backend):
         self._cached_problem = self._parse_qe_input()
         return self._cached_problem
 
-    def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Generate QE parallel configuration block.
         Returns formatted comments ready to prepend to pw.in.
@@ -115,7 +115,7 @@ class QuantumEspressoBackend(Backend):
         lines.append("")
         return "\n".join(lines)
 
-    def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
+    def get_execution_command(self, suggestion: dict[str, Any]) -> str:
         """
         Return dynamically constructed execution command.
         Auto-selects executable (pw.x, ph.x, etc.) and applies MPI launcher flags.
@@ -138,14 +138,14 @@ class QuantumEspressoBackend(Backend):
         omp_prefix = f"OMP_NUM_THREADS={omp} " if mode == "hybrid" else ""
         return f"{omp_prefix}{launcher} {exec_name} -input {input_file}"
 
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate suggestion against QE-specific mathematical & memory constraints."""
         errors = []
-        mode = suggestion.get("mode", "mpi")
+        suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
-        omp = suggestion.get("omp_threads_per_rank", 1)
+        suggestion.get("omp_threads_per_rank", 1)
         nkpts = suggestion.get("problem_params", {}).get("kpoints", 0)
-        nbnd = suggestion.get("problem_params", {}).get("nbands", 0)
+        suggestion.get("problem_params", {}).get("nbands", 0)
 
         # Strict divisibility check for QE domain decomposition
         npool = suggestion.get("npool", 1)
@@ -175,7 +175,7 @@ class QuantumEspressoBackend(Backend):
 
         return errors
 
-    def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """Write run_qe_optimized.sh with environment setup, NUMA binding, and scheduler integration."""
         self._write_runner_script(topo, suggestion)
 
@@ -187,7 +187,7 @@ class QuantumEspressoBackend(Backend):
         """Return default configuration filename for QE."""
         return "parallel_qe_config.in"
 
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """Parse QE output files for convergence, timing, and error detection."""
         if not log_path.exists():
             return {"exists": False, "converged": None, "errors": [], "timing": {}, "scf_cycles": 0}
@@ -250,7 +250,7 @@ class QuantumEspressoBackend(Backend):
                 return matches[0]
         return None
 
-    def _parse_qe_input(self) -> ProblemSize:
+    def _parse_qe_input(self) -> ProblemSize:  # noqa: C901
         """
         Parse QE input file to extract physical and algorithmic parameters.
         Uses robust regex matching with graceful fallbacks for malformed inputs.
@@ -313,13 +313,13 @@ class QuantumEspressoBackend(Backend):
         if re.search(r"input_dft\s*=\s*['\"](hse|pbe0|b3lyp|hybrid)", content, re.IGNORECASE):
             result["is_hybrid"] = True
 
-        # Estimate nmat proxy (plane-waves × bands scaling)
+        # Estimate nmat proxy (plane-waves x bands scaling)
         result["nmat"] = max(1000, result["atoms"] * 150)
         result["complexity"] = result["atoms"] / 50.0
 
         return result
 
-    def _optimize_qe_parallelization(self, topo: Topology, suggestion: Dict[str, Any]) -> QEParallelConfig:
+    def _optimize_qe_parallelization(self, topo: Topology, suggestion: dict[str, Any]) -> QEParallelConfig:
         """
         Compute optimal npool, ndiag, nband, ntg based on total MPI ranks and problem size.
         Enforces strict divisibility: total_ranks = npool * ndiag * nband * ntg
@@ -382,7 +382,7 @@ class QuantumEspressoBackend(Backend):
             total_mpi_ranks=total_mpi_ranks, warnings=warnings
         )
 
-    def _write_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def _write_runner_script(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """
         Write run_qe_optimized.sh with environment setup, NUMA binding, and MPI configuration.
         Production features:

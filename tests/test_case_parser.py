@@ -6,12 +6,11 @@ from pathlib import Path
 import pytest
 
 from wien2k_gen.core.case_parser import (
-    CaseData,
     CaseFileParser,
     LDAUData,
+    Vector,
     parse_case_directory,
     try_float,
-    Vector,
 )
 
 

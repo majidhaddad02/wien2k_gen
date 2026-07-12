@@ -1,5 +1,5 @@
 """
-PBS/Torque Job Submission Provider – Production-Grade Integration for PBS Pro & Torque.
+PBS/Torque Job Submission Provider - Production-Grade Integration for PBS Pro & Torque.
 Implements the standard SubmitProvider interface with PBS-specific directives
 for resource management, job arrays, and HPC cluster integration.
 
@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -53,7 +53,7 @@ class PBSDirectives:
     exclusive: Optional[bool] = None
     rerunnable: Optional[bool] = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         result = {}
         for key, val in self.__dict__.items():
             if val is not None:
@@ -71,8 +71,8 @@ class PBSJobSpec:
     exec_command: str
     directives: PBSDirectives = field(default_factory=PBSDirectives)
     working_dir: Path = field(default_factory=Path.cwd)
-    modules_to_load: List[str] = field(default_factory=list)
-    environment_vars: Dict[str, str] = field(default_factory=dict)
+    modules_to_load: list[str] = field(default_factory=list)
+    environment_vars: dict[str, str] = field(default_factory=dict)
     scratch_enabled: bool = True
     preemption_grace_sec: int = 60
     dry_run: bool = False
@@ -97,7 +97,7 @@ def _validate_pbs_memory(mem_str: str) -> bool:
     return bool(re.match(pattern, mem_str))
 
 
-def _check_pbs_limits(spec: PBSJobSpec) -> List[str]:
+def _check_pbs_limits(spec: PBSJobSpec) -> list[str]:
     """Validate job spec against common PBS queue limits and hardware constraints."""
     warnings_list = []
     directives = spec.directives
@@ -147,9 +147,9 @@ class PBSSubmitProvider(SubmitProvider):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
-        modules_to_load: Optional[List[str]] = None,
-        environment_vars: Optional[Dict[str, str]] = None,
+        directives: Optional[dict[str, Any]] = None,
+        modules_to_load: Optional[list[str]] = None,
+        environment_vars: Optional[dict[str, str]] = None,
         working_dir: Optional[Path] = None,
     ) -> str:
         """Generate a complete PBS submission script with #PBS directives and execution body."""
@@ -180,7 +180,7 @@ class PBSSubmitProvider(SubmitProvider):
 # Scheduler: PBS/Torque
 # =============================================================================="""
 
-    def _format_pbs_directives(self, spec: PBSJobSpec) -> str:
+    def _format_pbs_directives(self, spec: PBSJobSpec) -> str:  # noqa: C901
         """Format #PBS directives with proper spacing and defaults."""
         lines = []
         directives = spec.directives
@@ -278,14 +278,14 @@ class PBSSubmitProvider(SubmitProvider):
         lines.append("")
 
         lines.append("# Execute calculation")
-        lines.append('echo "[pbs_submit] Launching: %s"' % spec.exec_command)
+        lines.append(f'echo "[pbs_submit] Launching: {spec.exec_command}"')
         lines.append(f'exec {spec.exec_command} "$@"')
         lines.append("EXIT_CODE=$?")
         lines.append("exit $EXIT_CODE")
 
         return "\n".join(lines)
 
-    def _inject_scratch_setup(self) -> List[str]:
+    def _inject_scratch_setup(self) -> list[str]:
         """Generate PBS scratch directory setup with node synchronization."""
         return [
             "# ==============================================================================",
@@ -319,7 +319,7 @@ class PBSSubmitProvider(SubmitProvider):
             'trap cleanup_scratch EXIT',
         ]
 
-    def _inject_preemption_handler(self, spec: PBSJobSpec) -> List[str]:
+    def _inject_preemption_handler(self, spec: PBSJobSpec) -> list[str]:
         """Generate signal trap for graceful preemption handling."""
         return [
             "# ==============================================================================",
@@ -342,11 +342,11 @@ class PBSSubmitProvider(SubmitProvider):
         self,
         topo: Topology,
         exec_command: str,
-        directives: Optional[Dict[str, Any]] = None,
+        directives: Optional[dict[str, Any]] = None,
         script_path: Optional[Path] = None,
         dry_run: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Submit a PBS job or generate a script for review.
 
@@ -371,7 +371,7 @@ class PBSSubmitProvider(SubmitProvider):
             validate_constraints=kwargs.get("validate_constraints", True),
         )
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "success": False,
             "job_id": None,
             "script_path": script_path or Path(f"pbs_submit_{spec.directives.job_name or 'job'}.sh"),
@@ -468,7 +468,7 @@ class PBSSubmitProvider(SubmitProvider):
             logger.error(f"Failed to cancel job {job_id}: {exc}")
             return False
 
-    def status(self, job_id: str) -> Dict[str, Any]:
+    def status(self, job_id: str) -> dict[str, Any]:
         """
         Query the current status of a PBS job.
 
@@ -490,7 +490,7 @@ class PBSSubmitProvider(SubmitProvider):
             "S": "suspended",
         }
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "job_id": job_id,
             "state": "UNKWN",
             "queue": "",

@@ -8,7 +8,6 @@ from unittest.mock import patch
 from wien2k_gen.core.scheduler import _detect_sge
 from wien2k_gen.core.topology import Topology
 
-
 # ============================================================
 # SGE / GridEngine detection
 # ============================================================
@@ -125,12 +124,11 @@ def test_system_type_cluster(mock_run, mock_cores) -> None:
 def test_system_type_workstation(mock_run, mock_cores) -> None:
     mock_cores.return_value = 16
     mock_run.return_value = ""
-    with patch.dict(os.environ, {}, clear=True):
-        with patch.object(Path, "exists", return_value=False):
-            from wien2k_gen.core.hardware import SysFSHardwareInfo
-            provider = SysFSHardwareInfo()
-            result = provider.get_system_type()
-            assert result == "workstation"
+    with patch.dict(os.environ, {}, clear=True), patch.object(Path, "exists", return_value=False):
+        from wien2k_gen.core.hardware import SysFSHardwareInfo
+        provider = SysFSHardwareInfo()
+        result = provider.get_system_type()
+        assert result == "workstation"
 
 
 @patch("wien2k_gen.core.hardware.SysFSHardwareInfo.get_physical_cores")
@@ -138,9 +136,8 @@ def test_system_type_workstation(mock_run, mock_cores) -> None:
 def test_system_type_compute_node(mock_run, mock_cores) -> None:
     mock_cores.return_value = 64
     mock_run.return_value = ""
-    with patch.dict(os.environ, {}, clear=True):
-        with patch.object(Path, "exists", return_value=False):
-            from wien2k_gen.core.hardware import SysFSHardwareInfo
-            provider = SysFSHardwareInfo()
-            result = provider.get_system_type()
-            assert result == "compute_node"
+    with patch.dict(os.environ, {}, clear=True), patch.object(Path, "exists", return_value=False):
+        from wien2k_gen.core.hardware import SysFSHardwareInfo
+        provider = SysFSHardwareInfo()
+        result = provider.get_system_type()
+        assert result == "compute_node"

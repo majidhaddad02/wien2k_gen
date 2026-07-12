@@ -14,7 +14,7 @@ Key Improvements Applied:
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol, TypedDict, runtime_checkable
+from typing import Any, Optional, Protocol, TypedDict, runtime_checkable
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -56,7 +56,7 @@ class ResourceEstimate(TypedDict, total=False):
     memory_per_core_mb: int
     estimated_time_minutes: float
     recommended_mode: str  # 'mpi', 'hybrid', 'kpoint', 'batch'
-    warnings: List[str]
+    warnings: list[str]
     # Optional extensions for HPC planning
     disk_io_gb: float
     network_traffic_gb: float
@@ -74,16 +74,16 @@ class ResourceSuggestion(TypedDict, total=False):
     recommended_total_cores: int
     omp_threads_per_rank: int
     mpi_ranks_per_node: int
-    cores_per_node: List[int]
+    cores_per_node: list[int]
     vector_split_active: bool
     vector_split_value: Optional[int]
-    warnings: List[str]
+    warnings: list[str]
     reason: str
     confidence: float
     estimated_memory_gb: Optional[float]
-    lapw0_cfg: Optional[Dict[str, Any]]
-    lapw1_cfg: Optional[Dict[str, Any]]
-    lapw2_cfg: Optional[Dict[str, Any]]
+    lapw0_cfg: Optional[dict[str, Any]]
+    lapw1_cfg: Optional[dict[str, Any]]
+    lapw2_cfg: Optional[dict[str, Any]]
 
 
 # =============================================================================
@@ -93,7 +93,7 @@ class ResourceSuggestion(TypedDict, total=False):
 @runtime_checkable
 class SupportsValidation(Protocol):
     """Protocol for backends that support pre-flight suggestion validation."""
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate if suggestion is compatible with this backend's constraints."""
         ...
 
@@ -109,7 +109,7 @@ class SupportsResourceEstimation(Protocol):
 @runtime_checkable
 class SupportsOutputParsing(Protocol):
     """Protocol for backends that support detailed log/SCF output parsing."""
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """Parse calculation output for convergence, errors, and timing."""
         ...
 
@@ -159,7 +159,7 @@ class Backend(ABC):
         pass
 
     @abstractmethod
-    def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Generate parallel configuration content for the target DFT code.
         
@@ -175,7 +175,7 @@ class Backend(ABC):
         pass
 
     @abstractmethod
-    def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
+    def get_execution_command(self, suggestion: dict[str, Any]) -> str:
         """
         Return the dynamically constructed execution command.
         
@@ -189,7 +189,7 @@ class Backend(ABC):
 
     # ==================== Optional Methods with Robust Defaults ====================
 
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """
         Validate if suggestion is compatible with this backend.
         Default: performs basic sanity checks. Override for backend-specific rules.
@@ -244,7 +244,7 @@ class Backend(ABC):
             "peak_flops_utilization": 0.3
         }
 
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """
         Parse calculation output for convergence, errors, and timing.
         Default: minimal keyword scanning. Override for code-specific parsers.
@@ -276,7 +276,7 @@ class Backend(ABC):
         except Exception:
             return {"exists": True, "converged": None, "errors": ["Could not parse log"], "timing": {}}
 
-    def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:  # noqa: B027
         """
         Write helper files (parallel_options, runner scripts, submit scripts, etc.).
         Default: no-op. Override to generate code-specific auxiliary files.
@@ -297,13 +297,13 @@ class Backend(ABC):
         """
         return "parallel_config.txt"
 
-    def get_test_command_for_config(self, config: Dict[str, Any]) -> str:
+    def get_test_command_for_config(self, config: dict[str, Any]) -> str:
         """
         Return test command customized for a specific configuration.
         """
         return self.get_short_test_command() or self.get_execution_command(config)
 
-    def cleanup_remote_processes(self, node_list: List[str]) -> bool:
+    def cleanup_remote_processes(self, node_list: list[str]) -> bool:
         """
         Gracefully terminate leftover processes on compute nodes.
         Crucial for SLURM preemption or job failure recovery to prevent zombie ranks.

@@ -3,11 +3,8 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from wien2k_gen.backends.wien2k import Wien2kBackend
-from wien2k_gen.core.case_parser import CaseFileParser, CaseData
-from wien2k_gen.core.scheduler import detect
+from wien2k_gen.core.case_parser import CaseFileParser
 
 
 def _create_case(base: Path, name: str, nmat=2567, nbands=256, atoms=8,
@@ -16,7 +13,7 @@ def _create_case(base: Path, name: str, nmat=2567, nbands=256, atoms=8,
     casedir = base / name
     casedir.mkdir()
 
-    (casedir / f"{name}.struct").write_text(f"""NaCl rocksalt
+    (casedir / f"{name}.struct").write_text("""NaCl rocksalt
 H   LATTICE,NONEQUIV.ATOMS:  2 225 Fm-3m
 MODE OF CALC=RELA unit=bohr
 9.5 9.5 9.5 90.0 90.0 90.0
@@ -44,7 +41,7 @@ Cl1        NPT=  781  R0=.000010000 RMT=    2.50000   Z:  17.0
 12.0
 """)
 
-    (casedir / f"{name}.in2").write_text(f"""\
+    (casedir / f"{name}.in2").write_text("""\
 TOT
 14.0
  100 100 100 2.0 0
@@ -174,6 +171,6 @@ class TestCompletePipeline:
                      "cores_per_node": [16, 16], "vector_split_active": False},
                 )
                 assert len(lines) > 0
-                assert any("lapw0" in l for l in lines) or any(":1:" in l for l in lines)
+                assert any("lapw0" in line for line in lines) or any(":1:" in line for line in lines)
             finally:
                 os.chdir(old_cwd)

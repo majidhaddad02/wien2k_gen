@@ -17,12 +17,11 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn
 from rich.table import Table
 
 from ..logging_config import get_logger
@@ -69,15 +68,15 @@ class MonitorState:
     job: JobInfo = field(default_factory=JobInfo)
     scf: SCFSnapshot = field(default_factory=SCFSnapshot)
     resources: ResourceSnapshot = field(default_factory=ResourceSnapshot)
-    events: List[str] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
     running: bool = True
     paused: bool = False
 
 
-def detect_active_jobs(scheduler: Optional[str] = None) -> List[JobInfo]:
+def detect_active_jobs(scheduler: Optional[str] = None) -> list[JobInfo]:  # noqa: C901
     """Detect running WIEN2k jobs from the batch scheduler."""
     scheduler = scheduler or _detect_scheduler()
-    jobs: List[JobInfo] = []
+    jobs: list[JobInfo] = []
 
     if scheduler == "slurm":
         import subprocess
@@ -165,9 +164,9 @@ def _parse_scf_output(filepath: Path) -> SCFSnapshot:
     return snap
 
 
-def _parse_scf_events(filepath: Path) -> List[str]:
+def _parse_scf_events(filepath: Path) -> list[str]:
     """Extract recent events (lapw0/1/2 completion, errors) from dayfile."""
-    events: List[str] = []
+    events: list[str] = []
     dayfile = filepath.with_suffix(".dayfile")
     if not dayfile.exists():
         return events
@@ -291,7 +290,7 @@ def watch_job(
             if scheduler == "slurm" and state.job.job_id:
                 try:
                     import subprocess
-                    result = subprocess.run(
+                    subprocess.run(
                         ["sstat", "--format=TresUsageInAve", "--noheader", "-j", state.job.job_id],
                         capture_output=True, text=True, timeout=5,
                     )
@@ -335,7 +334,7 @@ def list_active_jobs(scheduler: Optional[str] = None) -> Table:
     return table
 
 
-def launch_monitor(job_name: Optional[str] = None, interval: float = 2.0) -> Dict[str, Any]:
+def launch_monitor(job_name: Optional[str] = None, interval: float = 2.0) -> dict[str, Any]:
     """Entry point for the `wien2k_gen monitor` CLI command.
 
     Args:

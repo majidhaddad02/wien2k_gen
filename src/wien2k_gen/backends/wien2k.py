@@ -1,5 +1,5 @@
 """
-WIEN2k Backend – Production-Grade Configuration Generator for HPC Clusters.
+WIEN2k Backend - Production-Grade Configuration Generator for HPC Clusters.
 Implements all WIEN2k-specific logic for:
 • Parsing input files (.struct, .scf, .in1, .in0, .inso, .inm) to extract problem parameters
 • Generating .machines file content with optimal MPI/OpenMP/k-point distribution
@@ -17,13 +17,18 @@ Key Improvements Applied:
 • Code volume preserved and expanded with safety layers, logging, and resiliency features.
 """
 
+from __future__ import annotations
+
 import datetime
 import math
 import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
+
+if TYPE_CHECKING:
+    from ..types import Wien2kFlags
 
 from ..core.hardware import (
     check_elpa_available,
@@ -48,20 +53,20 @@ logger = get_logger(__name__)
 class DayfileResult(TypedDict, total=False):
     """Structured output for dayfile parsing."""
     exists: bool
-    times: Dict[str, float]
-    bottleneck: Optional[str]
-    errors: List[str]
-    warnings: List[str]
-    convergence: Optional[str]
+    times: dict[str, float]
+    bottleneck: str | None
+    errors: list[str]
+    warnings: list[str]
+    convergence: str | None
     cycles_completed: int
 
 
 class OutputParseResult(TypedDict, total=False):
     """Structured output for general log parsing."""
     exists: bool
-    converged: Optional[bool]
-    errors: List[str]
-    timing: Dict[str, float]
+    converged: bool | None
+    errors: list[str]
+    timing: dict[str, float]
     content_snippet: str
 
 
@@ -84,7 +89,7 @@ class Wien2kBackend(Backend):
         """Extract WIEN2k problem parameters from input files."""
         return self._detect_problem_size()
 
-    def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """Generate .machines file content for WIEN2k parallel execution."""
         # Integrate ELPA solver recommendation into suggestion dict
         nmat = suggestion.get("nmat", self._detect_problem_size().get("nmat", 0))
@@ -103,7 +108,7 @@ class Wien2kBackend(Backend):
                 logger.info(
                     f"ELPA solver selected: {solver_sel.recommended_solver} "
                     f"(block={solver_sel.block_size}, "
-                    f"BLACS={solver_sel.recommended_grid[0]}×{solver_sel.recommended_grid[1]})"
+                    f"BLACS={solver_sel.recommended_grid[0]}x{solver_sel.recommended_grid[1]})"
                 )
             except Exception as e:
                 logger.debug(f"ELPA solver selection skipped: {e}")
@@ -111,7 +116,7 @@ class Wien2kBackend(Backend):
         lines = self._build_machines_lines(topo, suggestion)
         return "\n".join(lines)
 
-    def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
+    def get_execution_command(self, suggestion: dict[str, Any]) -> str:  # noqa: C901
         """
         Return dynamically constructed execution command with WIEN2k flags.
 
@@ -146,7 +151,7 @@ class Wien2kBackend(Backend):
                 extra_flags.append("-eece")
             if has_forces:
                 extra_flags.append("-fc")
-            calc_type = " ".join([base_cmd, "-p"] + extra_flags)
+            calc_type = " ".join([base_cmd, "-p", *extra_flags])
 
         calc_base = calc_type.split()[0] if isinstance(calc_type, str) else "run_lapw"
         extra_parts = calc_type.split()[2:] if isinstance(calc_type, str) and len(calc_type.split()) > 2 else []
@@ -166,7 +171,7 @@ class Wien2kBackend(Backend):
                 return f"{calc_base} -p -np {ranks} {' '.join(extra_parts)}"
             return f"{calc_base} -p -np {ranks}"
 
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate suggestion against WIEN2k-specific constraints."""
         errors = []
         mode = suggestion.get("mode", "")
@@ -201,12 +206,12 @@ class Wien2kBackend(Backend):
 
         return errors
 
-    def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """Write parallel_options and run_optimized.sh with atomic writes."""
         self._write_parallel_options(solver_hint=suggestion.get("elpa_solver", ""))
         self._write_runner_script(topo, suggestion)
 
-    def get_short_test_command(self) -> Optional[str]:
+    def get_short_test_command(self) -> str | None:
         """Return command for quick 2-cycle test."""
         return "run_lapw -c"
 
@@ -214,7 +219,7 @@ class Wien2kBackend(Backend):
         """Return default configuration filename for WIEN2k."""
         return ".machines"
 
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """Parse WIEN2k output files for convergence and errors."""
         if log_path.suffix == ".dayfile" or "dayfile" in log_path.name:
             return self.parse_dayfile(str(log_path))
@@ -260,7 +265,7 @@ class Wien2kBackend(Backend):
     # Advanced WIEN2k-Specific Methods
     # =========================================================================
 
-    def _get_optimal_lapw0_cores(self, available_cores: int, natoms: Optional[int]) -> int:
+    def _get_optimal_lapw0_cores(self, available_cores: int, natoms: int | None) -> int:
         """
         Determine optimal core count for lapw0 (potential calculation).
         lapw0 is I/O-bound and scales poorly beyond ~8 cores for small systems.
@@ -285,7 +290,7 @@ class Wien2kBackend(Backend):
 
     def _smart_allocate_cores(
         self, total_cores: int, kpoints: int, atoms: int, nmat: int, mode: str, num_nodes: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Intelligent core allocation for WIEN2k processors.
 
@@ -303,7 +308,7 @@ class Wien2kBackend(Backend):
         Returns dict with per-processor core counts, kpar, reason, and warnings.
         """
         # Step 0: Amdahl's Law saturation check
-        saturation_warnings: List[str] = []
+        saturation_warnings: list[str] = []
         max_efficient = total_cores
         saturation = {}
         try:
@@ -344,7 +349,7 @@ class Wien2kBackend(Backend):
         # Step 4: Cap lapw2 for small systems (vector work doesn't scale well)
         max_lapw2 = max(4, atoms * 4)  # ~4 cores per atom for vector I/O
         if lapw2_cores > max_lapw2 and atoms < 20:
-            excess = lapw2_cores - max_lapw2
+            lapw2_cores - max_lapw2
             lapw2_cores = max_lapw2
             # Redistribute excess as granularity within lapw1 groups
             # (not wasted: WIEN2k can use extra ranks per k-point for ScaLAPACK)
@@ -390,13 +395,13 @@ class Wien2kBackend(Backend):
             return min(omp_threads, 4)
         return omp_threads
 
-    def _detect_io_bottleneck(self, nmat: int, nkpt: int, total_cores: int) -> Dict[str, Any]:
+    def _detect_io_bottleneck(self, nmat: int, nkpt: int, total_cores: int) -> dict[str, Any]:
         """
         Detect potential I/O bottleneck conditions for lapw2.
         lapw2 writes large vector files; high core counts with few k-points
         can cause I/O contention on shared filesystems.
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "warning": None,
             "auto_enable_vector_split": False,
             "suggestion": None,
@@ -423,7 +428,7 @@ class Wien2kBackend(Backend):
 
         return result
 
-    def parse_dayfile(self, dayfile_path: str = "case.dayfile") -> DayfileResult:
+    def parse_dayfile(self, dayfile_path: str = "case.dayfile") -> DayfileResult:  # noqa: C901
         """
         Parse WIEN2k .dayfile for timing, bottleneck detection, and error analysis.
         Returns structured data for performance monitoring and auto-tuning.
@@ -513,7 +518,7 @@ class Wien2kBackend(Backend):
     # Private Helper Methods
     # =========================================================================
 
-    def _detect_problem_size(self) -> Dict[str, Any]:
+    def _detect_problem_size(self) -> dict[str, Any]:  # noqa: C901
         """
         Extract problem parameters from WIEN2k input files.
         Uses CaseFileParser (preferred) with integrated fallback to legacy parsing.
@@ -528,7 +533,7 @@ class Wien2kBackend(Backend):
             parser = _CFP()
             case_data = parser.parse_all()
 
-            result: Dict[str, Any] = {
+            result: dict[str, Any] = {
                 "atoms": case_data.atoms,
                 "kpoints": case_data.kpoints,
                 "nmat": case_data.nmat,
@@ -575,7 +580,7 @@ class Wien2kBackend(Backend):
             pass
 
         # Fallback to legacy parsing for robustness
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "atoms": 10, "kpoints": 0, "nmat": 0, "nbands": None,
             "rkmax": 7.0, "is_soc": False, "is_hybrid": False, "complexity": 1.0
         }
@@ -608,7 +613,7 @@ class Wien2kBackend(Backend):
                         result["atoms"] = sum(int(m) for m in mult_matches)
                     else:
                         # Fallback 2: count ATOM lines
-                        atom_lines = [l for l in content.splitlines() if re.match(r'^\s*ATOM\s*[-\d]+:', l, re.IGNORECASE)]
+                        atom_lines = [line for line in content.splitlines() if re.match(r'^\s*ATOM\s*[-\d]+:', line, re.IGNORECASE)]
                         if atom_lines:
                             result["atoms"] = len(atom_lines)
                         else:
@@ -628,8 +633,8 @@ class Wien2kBackend(Backend):
         if klist_files:
             try:
                 content = klist_files[0].read_text(encoding="utf-8", errors="replace")
-                lines = [l.strip() for l in content.splitlines() if l.strip()
-                         and not l.strip().startswith("#")]
+                lines = [line.strip() for line in content.splitlines() if line.strip()
+                         and not line.strip().startswith("#")]
                 # First line typically contains k-point count or header
                 first_line = lines[0] if lines else ""
                 parts = first_line.split()
@@ -750,7 +755,7 @@ class Wien2kBackend(Backend):
 
         return result
 
-    def _detect_wien2k_flags(self) -> "Wien2kFlags":
+    def _detect_wien2k_flags(self) -> Wien2kFlags:  # noqa: C901
         """
         Detect WIEN2k calculation flags from input files.
         Determines the correct execution command and parallelization adjustments.
@@ -806,7 +811,7 @@ class Wien2kBackend(Backend):
 
         return flags
 
-    def estimate_kpoint_density(self, rkmax: Optional[float] = None) -> Dict[str, Any]:
+    def estimate_kpoint_density(self, rkmax: float | None = None) -> dict[str, Any]:  # noqa: C901
         """
         Estimate optimal k-point density using the empirical WIEN2k heuristic:
         kpoints_per_atom ≈ 125 / (volume_per_atom)
@@ -815,7 +820,7 @@ class Wien2kBackend(Backend):
         Reads lattice parameters from case.struct to compute unit cell volume.
         Falls back to a heuristic based on atom count if struct cannot be parsed.
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "nkpt_est": 0,
             "kpt_per_atom": 0.0,
             "volume": 0.0,
@@ -824,7 +829,7 @@ class Wien2kBackend(Backend):
         }
 
         natoms = 1
-        atom_types: Dict[str, int] = {}
+        atom_types: dict[str, int] = {}
         volume = 0.0
         parsed_struct = False
 
@@ -846,8 +851,8 @@ class Wien2kBackend(Backend):
                         natoms = sum(int(m) for m in mult_matches)
                     else:
                         atom_lines = [
-                            l for l in lines
-                            if re.match(r"^\s*ATOM\s*[-\d]+:", l, re.IGNORECASE)
+                            line for line in lines
+                            if re.match(r"^\s*ATOM\s*[-\d]+:", line, re.IGNORECASE)
                         ]
                         if atom_lines:
                             natoms = len(atom_lines)
@@ -858,15 +863,14 @@ class Wien2kBackend(Backend):
                         elem = m_type.group(1)
                         atom_types[elem] = atom_types.get(elem, 0) + 1
 
-                lattice_vectors: List[List[float]] = []
-                lattice_match = re.match(
+                lattice_vectors: list[list[float]] = []
+                re.match(
                     r"^\s*LATTYP\s*=\s*(\S+)",
                     "",
                 )
-                lattice_section = False
-                a_vector: Optional[List[float]] = None
-                b_vector: Optional[List[float]] = None
-                c_vector: Optional[List[float]] = None
+                a_vector: list[float] | None = None
+                b_vector: list[float] | None = None
+                c_vector: list[float] | None = None
                 angstrom_mode = False
 
                 for line in lines:
@@ -896,7 +900,6 @@ class Wien2kBackend(Backend):
                     c_vector = lat_param_lines[2]
                     lattice_vectors = [a_vector, b_vector, c_vector]
                 elif len(lat_param_lines) >= 1:
-                    tok_idx = 0
                     for line in lines:
                         clean = re.sub(r"#.*", "", line).strip()
                         parts = clean.split()
@@ -936,7 +939,7 @@ class Wien2kBackend(Backend):
                     )
                     natoms = max(natoms, 1)
                     kpt_per_atom = 125.0 / (volume / natoms) if volume > 0 else 0.0
-                    nkpt_est = max(1, int(round(kpt_per_atom * natoms)))
+                    nkpt_est = max(1, round(kpt_per_atom * natoms))
 
                     result["nkpt_est"] = nkpt_est
                     result["kpt_per_atom"] = kpt_per_atom
@@ -1011,7 +1014,7 @@ class Wien2kBackend(Backend):
         )
         return round(rkmax_auto, 2)
 
-    def _build_machines_lines(self, topo: Topology, suggestion: Dict[str, Any]) -> List[str]:
+    def _build_machines_lines(self, topo: Topology, suggestion: dict[str, Any]) -> list[str]:  # noqa: C901
         """
         Build .machines file content per WIEN2k parallel execution spec.
 
@@ -1143,8 +1146,8 @@ class Wien2kBackend(Backend):
 
         # ── Common options ──
         lines.append("")
-        lines.append(f"omp_lapw0: 1")
-        lines.append(f"omp_mixer: 1")
+        lines.append("omp_lapw0: 1")
+        lines.append("omp_mixer: 1")
         if allocation.get("kpar", 0) > 1:
             lines.append(f"kpar: {allocation['kpar']}")
 
@@ -1179,9 +1182,9 @@ class Wien2kBackend(Backend):
         """Estimate memory requirement per MPI rank (MB).
 
         From WIEN2k internal documentation and empirical benchmarks:
-        - Hamiltonian matrix: nmat × nmat × 16 bytes (complex double) × safety_factor
-        - Eigenvectors: nmat × nbands × 8 bytes
-        - Overlap matrix: nmat × nmat × 16 bytes (if hybrid)
+        - Hamiltonian matrix: nmat x nmat x 16 bytes (complex double) x safety_factor
+        - Eigenvectors: nmat x nbands x 8 bytes
+        - Overlap matrix: nmat x nmat x 16 bytes (if hybrid)
         - SOC doubles the first-variational basis
         - Each MPI rank holds 1/kpar of the total k-points
         """
@@ -1206,7 +1209,7 @@ class Wien2kBackend(Backend):
         mode: str, nmat: int, kpoints: int, atoms: int,
         is_hybrid: bool, is_soc: bool, is_spin: bool,
         total_cores: int, omp: int, granularity: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Complete decision matrix for WIEN2k parallelization strategy.
 
         Based on WIEN2k Usersguide 2023 §§4.5.8, 6.1: WIEN2k has
@@ -1315,7 +1318,7 @@ class Wien2kBackend(Backend):
         content += "\n"
         atomic_write(Path("parallel_options"), content, mode=0o644)
 
-    def _write_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def _write_runner_script(self, topo: Topology, suggestion: dict[str, Any]) -> None:  # noqa: C901
         """
         Write run_optimized.sh with environment setup, NUMA binding, and MPI configuration.
         Production features:
@@ -1342,10 +1345,7 @@ class Wien2kBackend(Backend):
         wienroot = os.environ.get("WIENROOT")
         if not wienroot:
             exe = shutil.which("run_lapw")
-            if exe:
-                wienroot = str(Path(exe).parent.parent)
-            else:
-                wienroot = "/opt/codes/WIEN2k/v24.1"
+            wienroot = str(Path(exe).parent.parent) if exe else "/opt/codes/WIEN2k/v24.1"
 
         # Disable SSH for single-node jobs (performance optimization)
         disable_ssh = (len(topo.nodes) == 1)
@@ -1509,8 +1509,8 @@ trap _checkpoint_handler TERM USR1
 
 
 def auto_detect_optimal_rkmax(
-    available_cores: Optional[int] = None,
-    available_memory_gb: Optional[float] = None,
+    available_cores: int | None = None,
+    available_memory_gb: float | None = None,
 ) -> float:
     """
     Standalone convenience function that wraps Wien2kBackend to

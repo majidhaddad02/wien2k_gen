@@ -17,12 +17,13 @@ Key Architecture Features:
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import json
 import os
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 
 # Lazy import for logger to avoid circular dependency
@@ -66,15 +67,15 @@ class AppConfig:
     enable_tui: bool = True
     quiet_mode: bool = False
     dry_run: bool = False
-    custom_paths: Dict[str, str] = field(default_factory=dict)
+    custom_paths: dict[str, str] = field(default_factory=dict)
     _is_validated: bool = field(default=False, repr=False)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dictionary."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AppConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "AppConfig":
         """Reconstruct from dictionary with safe fallbacks."""
         valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
         clean = {k: v for k, v in data.items() if k in valid_keys}
@@ -92,7 +93,7 @@ class ConfigManager:
     _lock = threading.Lock()
     _config: Optional[AppConfig] = None
     _initialized = False
-    _validation_errors: List[str] = []
+    _validation_errors: list[str] = []  # noqa: RUF012
 
     def __new__(cls) -> "ConfigManager":
         with cls._lock:
@@ -110,9 +111,9 @@ class ConfigManager:
 
     def load(
         self,
-        env_override: Optional[Dict[str, Any]] = None,
+        env_override: Optional[dict[str, Any]] = None,
         file_path: Optional[Union[str, Path]] = None,
-        cli_override: Optional[Dict[str, Any]] = None
+        cli_override: Optional[dict[str, Any]] = None
     ) -> AppConfig:
         """
         Load configuration with strict precedence:
@@ -157,7 +158,7 @@ class ConfigManager:
         return self._config
 
     @property
-    def errors(self) -> List[str]:
+    def errors(self) -> list[str]:
         return self._validation_errors.copy()
 
     def save(self, path: Optional[Union[str, Path]] = None) -> bool:
@@ -207,27 +208,23 @@ class ConfigManager:
                 overrides[cfg_key] = val.lower() if cfg_key in ("quiet_mode", "enable_tui") else val
         return self._merge_dict_config(base, overrides)
 
-    def _merge_dict_config(self, base: AppConfig, override: Dict[str, Any]) -> AppConfig:
+    def _merge_dict_config(self, base: AppConfig, override: dict[str, Any]) -> AppConfig:
         data = base.to_dict()
         for k, v in override.items():
             if k in data:
                 # Type coercion
                 if isinstance(v, str) and isinstance(data[k], int):
-                    try: 
+                    with contextlib.suppress(ValueError): 
                         v = int(v)
-                    except ValueError: 
-                        pass
                 elif isinstance(v, str) and isinstance(data[k], float):
-                    try: 
+                    with contextlib.suppress(ValueError): 
                         v = float(v)  
-                    except ValueError: 
-                        pass
                 elif isinstance(v, str) and isinstance(data[k], bool):
                     v = v.lower() in ("true", "1", "yes")
                 data[k] = v
         return AppConfig.from_dict(data)
 
-    def _validate_config(self, cfg: AppConfig) -> List[str]:
+    def _validate_config(self, cfg: AppConfig) -> list[str]:  # noqa: C901
         errors = []
         # Path checks
         wien = Path(cfg.wienroot)
@@ -284,7 +281,7 @@ def load_config(**kwargs: Any) -> AppConfig:
     """
     return ConfigManager().load(**kwargs)
 
-def validate_config() -> List[str]:
+def validate_config() -> list[str]:
     """Return validation errors from the current configuration."""
     return ConfigManager().errors
 

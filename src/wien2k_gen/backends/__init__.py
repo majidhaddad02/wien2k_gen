@@ -14,7 +14,7 @@ All documentation and inline comments are in English per project standards.
 import importlib
 import threading
 from pathlib import Path
-from typing import Dict, List, Optional, Type
+from typing import Optional
 
 from ..logging_config import get_logger
 from .base import Backend
@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # Thread-Safe Global Registry
 # =============================================================================
-_BACKENDS: Dict[str, Type[Backend]] = {}
+_BACKENDS: dict[str, type[Backend]] = {}
 _REGISTRY_LOCK = threading.RLock()
 _LOADED = False
 
@@ -34,7 +34,7 @@ def _normalize_name(name: str) -> str:
     return name.lower().strip().replace("-", " ").replace("  ", "_")
 
 
-def _make_stub_backend(key: str, class_name: str) -> Type[Backend]:
+def _make_stub_backend(key: str, class_name: str) -> type[Backend]:
     """
     Create a stub backend class that raises a helpful ImportError on instantiation.
     Used for optional backends where external dependencies are missing.
@@ -47,7 +47,7 @@ def _make_stub_backend(key: str, class_name: str) -> Type[Backend]:
             )
 
         # Satisfy ABC requirements with explicit NotImplementedError
-        def detect_problem_size(self) -> Dict:
+        def detect_problem_size(self) -> dict:
             raise NotImplementedError("Stub backend cannot detect problem size.")
 
         def generate_input(self, topo, suggestion) -> str:
@@ -103,7 +103,7 @@ def _load_backends() -> None:
         _LOADED = True
 
 
-def get_backend(code: Optional[str] = None) -> Type[Backend]:
+def get_backend(code: Optional[str] = None) -> type[Backend]:
     """
     Factory function to retrieve backend class by code name.
     Supports auto-detection based on available input files in the current directory.
@@ -146,7 +146,7 @@ def get_backend(code: Optional[str] = None) -> Type[Backend]:
         return backend_class
 
 
-def list_backends() -> List[str]:
+def list_backends() -> list[str]:
     """Return sorted list of fully available backend names (excluding stubs)."""
     _load_backends()
     with _REGISTRY_LOCK:

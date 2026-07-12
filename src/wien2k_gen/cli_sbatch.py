@@ -23,7 +23,7 @@ import signal
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from .config import AppConfig, ensure_dirs, load_config
 from .core.scheduler import auto_detect_memory
@@ -162,7 +162,7 @@ def _get_exec_command() -> str:
         return "run_lapw -p"
 
 
-def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Generate, write, and optionally preview SBATCH script."""
     directives = _build_directives_from_args(args)
     topo = detect_topology(max_cores=directives.ntasks or None)
@@ -197,7 +197,7 @@ def handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     return result
 
 
-def handle_validate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def handle_validate(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
     """Validate SBATCH script syntax, resource limits, and SLURM compliance."""
     script_path = Path(args.script_path).resolve()
     if not script_path.exists():
@@ -244,7 +244,7 @@ def handle_validate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     }
 
 
-def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Submit validated script to SLURM controller."""
     script_path = Path(args.script_path).resolve()
     if not script_path.exists():
@@ -253,7 +253,7 @@ def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         try:
             script_path.chmod(0o755)
         except Exception as e:
-            raise PermissionError(f"Cannot make script executable: {e}")
+            raise PermissionError(f"Cannot make script executable: {e}") from e
 
     logger.info(f"Submitting {script_path} to SLURM...")
 
@@ -279,7 +279,7 @@ def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
 # Public CLI Entry Point
 # =============================================================================
 
-def run_sbatch_cli(argv: Optional[List[str]] = None) -> int:
+def run_sbatch_cli(argv: Optional[list[str]] = None) -> int:  # noqa: C901
     """
     Execute sbatch CLI workflow with structured logging & error handling.
     Returns OS exit code: 0 (success), 1 (app error), 2 (CLI syntax error).

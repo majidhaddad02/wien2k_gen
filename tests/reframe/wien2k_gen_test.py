@@ -7,12 +7,32 @@ facility regression suites.  Requires reframe-hpc >= 4.0.
 
 import os
 import subprocess
-import json
-import time
-from pathlib import Path
 
-import reframe as rfm
-import reframe.utility.sanity as sn
+try:
+    import reframe as rfm
+    import reframe.utility.sanity as sn
+    from reframe import performance_function, run_after, sanity_function, variable
+    _HAS_REFRAME = True
+except ImportError:  # pragma: no cover
+    rfm = None  # type: ignore[assignment]
+    sn = None  # type: ignore[assignment]
+    _HAS_REFRAME = False
+    def _variable(*a, **kw):
+        return None
+
+    def _run_after(*a, **kw):
+        return lambda f: f
+
+    def _sanity_function(f):
+        return f
+
+    def _performance_function(*a, **kw):
+        return lambda f: f
+
+    variable = _variable  # type: ignore[no-redef]
+    run_after = _run_after  # type: ignore[no-redef]
+    sanity_function = _sanity_function  # type: ignore[no-redef]
+    performance_function = _performance_function  # type: ignore[no-redef]
 
 
 def _find_wien2k_gen() -> str:
@@ -20,7 +40,7 @@ def _find_wien2k_gen() -> str:
     for candidate in ["wien2k_gen", "python -m wien2k_gen"]:
         try:
             result = subprocess.run(
-                candidate.split() + ["--version"],
+                [*candidate.split(), "--version"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -42,8 +62,8 @@ class Wien2kGenSmokeTest(rfm.RunOnlyRegressionTest):
     with the 'generate' subcommand and does not crash on basic inputs.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     cores = variable(int, value=4)
@@ -77,8 +97,8 @@ class Wien2kGenDryRunContentTest(rfm.RunOnlyRegressionTest):
     Verify dry-run output contains expected configuration directives.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     cores = variable(int, value=8)
@@ -112,8 +132,8 @@ class Wien2kGenBenchmarkTest(rfm.RunOnlyRegressionTest):
     output contains valid parallelisation mode recommendations.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     nodes = variable(int, value=1)
@@ -169,8 +189,8 @@ class Wien2kGenModeDetectionTest(rfm.RunOnlyRegressionTest):
     modes (kpoint, hybrid, mpi) based on system characteristics.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     @run_after("setup")
@@ -198,8 +218,8 @@ class Wien2kGenMultiNodeTest(rfm.RunOnlyRegressionTest):
     multiple nodes with heterogeneous-aware allocation.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     nodes = variable(int, value=2)
@@ -237,8 +257,8 @@ class Wien2kGenHistoryPersistenceTest(rfm.RunOnlyRegressionTest):
     database is created and contains a record.
     """
 
-    valid_systems = ["*"]
-    valid_prog_environs = ["*"]
+    valid_systems = ["*"]  # noqa: RUF012
+    valid_prog_environs = ["*"]  # noqa: RUF012
     executable = "bash"
 
     @run_after("setup")

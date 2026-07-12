@@ -12,13 +12,14 @@ All documentation and inline comments are in English per project standards.
 """
 
 import asyncio
+import contextlib
 import os
 import shlex
 import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -123,10 +124,10 @@ def force_kill_process_group(pid: Optional[int] = None) -> None:
 # Synchronous Execution Wrapper
 # =============================================================================
 
-def run_command(
-    cmd: Union[str, List[str]],
+def run_command(  # noqa: C901
+    cmd: Union[str, list[str]],
     cwd: Optional[Union[str, Path]] = None,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Optional[float] = None,
     check: bool = False,
     capture_output: bool = True,
@@ -153,10 +154,7 @@ def run_command(
     Returns:
         ProcessResult object with stdout, stderr, returncode, etc.
     """
-    if isinstance(cmd, str):
-        cmd_list = shlex.split(cmd)
-    else:
-        cmd_list = list(cmd)
+    cmd_list = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
         
     cmd_str = " ".join(cmd_list)
     logger.debug(f"Executing command: {cmd_str}")
@@ -227,7 +225,7 @@ def run_command(
         return result
 
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}")
+        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}") from e
     except Exception as e:
         logger.error(f"Execution failed for {cmd_str}: {e}")
         raise
@@ -236,10 +234,8 @@ def run_command(
         if proc:
             for fd in [proc.stdout, proc.stderr]:
                 if fd and not fd.closed:
-                    try:
+                    with contextlib.suppress(Exception):
                         fd.close()
-                    except Exception:
-                        pass
 
 
 # =============================================================================
@@ -247,9 +243,9 @@ def run_command(
 # =============================================================================
 
 async def run_async_command(
-    cmd: Union[str, List[str]],
+    cmd: Union[str, list[str]],
     cwd: Optional[Union[str, Path]] = None,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Optional[float] = None,
     check: bool = False,
     **kwargs: Any
@@ -267,10 +263,7 @@ async def run_async_command(
     Returns:
         ProcessResult object.
     """
-    if isinstance(cmd, str):
-        cmd_list = shlex.split(cmd)
-    else:
-        cmd_list = list(cmd)
+    cmd_list = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
         
     cmd_str = " ".join(cmd_list)
     logger.debug(f"Async executing command: {cmd_str}")
@@ -319,15 +312,11 @@ async def run_async_command(
             stdout = ""
             stderr = ""
             if proc.stdout and not proc.stdout.at_eof():
-                try:
+                with contextlib.suppress(Exception):
                     stdout = (await proc.stdout.read()).decode('utf-8', errors='replace')
-                except Exception:
-                    pass
             if proc.stderr and not proc.stderr.at_eof():
-                try:
+                with contextlib.suppress(Exception):
                     stderr = (await proc.stderr.read()).decode('utf-8', errors='replace')
-                except Exception:
-                    pass
                 
             result = ProcessResult(
                 returncode=proc.returncode or -1,
@@ -343,7 +332,7 @@ async def run_async_command(
         return result
         
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}")
+        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}") from e
     except Exception as e:
         logger.error(f"Async execution failed for {cmd_str}: {e}")
         raise
@@ -353,10 +342,10 @@ async def run_async_command(
 # Real-time Stream Output
 # =============================================================================
 
-async def stream_command_output(
-    cmd: Union[str, List[str]],
+async def stream_command_output(  # noqa: C901
+    cmd: Union[str, list[str]],
     cwd: Optional[Union[str, Path]] = None,
-    env: Optional[Dict[str, str]] = None,
+    env: Optional[dict[str, str]] = None,
     timeout: Optional[float] = None,
     callback: Optional[Callable[[str], None]] = None
 ) -> ProcessResult:
@@ -364,10 +353,7 @@ async def stream_command_output(
     Execute command and stream output line-by-line to a callback function.
     Useful for real-time UI updates or log parsing during long jobs.
     """
-    if isinstance(cmd, str):
-        cmd_list = shlex.split(cmd)
-    else:
-        cmd_list = list(cmd)
+    cmd_list = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
         
     cmd_str = " ".join(cmd_list)
     logger.debug(f"Streaming command: {cmd_str}")
@@ -387,7 +373,7 @@ async def stream_command_output(
             start_new_session=True,
         ) 
 
-        full_output: List[str] = []
+        full_output: list[str] = []
         
         async def _read_stream() -> None:
             assert proc.stdout is not None
@@ -433,7 +419,7 @@ async def stream_command_output(
         )
 
     except FileNotFoundError as e:
-        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}")
+        raise FileNotFoundError(f"Executable not found in command '{cmd_str}': {e}") from e
     finally:
         if proc and proc.stdout:
             proc.stdout.close()

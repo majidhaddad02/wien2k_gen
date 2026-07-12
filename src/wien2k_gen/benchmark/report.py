@@ -14,7 +14,7 @@ References:
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -31,7 +31,7 @@ try:
 except ImportError:
     _MPL_AVAILABLE = False
     logger.info(
-        "matplotlib not available – benchmark reports will be text-only. "
+        "matplotlib not available - benchmark reports will be text-only. "
         "Install matplotlib for PDF/PNG charts."
     )
 
@@ -58,11 +58,11 @@ class ScalingSeries:
     description: str
     scaling_type: str  # "strong" or "weak"
     reference_point: str  # "1_node" or "1_core"
-    data_points: List[ScalingDataPoint] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    data_points: list[ScalingDataPoint] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def serial_speedup(self) -> List[float]:
+    def serial_speedup(self) -> list[float]:
         """Amdahl/Gustafson speedup relative to reference."""
         if not self.data_points:
             return []
@@ -72,7 +72,7 @@ class ScalingSeries:
         return [ref / dp.runtime_seconds for dp in self.data_points]
 
     @property
-    def ideal_speedup(self) -> List[float]:
+    def ideal_speedup(self) -> list[float]:
         """Ideal linear speedup: N_ranks / N_ranks_ref."""
         if not self.data_points:
             return []
@@ -80,7 +80,7 @@ class ScalingSeries:
         return [dp.ranks / ref_ranks for dp in self.data_points]
 
     @property
-    def efficiency(self) -> List[float]:
+    def efficiency(self) -> list[float]:
         """Parallel efficiency: speedup / ideal_speedup * 100."""
         s = self.serial_speedup
         i = self.ideal_speedup
@@ -91,7 +91,7 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def generate_text_report(series_list: List[ScalingSeries]) -> str:
+def generate_text_report(series_list: list[ScalingSeries]) -> str:
     """Generate a plain-text scaling report suitable for HPC logs.
 
     Includes uncertainty quantification: estimated timing errors,
@@ -100,7 +100,7 @@ def generate_text_report(series_list: List[ScalingSeries]) -> str:
     lines = []
     sep = "=" * 80
     lines.append(sep)
-    lines.append("  WIEN2k Gen – Benchmark Scaling Report")
+    lines.append("  WIEN2k Gen - Benchmark Scaling Report")
     lines.append(sep)
     lines.append(f"  Generated: {__import__('datetime').datetime.now().isoformat()}")
     lines.append("")
@@ -145,7 +145,7 @@ def generate_text_report(series_list: List[ScalingSeries]) -> str:
 def _estim_timing_uncertainty(runtime_s: float, idx: int, total: int) -> float:
     """Estimate timing uncertainty based on system noise and MPI jitter.
 
-    Typical DFT timings have 5–15% run-to-run variability from:
+    Typical DFT timings have 5-15% run-to-run variability from:
     - OS jitter, MPI startup, I/O contention
     - NUMA placement drift, frequency scaling
     """
@@ -173,12 +173,12 @@ def _format_uncertainty_section(series: ScalingSeries) -> str:
     lines.append(f"    DFT energy precision (est.): ±{dft_precision_mev:.0f} meV/atom")
     lines.append(f"    Serial baseline uncertainty: ±{serial_time * 0.05:.1f}s")
     lines.append(f"    Best measured efficiency: {max_eff:.1f}%")
-    lines.append(f"    Efficiency uncertain range: [{max_eff * 0.9:.0f}%–{max_eff:.0f}%]")
+    lines.append(f"    Efficiency uncertain range: [{max_eff * 0.9:.0f}%-{max_eff:.0f}%]")
 
     if max_eff < 70:
-        lines.append(f"    ⚠ Low efficiency (<70%) — verify MPI affinity and NUMA binding")
+        lines.append("    ⚠ Low efficiency (<70%) — verify MPI affinity and NUMA binding")
     if max_eff > 95:
-        lines.append(f"    ✓ Super-linear or near-ideal scaling — check for cached I/O")
+        lines.append("    ✓ Super-linear or near-ideal scaling — check for cached I/O")
 
     return "\n".join(lines)
 
@@ -196,24 +196,24 @@ def _estimate_dft_precision(rkmax: float, kppra: float) -> float:
     return round(max(rkmax_precision, kp_precision, 1.0), 1)
 
 
-def generate_charts(
-    series_list: List[ScalingSeries],
+def generate_charts(  # noqa: C901
+    series_list: list[ScalingSeries],
     output_dir: Union[str, Path],
     fname_prefix: str = "scaling",
     formats: Sequence[str] = ("pdf", "png"),
-) -> List[Path]:
+) -> list[Path]:
     """
     Generate speedup and efficiency charts as PDF/PNG.
 
     Returns list of generated file paths. Requires matplotlib.
     """
     if not _MPL_AVAILABLE:
-        logger.warning("matplotlib not installed – skipping chart generation")
+        logger.warning("matplotlib not installed - skipping chart generation")
         return []
 
     output = Path(output_dir)
     _ensure_dir(output)
-    generated: List[Path] = []
+    generated: list[Path] = []
 
     colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd"]
 
@@ -264,7 +264,7 @@ def generate_charts(
             )
 
     ax_speedup.set_xlabel("MPI Ranks", fontsize=12, fontweight="bold")
-    ax_speedup.set_ylabel("Speedup (×)", fontsize=12, fontweight="bold")
+    ax_speedup.set_ylabel("Speedup (x)", fontsize=12, fontweight="bold")
     ax_speedup.set_title("Strong Scaling Speedup", fontsize=14, fontweight="bold")
     ax_speedup.legend(loc="upper left", fontsize=9, framealpha=0.9)
     ax_speedup.grid(True, alpha=0.3, linestyle="--")
@@ -353,11 +353,11 @@ def generate_charts(
 
 
 def generate_report(
-    series_list: List[ScalingSeries],
+    series_list: list[ScalingSeries],
     output_dir: Union[str, Path],
     fname_prefix: str = "scaling",
     formats: Sequence[str] = ("pdf", "txt"),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Produce full benchmark report: text summary + charts (if matplotlib available).
 
@@ -370,7 +370,7 @@ def generate_report(
     text_path = output / f"{fname_prefix}_report.txt"
     text_path.write_text(text_report, encoding="utf-8")
 
-    chart_paths: List[Path] = []
+    chart_paths: list[Path] = []
     chart_fmts = [f for f in formats if f not in ("txt", "text")]
     if chart_fmts and _MPL_AVAILABLE:
         chart_paths = generate_charts(
@@ -389,7 +389,7 @@ def generate_report(
     }
 
 
-def load_series_from_yaml(path: Union[str, Path]) -> List[ScalingSeries]:
+def load_series_from_yaml(path: Union[str, Path]) -> list[ScalingSeries]:
     """Parse ScalingSeries from a wien2k_gen.yaml example file."""
     import yaml
 
@@ -462,8 +462,8 @@ def identify_scaling_bottlenecks(series: ScalingSeries) -> dict:
 
     Bottleneck detection rules (from Blaha et al. 2020,
     J. Chem. Phys. 152, 074101, WIEN2k Usersguide §4.5):
-    - Efficiency < 50% at 2× nodes → strong bottleneck (I/O or memory)
-    - Efficiency < 80% at 4× nodes → moderate bottleneck
+    - Efficiency < 50% at 2x nodes -> strong bottleneck (I/O or memory)
+    - Efficiency < 80% at 4x nodes -> moderate bottleneck
     - Efficiency > 90% at max nodes → excellent scaling
     """
     bottlenecks = {
@@ -516,8 +516,8 @@ def identify_scaling_bottlenecks(series: ScalingSeries) -> dict:
 
 
 def generate_benchmark_recommendations(
-    strong_scaling: List[ScalingSeries],
-    weak_scaling: Optional[List[ScalingSeries]] = None,
+    strong_scaling: list[ScalingSeries],
+    weak_scaling: Optional[list[ScalingSeries]] = None,
 ) -> str:
     """Generate actionable optimization recommendations from benchmark results.
 

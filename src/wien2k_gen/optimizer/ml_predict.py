@@ -21,11 +21,11 @@ Usage:
   #         Recommended mixing: 0.15
 """
 
-import json
+import contextlib
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from ..logging_config import get_logger
 
@@ -66,7 +66,7 @@ class ConvergencePrediction:
     estimated_cycles: int = 20
     recommended_mixing: float = 0.15
     convergence_difficulty: str = "easy"
-    feature_importance: Dict[str, float] = None  # type: ignore
+    feature_importance: dict[str, float] = None  # type: ignore
 
     def __post_init__(self):
         if self.feature_importance is None:
@@ -110,7 +110,7 @@ class SCFTimePredictor:
                        "using physics-based estimates")
             return
 
-        X, y_time, y_converged = self._prepare_training_data(records)
+        X, y_time, _y_converged = self._prepare_training_data(records)
         if len(X) < 10:
             return
 
@@ -125,7 +125,7 @@ class SCFTimePredictor:
         logger.info(f"Model trained on {len(X)} records. "
                    f"Top features: {sorted(importances.items(), key=lambda x: -x[1])[:3]}")
 
-    def _load_training_data(self, history_path: Optional[str]) -> List[Dict[str, Any]]:
+    def _load_training_data(self, history_path: Optional[str]) -> list[dict[str, Any]]:
         records = []
         try:
             from ..optimizer.history import ExecutionHistory
@@ -147,8 +147,8 @@ class SCFTimePredictor:
         return records
 
     def _prepare_training_data(
-        self, records: List[Dict[str, Any]]
-    ) -> Tuple[Any, Any, Any]:
+        self, records: list[dict[str, Any]]
+    ) -> tuple[Any, Any, Any]:
         import numpy as np
 
         X_list = []
@@ -222,13 +222,11 @@ class SCFTimePredictor:
 
         feature_importance = {}
         if self._trained:
-            try:
+            with contextlib.suppress(Exception):
                 feature_importance = dict(zip(
                     self._feature_names,
                     self._model.feature_importances_,
                 ))
-            except Exception:
-                pass
 
         return ConvergencePrediction(
             estimated_time_hours=round(predicted_time, 2),
@@ -430,7 +428,7 @@ def _extract_structure_features(struct_path: Path) -> StructureFeatures:
                 sf.volume_bohr3 = vol
 
         z_set: set = set()
-        atom_lines = [l for l in lines if l.strip().startswith("X=") or ": X=" in l]
+        atom_lines = [line for line in lines if line.strip().startswith("X=") or ": X=" in line]
         atoms = 0
         for line in atom_lines:
             import re
@@ -443,7 +441,7 @@ def _extract_structure_features(struct_path: Path) -> StructureFeatures:
                 atoms += 1
 
         if atoms == 0:
-            atoms = len([l for l in lines if "ATOM" in l.upper()])
+            atoms = len([line for line in lines if "ATOM" in line.upper()])
             atoms = max(atoms, 1) * 5
 
         sf.atoms = atoms

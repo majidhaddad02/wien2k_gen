@@ -20,7 +20,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from rich.align import Align
 from rich.console import Console
@@ -102,12 +102,7 @@ This tool helps you define resources, check constraints, and submit jobs safely.
             border_style="cyan",
             padding=1
         ))
-        if not Confirm.ask(
-            Align.center("[bold yellow]Start job submission wizard?[/]", vertical="middle"),
-            console=self.console
-        ):
-            return False
-        return True
+        return Confirm.ask(Align.center("[bold yellow]Start job submission wizard?[/]", vertical="middle"), console=self.console)
 
 
 class SchedulerStep(WizardStep):
@@ -121,7 +116,7 @@ class SchedulerStep(WizardStep):
         choices = ["slurm", "pbs", "lsf"]
         choice = Prompt.ask(
             "Select target scheduler (Enter to use detected)",
-            choices=choices + ["auto"],
+            choices=[*choices, "auto"],
             default="auto",
             console=self.console
         )
@@ -340,8 +335,7 @@ class ReviewStep(WizardStep):
         )
         path = Path(filename)
         
-        if path.exists():
-            if not Confirm.ask(f"File {filename} exists. Overwrite?", console=self.console):
+        if path.exists() and not Confirm.ask(f"File {filename} exists. Overwrite?", console=self.console):
                 return False
 
         try:
@@ -404,7 +398,7 @@ class ReviewStep(WizardStep):
 class SBATCHWizard:
     def __init__(self):
         self.console = console
-        self.data: Dict[str, Any] = {}
+        self.data: dict[str, Any] = {}
         self.script_content: str = ""
         self.saved_path: Optional[Path] = None
         

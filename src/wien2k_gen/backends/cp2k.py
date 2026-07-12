@@ -1,5 +1,5 @@
 """
-CP2K Backend – Production-Grade Configuration Generator for HPC Clusters.
+CP2K Backend - Production-Grade Configuration Generator for HPC Clusters.
 Implements CP2K-specific logic for:
 • Parsing .inp files to extract atom count, basis set size, functional type,
   and other problem parameters for resource estimation
@@ -16,11 +16,12 @@ Key Features:
 • Comprehensive English documentation, type hints, and HPC-grade error handling
 """
 
+import contextlib
 import datetime
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -47,7 +48,7 @@ class CP2KBackend(Backend):
     binary) and cp2k.psmp (MPI+OpenMP hybrid binary).
     """
 
-    _CP2K_BINARY_OPTIONS = ["cp2k.popt", "cp2k.psmp", "cp2k.ssmp", "cp2k_shell.popt"]
+    _CP2K_BINARY_OPTIONS = ["cp2k.popt", "cp2k.psmp", "cp2k.ssmp", "cp2k_shell.popt"]  # noqa: RUF012
     _SECTION_PATTERN = re.compile(r'^\s*&(\w+)', re.IGNORECASE)
     _END_SECTION_PATTERN = re.compile(r'^\s*&END\s+\w+', re.IGNORECASE)
     _KEYWORD_PATTERN = re.compile(r'^\s*(\w[\w\-]*)\s+(.*)', re.IGNORECASE)
@@ -76,7 +77,7 @@ class CP2KBackend(Backend):
 
         return self._parse_inp_file(inp_file)
 
-    def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Generate a CP2K job execution script.
 
@@ -92,7 +93,7 @@ class CP2KBackend(Backend):
         """
         return self._build_runner_script(topo, suggestion)
 
-    def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
+    def get_execution_command(self, suggestion: dict[str, Any]) -> str:
         """
         Return the dynamically constructed execution command for CP2K.
 
@@ -120,7 +121,7 @@ class CP2KBackend(Backend):
         else:
             return f"mpirun -np {total_cores} {binary} -i {inp_file} -o {out_file}"
 
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """
         Validate suggestion against CP2K-specific constraints.
 
@@ -206,7 +207,7 @@ class CP2KBackend(Backend):
             "peak_flops_utilization": 0.25 if is_hybrid else 0.4,
         }
 
-    def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """
         Write run_cp2k_optimized.sh with environment setup and MPI configuration.
 
@@ -244,7 +245,7 @@ class CP2KBackend(Backend):
         """Return default configuration filename for CP2K."""
         return "cp2k_job.sh"
 
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """
         Parse CP2K output files for convergence, timing, and errors.
 
@@ -347,7 +348,7 @@ class CP2KBackend(Backend):
             "magnetic_order": None,
         }
 
-    def _parse_inp_file(self, inp_file: Path) -> ProblemSize:
+    def _parse_inp_file(self, inp_file: Path) -> ProblemSize:  # noqa: C901
         """
         Parse CP2K input file to extract problem parameters.
 
@@ -367,7 +368,7 @@ class CP2KBackend(Backend):
             content = inp_file.read_text(encoding="utf-8", errors="replace")
             sections = self._parse_cp2k_sections(content)
 
-            nesting = sections.get("_nesting", {})
+            sections.get("_nesting", {})
             force_eval = sections.get("FORCE_EVAL", {})
             dft = force_eval.get("DFT", {})
             subsys = force_eval.get("SUBSYS", {})
@@ -385,17 +386,14 @@ class CP2KBackend(Backend):
 
             functional = self._detect_functional(dft)
             result["is_hybrid"] = functional["is_hybrid"]
-            if functional["name"]:
-                if "soc" in functional["name"].lower():
-                    result["is_soc"] = True
+            if functional["name"] and "soc" in functional["name"].lower():
+                result["is_soc"] = True
 
             mgrid = dft.get("MGRID", {})
             for key, value in mgrid.items():
                 if key.upper() == "CUTOFF":
-                    try:
+                    with contextlib.suppress(ValueError, TypeError):
                         result["ecut"] = float(value)
-                    except (ValueError, TypeError):
-                        pass
 
             result["nspin"] = 1
             for key, value in subsys.items():
@@ -427,7 +425,7 @@ class CP2KBackend(Backend):
 
         return result
 
-    def _parse_cp2k_sections(self, content: str) -> Dict[str, Any]:
+    def _parse_cp2k_sections(self, content: str) -> dict[str, Any]:  # noqa: C901
         """
         Parse CP2K input file sections into a nested dictionary.
 
@@ -440,9 +438,9 @@ class CP2KBackend(Backend):
         Returns:
             Nested dictionary of sections and their keyword-value data.
         """
-        sections: Dict[str, Any] = {}
-        stack: List[Dict[str, Any]] = [sections]
-        section_names: List[str] = []
+        sections: dict[str, Any] = {}
+        stack: list[dict[str, Any]] = [sections]
+        section_names: list[str] = []
 
         for raw_line in content.splitlines():
             line = raw_line.split("!", 1)[0].split("#", 1)[0].strip()
@@ -454,7 +452,7 @@ class CP2KBackend(Backend):
 
             if section_match and not end_match:
                 sec_name = section_match.group(1).upper()
-                new_section: Dict[str, Any] = {}
+                new_section: dict[str, Any] = {}
                 current = stack[-1]
                 existing = current.get(sec_name)
                 if existing is None:
@@ -491,7 +489,7 @@ class CP2KBackend(Backend):
 
         return sections
 
-    def _count_coord_atoms(self, subsys: Dict[str, Any]) -> int:
+    def _count_coord_atoms(self, subsys: dict[str, Any]) -> int:  # noqa: C901
         """
         Count atoms from &COORD section in CP2K input.
 
@@ -534,7 +532,7 @@ class CP2KBackend(Backend):
 
         return 0
 
-    def _count_kind_atoms(self, subsys: Dict[str, Any]) -> int:
+    def _count_kind_atoms(self, subsys: dict[str, Any]) -> int:
         """
         Count atoms from &KIND sections by parsing element references.
 
@@ -557,7 +555,7 @@ class CP2KBackend(Backend):
 
         return self._default_problem_size()["atoms"]
 
-    def _extract_basis_sizes(self, subsys: Dict[str, Any]) -> List[int]:
+    def _extract_basis_sizes(self, subsys: dict[str, Any]) -> list[int]:
         """
         Extract basis set sizes from &KIND sections.
 
@@ -623,7 +621,7 @@ class CP2KBackend(Backend):
 
         return sizes
 
-    def _detect_functional(self, dft: Dict[str, Any]) -> Dict[str, Any]:
+    def _detect_functional(self, dft: dict[str, Any]) -> dict[str, Any]:  # noqa: C901
         """
         Detect the exchange-correlation functional from &DFT/&XC section.
 
@@ -648,7 +646,7 @@ class CP2KBackend(Backend):
         xc_func = xc.get("XC_FUNCTIONAL", {})
 
         if isinstance(xc_func, dict):
-            for key, value in xc_func.items():
+            for _key, value in xc_func.items():
                 if isinstance(value, str):
                     name_upper = value.upper()
                     result["name"] = value
@@ -673,7 +671,7 @@ class CP2KBackend(Backend):
     # Runner Script Generation
     # =========================================================================
 
-    def _build_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def _build_runner_script(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Build the run_cp2k_optimized.sh script content.
 
@@ -696,10 +694,7 @@ class CP2KBackend(Backend):
         inp_file = suggestion.get("input_file", "input.inp")
         out_file = suggestion.get("output_file", "output.out")
 
-        if mode == "hybrid":
-            mpi_ranks = max(1, total_cores // omp)
-        else:
-            mpi_ranks = total_cores
+        mpi_ranks = max(1, total_cores // omp) if mode == "hybrid" else total_cores
 
         script = f"""#!/bin/bash
 # ==============================================================================

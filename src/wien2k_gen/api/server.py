@@ -21,7 +21,7 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] api: %(message)s")
@@ -29,9 +29,9 @@ logger = logging.getLogger("wien2k_api")
 
 START_TIME = time.time()
 
-_job_store: Dict[str, Dict[str, Any]] = {}
-_workflows: Dict[str, Dict[str, Any]] = {}
-_log_entries: List[Dict[str, Any]] = []
+_job_store: dict[str, dict[str, Any]] = {}
+_workflows: dict[str, dict[str, Any]] = {}
+_log_entries: list[dict[str, Any]] = []
 
 try:
     import psutil
@@ -68,12 +68,12 @@ def _auth_check(handler: BaseHTTPRequestHandler) -> bool:
     return token == _API_TOKEN
 
 
-def _parse_path(path: str) -> Tuple[str, Optional[str]]:
+def _parse_path(path: str) -> tuple[str, Optional[str]]:
     parsed = urlparse(path)
     return parsed.path, parsed.query
 
 
-def _read_body(handler: BaseHTTPRequestHandler) -> Optional[Dict[str, Any]]:
+def _read_body(handler: BaseHTTPRequestHandler) -> Optional[dict[str, Any]]:
     try:
         length = int(handler.headers.get("Content-Length", 0))
         if length == 0:
@@ -84,7 +84,7 @@ def _read_body(handler: BaseHTTPRequestHandler) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _get_topology() -> Dict[str, Any]:
+def _get_topology() -> dict[str, Any]:
     try:
         from ..core.scheduler import detect
         topo = detect()
@@ -93,7 +93,7 @@ def _get_topology() -> Dict[str, Any]:
         return _get_fallback_topology()
 
 
-def _get_fallback_topology() -> Dict[str, Any]:
+def _get_fallback_topology() -> dict[str, Any]:
     try:
         cpu_count = os.cpu_count() or 1
         return {
@@ -117,7 +117,7 @@ def _get_fallback_topology() -> Dict[str, Any]:
         }
 
 
-def _get_health() -> Dict[str, Any]:
+def _get_health() -> dict[str, Any]:
     if _HAS_PSUTIL:
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -171,7 +171,7 @@ class Wien2kAPIHandler(BaseHTTPRequestHandler):
         _cors_headers(self)
         self.end_headers()
 
-    def do_GET(self) -> None:
+    def do_GET(self) -> None:  # noqa: C901
         if not _auth_check(self):
             _json_response(self, {"error": "Unauthorized"}, 401)
             return

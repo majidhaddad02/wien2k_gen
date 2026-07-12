@@ -17,7 +17,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple, TypedDict, Union
+from typing import Optional, TypedDict, Union
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -35,31 +35,31 @@ class ScratchResult(TypedDict, total=False):
     is_shared: bool
     filesystem_type: str
     free_space_gb: float
-    files_staged: List[str]
+    files_staged: list[str]
     staging_method: str  # 'local_copy', 'sbcast', 'rsync', 'shared_fs'
-    errors: List[str]
-    warnings: List[str]
+    errors: list[str]
+    warnings: list[str]
 
 
 @dataclass
 class ScratchConfig:
     """Configuration for scratch behavior & staging preferences."""
-    priority_paths: List[str] = field(default_factory=lambda: [
+    priority_paths: list[str] = field(default_factory=lambda: [
         "/dev/shm", 
         os.environ.get("SCRATCH", ""), 
         "/tmp"
     ])
-    env_path_vars: List[str] = field(default_factory=lambda: [
+    env_path_vars: list[str] = field(default_factory=lambda: [
         "SCRATCH", "TMPDIR", "TMP", "WIEN2K_SCRATCH", "QE_SCRATCH",
     ])
     min_free_space_gb: float = 2.0
     prefer_tmpfs: bool = True
     staging_method: str = "auto"  # auto, copy, sbcast, rsync
-    file_patterns: List[str] = field(default_factory=lambda: [
+    file_patterns: list[str] = field(default_factory=lambda: [
         "case.", ".in*", ".klist", "parallel_options", ".struct",
         ".scf", "run.sh", "input_", "POSCAR", "INCAR", "KPOINTS", "POTCAR", ".in"
     ])
-    exclude_patterns: List[str] = field(default_factory=lambda: [
+    exclude_patterns: list[str] = field(default_factory=lambda: [
         ".bak", ".tmp", ".log", ".out", "slurm-", "core.", ".o", ".e"
     ])
     preserve_permissions: bool = True
@@ -67,7 +67,7 @@ class ScratchConfig:
     stripe_count: int = 4
     stripe_size_mb: int = 1
 
-    def resolve_priority_paths(self) -> List[str]:
+    def resolve_priority_paths(self) -> list[str]:
         """Resolve priority paths, removing empties and expanding env vars."""
         resolved = []
         for p in self.priority_paths:
@@ -99,12 +99,18 @@ def _detect_filesystem_type(path: Path) -> str:
             lines = proc.stdout.strip().splitlines()
             if len(lines) > 1:
                 fstype = lines[-1].split()[1].lower()
-                if "lustre" in fstype: return "lustre"
-                if "gpfs" in fstype or "mmfs" in fstype: return "gpfs"
-                if "nfs" in fstype: return "nfs"
-                if "tmpfs" in fstype: return "tmpfs"
-                if "ext4" in fstype: return "ext4"
-                if "xfs" in fstype: return "xfs"
+                if "lustre" in fstype:
+                    return "lustre"
+                if "gpfs" in fstype or "mmfs" in fstype:
+                    return "gpfs"
+                if "nfs" in fstype:
+                    return "nfs"
+                if "tmpfs" in fstype:
+                    return "tmpfs"
+                if "ext4" in fstype:
+                    return "ext4"
+                if "xfs" in fstype:
+                    return "xfs"
                 return fstype
     except Exception:
         pass
@@ -197,9 +203,9 @@ def configure_lustre_striping(
 
 def _collect_staging_files(
     workdir: Path,
-    include_patterns: List[str],
-    exclude_patterns: List[str]
-) -> List[Path]:
+    include_patterns: list[str],
+    exclude_patterns: list[str]
+) -> list[Path]:
     """
     Collect files matching include patterns while excluding globs.
     Handles recursive matching and resolves symlinks safely.
@@ -220,7 +226,7 @@ def _collect_staging_files(
     return sorted(valid, key=lambda x: x.stat().st_size, reverse=True)
 
 
-def _stage_local_copy(files: List[Path], dest: Path, preserve: bool = True) -> Tuple[List[str], List[str]]:
+def _stage_local_copy(files: list[Path], dest: Path, preserve: bool = True) -> tuple[list[str], list[str]]:
     """Copy files to local scratch directory. Returns (success_list, error_list)."""
     success, errors = [], []
     dest.mkdir(parents=True, exist_ok=True)
@@ -237,7 +243,7 @@ def _stage_local_copy(files: List[Path], dest: Path, preserve: bool = True) -> T
     return success, errors
 
 
-def _stage_slurm_sbcast(files: List[Path], dest_dir: str) -> Tuple[List[str], List[str]]:
+def _stage_slurm_sbcast(files: list[Path], dest_dir: str) -> tuple[list[str], list[str]]:
     """
     Use SLURM sbcast for fast parallel file distribution.
     Falls back gracefully if sbcast is unavailable or fails.
@@ -289,7 +295,7 @@ def _stage_slurm_sbcast(files: List[Path], dest_dir: str) -> Tuple[List[str], Li
     return success, errors
 
 
-def _stage_rsync(files: List[Path], dest: Path) -> Tuple[List[str], List[str]]:
+def _stage_rsync(files: list[Path], dest: Path) -> tuple[list[str], list[str]]:
     """
     Use rsync for efficient delta & parallel staging.
     Optimized for HPC networks with low-latency interconnects.
@@ -302,7 +308,7 @@ def _stage_rsync(files: List[Path], dest: Path) -> Tuple[List[str], List[str]]:
     src_list = [str(f) for f in files]
     try:
         proc = subprocess.run(
-            ["rsync", "-a", "--inplace", "--partial", "--info=progress2", "--no-compress"] + src_list + [str(dest) + "/"],
+            ["rsync", "-a", "--inplace", "--partial", "--info=progress2", "--no-compress", *src_list, str(dest) + "/"],
             capture_output=True, text=True, timeout=60
         )
         if proc.returncode == 0:
@@ -318,7 +324,7 @@ def _stage_rsync(files: List[Path], dest: Path) -> Tuple[List[str], List[str]]:
 # Main Scratch Setup & Cleanup API
 # =============================================================================
 
-def setup_scratch(
+def setup_scratch(  # noqa: C901
     topo: Topology,
     config: Optional[ScratchConfig] = None,
     workdir: Optional[Path] = None
@@ -357,8 +363,7 @@ def setup_scratch(
                 continue
                 
             # FIXED: Corrected logic for tmpfs preference check
-            if cfg.prefer_tmpfs and topo.total_cores <= (os.cpu_count() or 1):
-                if _detect_filesystem_type(p) == "tmpfs":
+            if cfg.prefer_tmpfs and topo.total_cores <= (os.cpu_count() or 1) and _detect_filesystem_type(p) == "tmpfs":
                     selected_path = p
                     break
                     

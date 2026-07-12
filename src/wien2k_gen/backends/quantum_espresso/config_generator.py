@@ -19,20 +19,20 @@ This module replaces heuristic skeletons with production-grade number-theoretic 
 
 import logging
 import math
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 # Use module-level logger for consistency with project standards.
 logger = logging.getLogger(__name__)
 
 
-def _get_divisors(n: int) -> List[int]:
+def _get_divisors(n: int) -> list[int]:
     """
     Return sorted list of divisors of n using O(sqrt(n)) algorithm.
     Essential for finding valid decomposition factors.
     """
     if n <= 0:
         return []
-    divs: Set[int] = set()
+    divs: set[int] = set()
     for i in range(1, int(math.sqrt(n)) + 1):
         if n % i == 0:
             divs.add(i)
@@ -106,7 +106,7 @@ def optimal_nband(cores_per_pool: int, nbnd: Optional[int], is_hybrid: bool) -> 
     return 1
 
 
-def generate_qe_config(
+def generate_qe_config(  # noqa: C901
     total_cores: int,
     nkpts: int,
     nbnd: Optional[int] = None,
@@ -115,7 +115,7 @@ def generate_qe_config(
     user_ndiag: Optional[int] = None,
     user_nband: Optional[int] = None,
     user_ntg: Optional[int] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate full parallel configuration for QE, ensuring strict divisibility.
 
@@ -138,7 +138,7 @@ def generate_qe_config(
     Returns:
         Dictionary with npool, ndiag, nband, ntg, and any warnings.
     """
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     # --- 1. Determine npool ---
     if user_npool is not None:

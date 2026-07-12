@@ -17,12 +17,10 @@ References:
 
 from __future__ import annotations
 
-import json
 import math
-import os
 import pickle
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -34,7 +32,7 @@ logger = get_logger(__name__)
 # Atomic feature maps
 # ---------------------------------------------------------------------------
 
-_ATOMIC_FEATURES: Dict[int, List[float]] = {
+_ATOMIC_FEATURES: dict[int, list[float]] = {
     1:  [0.31,  2.20,  1.0,  1],    2:  [0.28,  0.00,  1.0,  2],
     3:  [1.28,  0.98,  1.0,  1],    4:  [0.96,  1.57,  1.5,  2],
     5:  [0.84,  2.04,  2.0,  3],    6:  [0.76,  2.55,  2.5,  4],
@@ -78,12 +76,12 @@ _NUM_ATOMIC_FEATURES = 4
 # Crystal graph builder
 # ---------------------------------------------------------------------------
 
-def build_crystal_graph(
-    positions: List[Tuple[float, float, float]],
-    atomic_numbers: List[int],
-    lattice_vectors: Tuple[Tuple[float, float, float], Tuple[float, float, float], Tuple[float, float, float]],
+def build_crystal_graph(  # noqa: C901
+    positions: list[tuple[float, float, float]],
+    atomic_numbers: list[int],
+    lattice_vectors: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
     cutoff: float = 8.0,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build crystal graph from atomic structure.
 
     Args:
@@ -165,7 +163,7 @@ def build_crystal_graph(
 class GraphConvLayer:
     """A single graph convolution layer.
 
-    h_i' = σ( W_s·h_i + Σ_{j∈N(i)} W_n·h_j ⊙ EdgeMLP(e_ij) )
+    h_i' = o( W_s·h_i + Σ_{j∈N(i)} W_n·h_j x EdgeMLP(e_ij) )
     """
 
     def __init__(self, in_dim: int, out_dim: int, edge_dim: int = 2):
@@ -263,10 +261,10 @@ class CGCNNModel:
 # ---------------------------------------------------------------------------
 
 def predict_kpoints(
-    structure: Dict[str, Any],
-    model_path: Optional[str] = None,
-    default_model_dir: Optional[str] = None,
-) -> Dict[str, Any]:
+    structure: dict[str, Any],
+    model_path: str | None = None,
+    default_model_dir: str | None = None,
+) -> dict[str, Any]:
     """Predict optimal k-point grid from crystal structure.
 
     Returns dict with:
@@ -304,9 +302,9 @@ def predict_kpoints(
         return _kpoint_fallback(structure, f"Inference error: {e}")
 
     # Decode prediction → k-point grid
-    nx = max(1, int(round(np.abs(prediction[0]) * 10)))
-    ny = max(1, int(round(np.abs(prediction[1]) * 10)))
-    nz = max(1, int(round(np.abs(prediction[2]) * 10)))
+    nx = max(1, round(np.abs(prediction[0]) * 10))
+    ny = max(1, round(np.abs(prediction[1]) * 10))
+    nz = max(1, round(np.abs(prediction[2]) * 10))
 
     # Confidence from prediction magnitude consistency
     pred_std = float(np.std(prediction))
@@ -324,11 +322,11 @@ def predict_kpoints(
         "confidence": round(confidence, 3),
         "method": "GNN",
         "kpoint_density": density,
-        "recommendation": f"GNN predicts {nx}×{ny}×{nz} grid (density≈{density} kpts/Å⁻³)",
+        "recommendation": f"GNN predicts {nx}x{ny}x{nz} grid (density~{density} kpts/Å⁻³)",
     }
 
 
-def _get_or_create_model(model_path: Optional[str] = None, default_dir: Optional[str] = None) -> CGCNNModel:
+def _get_or_create_model(model_path: str | None = None, default_dir: str | None = None) -> CGCNNModel:
     """Load pre-trained model or create new one."""
     if model_path and Path(model_path).exists():
         try:
@@ -350,7 +348,7 @@ def _get_or_create_model(model_path: Optional[str] = None, default_dir: Optional
     model = CGCNNModel()
     # Use heuristic initialization based on crystal structure knowledge
     rng = np.random.RandomState(42)
-    for layer in [model.conv1] + model.convs:
+    for layer in [model.conv1, *model.convs]:
         layer.W_self = rng.randn(*layer.W_self.shape).astype(np.float32) * 0.1
         layer.W_neigh = rng.randn(*layer.W_neigh.shape).astype(np.float32) * 0.1
         layer.W_edge = rng.randn(*layer.W_edge.shape).astype(np.float32) * 0.1
@@ -361,7 +359,7 @@ def _get_or_create_model(model_path: Optional[str] = None, default_dir: Optional
     return model
 
 
-def _kpoint_fallback(structure: Dict[str, Any], reason: str = "") -> Dict[str, Any]:
+def _kpoint_fallback(structure: dict[str, Any], reason: str = "") -> dict[str, Any]:
     """Fallback: Monkhorst-Pack grid based on lattice constants.
 
     Rule: k_i = max(1, round(k0 / |a_i|))
@@ -378,16 +376,16 @@ def _kpoint_fallback(structure: Dict[str, Any], reason: str = "") -> Dict[str, A
     if has_metal:
         k0 = 40
 
-    nx = max(1, int(round(k0 / a)))
-    ny = max(1, int(round(k0 / b)))
-    nz = max(1, int(round(k0 / c)))
+    nx = max(1, round(k0 / a))
+    ny = max(1, round(k0 / b))
+    nz = max(1, round(k0 / c))
 
-    logger.info(f"Fallback MP grid: {nx}×{ny}×{nz} (reason: {reason})")
+    logger.info(f"Fallback MP grid: {nx}x{ny}x{nz} (reason: {reason})")
 
     return {
         "grid": (nx, ny, nz),
         "confidence": 0.5,
         "method": "fallback_mp_grid",
         "kpoint_density": int(nx * ny * nz / (a * b * c) * 1000),
-        "recommendation": f"Fallback Monkhorst-Pack {nx}×{ny}×{nz} grid (reason: {reason})",
+        "recommendation": f"Fallback Monkhorst-Pack {nx}x{ny}x{nz} grid (reason: {reason})",
     }

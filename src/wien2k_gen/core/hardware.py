@@ -13,6 +13,7 @@ Final Key Improvements Applied:
 - Introduced HardwareInfoProvider ABC and SysFSHardwareInfo for testability via dependency injection.
 """
 
+import contextlib
 import json
 import os
 import re
@@ -20,7 +21,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from functools import cache
 from pathlib import Path
-from typing import Dict, List, Optional, TypedDict, Union
+from typing import Optional, TypedDict, Union
 
 from ..logging_config import get_logger
 
@@ -33,16 +34,16 @@ logger = get_logger(__name__)
 class HardwareNUMANode(TypedDict):
     node_id: int
     cpus: str
-    cpu_ids: List[int]
+    cpu_ids: list[int]
     mem_kb: int
     cores: int
-    distance: Dict[int, int]
+    distance: dict[int, int]
 
 class CacheLevel(TypedDict):
     level: int
     size_kb: int
     type: str
-    cores_sharing: List[int]
+    cores_sharing: list[int]
 
 class InterconnectInfo(TypedDict):
     type: str          # e.g., infiniband, omni_path, ethernet, tcp
@@ -59,8 +60,8 @@ class HardwareProfile(TypedDict):
     sockets: int
     cores_per_socket: int
     threads_per_core: int
-    numa_nodes: List[HardwareNUMANode]
-    cache_topology: List[CacheLevel]
+    numa_nodes: list[HardwareNUMANode]
+    cache_topology: list[CacheLevel]
     memory_total_gb: float
     memory_limit_gb: Optional[float]
     memory_bandwidth_gb_s: float
@@ -69,7 +70,7 @@ class HardwareProfile(TypedDict):
     cpu_arch: str
     cpu_microarch: str
     cpu_governor: Optional[str]
-    cpu_freq_mhz: Dict[str, float]
+    cpu_freq_mhz: dict[str, float]
     vector_isa: str
     vector_width_bits: int
     fma_units_per_core: int
@@ -79,13 +80,13 @@ class HardwareProfile(TypedDict):
     elpa_available: bool
     mkl_available: bool
     containerized: bool
-    validation_warnings: List[str]
+    validation_warnings: list[str]
 
 # =============================================================================
 # Helper Functions
 # =============================================================================
 
-def parse_cpu_list(cpu_list_str: str) -> List[int]:
+def parse_cpu_list(cpu_list_str: str) -> list[int]:
     """
     Parse CPU list string (e.g., '0-5,8,10-12') into a list of integers.
     Standard format used in sysfs (cpulist, shared_cpu_list).
@@ -159,7 +160,7 @@ class HardwareInfoProvider(ABC):
         ...
 
     @abstractmethod
-    def get_vector_isa_and_width(self) -> Dict[str, Union[str, int]]:
+    def get_vector_isa_and_width(self) -> dict[str, Union[str, int]]:
         ...
 
     @abstractmethod
@@ -175,7 +176,7 @@ class HardwareInfoProvider(ABC):
         ...
 
     @abstractmethod
-    def get_cpu_frequency_info(self) -> Dict[str, float]:
+    def get_cpu_frequency_info(self) -> dict[str, float]:
         ...
 
     @abstractmethod
@@ -183,11 +184,11 @@ class HardwareInfoProvider(ABC):
         ...
 
     @abstractmethod
-    def get_numa_topology_detailed(self) -> List[HardwareNUMANode]:
+    def get_numa_topology_detailed(self) -> list[HardwareNUMANode]:
         ...
 
     @abstractmethod
-    def get_cache_topology(self) -> List[CacheLevel]:
+    def get_cache_topology(self) -> list[CacheLevel]:
         ...
 
     @abstractmethod
@@ -269,7 +270,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
     """
 
     @staticmethod
-    def _run_cmd_safe(cmd: List[str], timeout: int = 5, force_c_locale: bool = False) -> Optional[str]:
+    def _run_cmd_safe(cmd: list[str], timeout: int = 5, force_c_locale: bool = False) -> Optional[str]:
         """Safely execute a shell command with timeout and stderr suppression."""
         env = os.environ.copy()
         if force_c_locale:
@@ -283,15 +284,14 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             return None
 
     @staticmethod
-    def _parse_lscpu_flags() -> List[str]:
+    def _parse_lscpu_flags() -> list[str]:
         """Extract CPU flags from lscpu."""
         raw = SysFSHardwareInfo._run_cmd_safe(["lscpu"], force_c_locale=True)
         if not raw:
             return []
         for line in raw.split('\n'):
-            if line.strip().startswith("Flags:") or line.strip().startswith("CPU op-mode"):
-                if ":" in line:
-                    return line.split(':', 1)[1].strip().split()
+            if (line.strip().startswith("Flags:") or line.strip().startswith("CPU op-mode")) and ":" in line:
+                return line.split(':', 1)[1].strip().split()
         return []
 
     # --- Core CPU & Core Count Detection ---
@@ -299,7 +299,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
     def get_logical_cores(self) -> int:
         return os.cpu_count() or 1
 
-    def get_physical_cores(self) -> int:
+    def get_physical_cores(self) -> int:  # noqa: C901
         raw = self._run_cmd_safe(["lscpu", "-J"], force_c_locale=True)
         if raw:
             try:
@@ -314,7 +314,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         raw = self._run_cmd_safe(["lscpu", "--parse=CPU,SOCKET,CORE"], force_c_locale=True)
         if raw:
             try:
-                lines = [l for l in raw.split('\n') if l and not l.startswith('#')]
+                lines = [line for line in raw.split('\n') if line and not line.startswith('#')]
                 unique_physical = set()
                 for line in lines:
                     parts = line.split(',')
@@ -353,7 +353,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
     # --- ISA, Vector Width & FMA Detection ---
 
-    def get_vector_isa_and_width(self) -> Dict[str, Union[str, int]]:
+    def get_vector_isa_and_width(self) -> dict[str, Union[str, int]]:
         flags = self._parse_lscpu_flags()
         flag_set = set(flags)
 
@@ -424,15 +424,12 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 # Intel server: AVX-512 all-core downclock ~15% (Skylake-SP/Ice Lake)
                 throttle_factor = 0.85
             elif "epyc" in cpu_arch:
-                # AMD EPYC: AVX-512 via 2×256, minimal throttle ~5%
+                # AMD EPYC: AVX-512 via 2x256, minimal throttle ~5%
                 throttle_factor = 0.95
             else:
                 throttle_factor = 0.90
         elif isa in ("avx2", "avx"):
-            if "xeon" in cpu_arch:
-                throttle_factor = 0.92
-            else:
-                throttle_factor = 0.97
+            throttle_factor = 0.92 if "xeon" in cpu_arch else 0.97
         elif isa in ("sve", "neon"):
             throttle_factor = 0.95
         else:
@@ -453,7 +450,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         except FileNotFoundError:
             return None
 
-    def get_cpu_frequency_info(self) -> Dict[str, float]:
+    def get_cpu_frequency_info(self) -> dict[str, float]:
         info = {"min": 0.0, "max": 0.0, "current": 0.0, "base": 0.0}
         base_path = Path("/sys/devices/system/cpu/cpu0/cpufreq")
 
@@ -497,14 +494,14 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
     # --- NUMA Topology & Cache Hierarchy ---
 
-    def get_numa_topology_detailed(self) -> List[HardwareNUMANode]:
+    def get_numa_topology_detailed(self) -> list[HardwareNUMANode]:
         nodes = self._get_numa_from_sysfs()
         if len(nodes) <= 1:
             nodes = self._augment_numa_from_lscpu(nodes)
         return self._augment_numa_from_numactl(nodes)
 
-    def _get_numa_from_sysfs(self) -> List[HardwareNUMANode]:
-        nodes: List[HardwareNUMANode] = []
+    def _get_numa_from_sysfs(self) -> list[HardwareNUMANode]:  # noqa: C901
+        nodes: list[HardwareNUMANode] = []
         try:
             online_content = Path("/sys/devices/system/node/online").read_text().strip()
             node_ids: list[int] = []
@@ -565,7 +562,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return nodes
 
     @staticmethod
-    def _augment_numa_from_lscpu(nodes: List[HardwareNUMANode]) -> List[HardwareNUMANode]:
+    def _augment_numa_from_lscpu(nodes: list[HardwareNUMANode]) -> list[HardwareNUMANode]:
         """Augment NUMA topology using lscpu output.
 
         lscpu reports thread/core/socket counts and NUMA layout,
@@ -577,7 +574,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             if not out:
                 return nodes
 
-            socket_to_node: Dict[int, set] = {}
+            socket_to_node: dict[int, set] = {}
             for line in out.strip().split('\n'):
                 if line.startswith('#'):
                     continue
@@ -598,7 +595,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return nodes
 
     @staticmethod
-    def _augment_numa_from_numactl(nodes: List[HardwareNUMANode]) -> List[HardwareNUMANode]:
+    def _augment_numa_from_numactl(nodes: list[HardwareNUMANode]) -> list[HardwareNUMANode]:
         """Augment NUMA topology using numactl --hardware.
 
         numactl reports memory bandwidth, interleaving, and distance
@@ -609,7 +606,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             if not out:
                 return nodes
 
-            node_size_map: Dict[int, int] = {}
+            node_size_map: dict[int, int] = {}
             for line in out.split('\n'):
                 m = re.search(r'node\s+(\d+)\s+size.*?(\d+)\s*MB', line, re.IGNORECASE)
                 if m:
@@ -623,7 +620,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             pass
         return nodes
 
-    def get_cache_topology(self) -> List[CacheLevel]:
+    def get_cache_topology(self) -> list[CacheLevel]:
         caches: list[CacheLevel] = []
         base = Path("/sys/devices/system/cpu/cpu0/cache")
         if not base.exists():
@@ -674,7 +671,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             pass
         return "unknown"
 
-    def get_interconnect_info(self) -> InterconnectInfo:
+    def get_interconnect_info(self) -> InterconnectInfo:  # noqa: C901
         interconnect: InterconnectInfo = {
             "type": "unknown", "provider": "unknown", "speed_gbps": 10.0,
             "latency_ns": 1000.0, "numa_aware": False, "active_rate_gbps": 10.0,
@@ -771,7 +768,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 return "arm_neoverse" if "Neoverse" in raw else "arm"
         return "unknown"
 
-    def get_cpu_generation(self) -> str:
+    def get_cpu_generation(self) -> str:  # noqa: C901
         """
         Detect specific CPU generation from model name.
 
@@ -904,7 +901,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         except Exception:
             return "unknown"
 
-    def get_system_type(self) -> str:
+    def get_system_type(self) -> str:  # noqa: C901
         """
         Detect system type: laptop, workstation, compute_node, or cluster.
 
@@ -964,7 +961,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return self._estimate_bandwidth_from_arch()
 
     @staticmethod
-    def _measure_bandwidth_sysfs() -> Optional[float]:
+    def _measure_bandwidth_sysfs() -> Optional[float]:  # noqa: C901
         """Measure memory bandwidth via NUMA sysfs counters.
 
         Reads /sys/devices/system/node/node*/meminfo BW_total counters
@@ -982,10 +979,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     if 'BW_total' in line:
                         parts = line.split()
                         if len(parts) >= 2:
-                            try:
+                            with contextlib.suppress(ValueError):
                                 counters[str(f)] = int(parts[1])
-                            except ValueError:
-                                pass
 
             if not counters:
                 return None
@@ -998,10 +993,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     if 'BW_total' in line:
                         parts = line.split()
                         if len(parts) >= 2:
-                            try:
+                            with contextlib.suppress(ValueError):
                                 t0_sample[str(f_path)] = int(parts[1])
-                            except ValueError:
-                                pass
 
             time.sleep(3.0)
 
@@ -1021,7 +1014,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
             if bw_sum_mb > 0:
                 return bw_sum_mb / 1000.0
-        except (OSError, PermissionError):  # noqa: PERF203  -- kernel supports nested try/except
+        except (OSError, PermissionError):
             pass
         return None
 
@@ -1210,7 +1203,7 @@ def is_hyperthreading_active() -> bool:
 
 
 @cache
-def get_vector_isa_and_width() -> Dict[str, Union[str, int]]:
+def get_vector_isa_and_width() -> dict[str, Union[str, int]]:
     return _provider.get_vector_isa_and_width()
 
 
@@ -1230,7 +1223,7 @@ def get_cpu_governor(cpu_id: int = 0) -> Optional[str]:
 
 
 @cache
-def get_cpu_frequency_info() -> Dict[str, float]:
+def get_cpu_frequency_info() -> dict[str, float]:
     return _provider.get_cpu_frequency_info()
 
 
@@ -1240,12 +1233,12 @@ def get_job_memory_limit_mb() -> Optional[int]:
 
 
 @cache
-def get_numa_topology_detailed() -> List[HardwareNUMANode]:
+def get_numa_topology_detailed() -> list[HardwareNUMANode]:
     return _provider.get_numa_topology_detailed()
 
 
 @cache
-def get_cache_topology() -> List[CacheLevel]:
+def get_cache_topology() -> list[CacheLevel]:
     return _provider.get_cache_topology()
 
 

@@ -20,7 +20,7 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 from ..core.hardware import get_numa_node_count, is_containerized
 from ..core.topology import Topology
@@ -50,7 +50,7 @@ class ParallelOptionsDict(TypedDict, total=False):
     RSH: str
     SSH: str
     # User-defined extensions
-    custom: Dict[str, str]
+    custom: dict[str, str]
 
 
 # =============================================================================
@@ -58,7 +58,7 @@ class ParallelOptionsDict(TypedDict, total=False):
 # =============================================================================
 
 # Production-tested defaults for modern HPC environments
-DEFAULT_OPTIONS: Dict[str, Any] = {
+DEFAULT_OPTIONS: dict[str, Any] = {
     "USE_REMOTE": "0",       # Disable SSH/rsh for srun/mpirun/PMIX
     "MPI_REMOTE": "0",       # Disable legacy MPI remote spawning
     "TASKSET": "no",         # Let modern MPI launchers handle CPU binding
@@ -78,7 +78,7 @@ DANGEROUS_VALUES = {
 # Parsing & Normalization
 # =============================================================================
 
-def _normalize_line(line: str) -> Optional[Tuple[str, str]]:
+def _normalize_line(line: str) -> Optional[tuple[str, str]]:
     """
     Parse a single line from parallel_options into (key, value) tuple.
     Supports:
@@ -104,7 +104,7 @@ def _normalize_line(line: str) -> Optional[Tuple[str, str]]:
     return None
 
 
-def parse_parallel_options(path: Union[str, Path]) -> Dict[str, str]:
+def parse_parallel_options(path: Union[str, Path]) -> dict[str, str]:
     """
     Load and parse existing parallel_options file.
     Returns normalized dictionary of key-value pairs.
@@ -114,7 +114,7 @@ def parse_parallel_options(path: Union[str, Path]) -> Dict[str, str]:
     if not target.exists():
         return {}
         
-    parsed: Dict[str, str] = {}
+    parsed: dict[str, str] = {}
     try:
         content = target.read_text(encoding="utf-8", errors="replace")
         for line in content.splitlines():
@@ -144,10 +144,10 @@ def _detect_mpi_launcher(topo: Topology) -> str:
     return ""
 
 
-def generate_parallel_options(
+def generate_parallel_options(  # noqa: C901
     topo: Topology,
-    suggestion: Optional[Dict[str, Any]] = None,
-    user_overrides: Optional[Dict[str, str]] = None
+    suggestion: Optional[dict[str, Any]] = None,
+    user_overrides: Optional[dict[str, str]] = None
 ) -> str:
     """
     Generate optimized parallel_options content string.
@@ -243,12 +243,12 @@ def generate_parallel_options(
 # Validation & Safety Checks
 # =============================================================================
 
-def validate_parallel_options(opts: Dict[str, Any]) -> List[str]:
+def validate_parallel_options(opts: dict[str, Any]) -> list[str]:
     """
     Validate parallel_options dictionary for conflicts, deprecated values,
     and HPC anti-patterns. Returns list of warning messages.
     """
-    warnings_list: List[str] = []
+    warnings_list: list[str] = []
     
     # Check deprecated keys
     for key in DEPRECATED_KEYS:
@@ -297,8 +297,8 @@ def validate_parallel_options(opts: Dict[str, Any]) -> List[str]:
 def write_parallel_options(
     path: Union[str, Path] = "parallel_options",
     topo: Optional[Topology] = None,
-    suggestion: Optional[Dict[str, Any]] = None,
-    user_overrides: Optional[Dict[str, str]] = None,
+    suggestion: Optional[dict[str, Any]] = None,
+    user_overrides: Optional[dict[str, str]] = None,
     backup: bool = True
 ) -> bool:
     """

@@ -26,7 +26,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 from ..core.pipeline import run_pipeline
 from ..core.scheduler import auto_detect_memory
@@ -51,7 +51,7 @@ logger = get_logger(__name__)
 class RealBenchmarkConfig:
     """Configuration for a real benchmark execution."""
     backend: str = "wien2k"
-    problem_params: Dict[str, Any] = field(default_factory=dict)
+    problem_params: dict[str, Any] = field(default_factory=dict)
     timeout_sec: float = 3600.0
     scheduler: str = "slurm"
     partition: str = ""
@@ -67,7 +67,7 @@ class RealBenchmarkResult(TypedDict, total=False):
     wall_time_sec: float
     cpu_time_sec: float
     exit_code: int
-    job_id: Optional[int]
+    job_id: Optional[Any]
     output_dir: str
     log_path: Optional[str]
     parsed_metrics: Optional[Any]  # Using Any to avoid strict SCFParseResult typing issues if it's a dataclass
@@ -97,7 +97,7 @@ class RealBenchmarkRunner:
     Handles environment setup, job submission, real-time monitoring,
     output parsing, and resource cleanup.
     """
-    def __init__(self, config: Optional[Union[RealBenchmarkConfig, Dict[str, Any]]] = None) -> None:
+    def __init__(self, config: Optional[Union[RealBenchmarkConfig, dict[str, Any]]] = None) -> None:
         if config is None:
             self.config = RealBenchmarkConfig()
         elif isinstance(config, dict):
@@ -112,7 +112,7 @@ class RealBenchmarkRunner:
         raw = f"{self.config.backend}_{json.dumps(self.config.problem_params, sort_keys=True)}_{time.time()}"
         return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
-    def _setup_environment(self) -> Tuple[Path, Path]:
+    def _setup_environment(self) -> tuple[Path, Path]:
         """Create isolated working directory & stage scratch space."""
         run_id = self._generate_run_id()
         bench_dir = self._work_dir / f"bench_{self.config.backend}_{run_id}"
@@ -130,7 +130,8 @@ class RealBenchmarkRunner:
             workdir=bench_dir
         )
         logger.info(f"Benchmark workspace: {bench_dir} | Scratch: {scratch_result.get('scratch_path')}")
-        return bench_dir, Path(scratch_result.get("scratch_path", "."))
+        scratch_path = scratch_result.get("scratch_path")
+        return bench_dir, Path(scratch_path if scratch_path else ".")
 
     def _generate_benchmark_input(self, work_dir: Path, topo: Topology) -> bool:
         """Run pipeline in dry-run mode to generate .machines & parallel_options."""
@@ -155,7 +156,7 @@ class RealBenchmarkRunner:
             logger.error(f"Input generation exception: {e}", exc_info=True)
             return False
 
-    def _execute_local(self, work_dir: Path) -> Tuple[int, float]:
+    def _execute_local(self, work_dir: Path) -> tuple[int, float]:
         """Execute benchmark binary directly on login/compute node."""
         cmd = ["run_lapw", "-p", "-NI"]
         logger.info(f"Executing local benchmark: {' '.join(cmd)}")
@@ -186,7 +187,7 @@ class RealBenchmarkRunner:
             logger.error(f"Local execution failed: {e}")
             return 1, time.monotonic() - start
 
-    def _execute_slurm(self, work_dir: Path, topo: Topology) -> Tuple[int, float, Optional[int]]:
+    def _execute_slurm(self, work_dir: Path, topo: Topology) -> tuple[int, float, Optional[int]]:
         """Submit benchmark as SLURM job and monitor until completion."""
         directives = SlurmDirectives(
             job_name=f"w2k_bench_{self.state.job_id or 'real'}",
@@ -216,7 +217,7 @@ class RealBenchmarkRunner:
 
         job_id = submit_result.get("job_id")
         self.state.job_id = job_id
-        out_path = Path(submit_result.get("output_path", ""))
+        out_path = Path(str(submit_result.get("output_path", "")))
         self.state.output_path = out_path
 
         # Poll job status
@@ -253,7 +254,7 @@ class RealBenchmarkRunner:
 
         return exit_code, wall_time, job_id
 
-    def _execute_pbs(self, work_dir: Path, topo: Topology) -> Tuple[int, float, Optional[str]]:
+    def _execute_pbs(self, work_dir: Path, topo: Topology) -> tuple[int, float, Optional[str]]:
         """Submit benchmark as PBS job and monitor until completion."""
         provider = PBSSubmitProvider()
         result = provider.submit(
@@ -305,7 +306,7 @@ class RealBenchmarkRunner:
                 exit_code = 1
         return exit_code, wall_time, job_id
 
-    def _execute_lsf(self, work_dir: Path, topo: Topology) -> Tuple[int, float, Optional[str]]:
+    def _execute_lsf(self, work_dir: Path, topo: Topology) -> tuple[int, float, Optional[str]]:
         """Submit benchmark as LSF job and monitor until completion."""
         provider = LSFSubmitProvider()
         result = provider.submit(
@@ -355,7 +356,7 @@ class RealBenchmarkRunner:
                 exit_code = 1
         return exit_code, wall_time, job_id
 
-    def run(self, topo: Topology) -> RealBenchmarkResult:
+    def run(self, topo: Topology) -> RealBenchmarkResult:  # noqa: C901
         """
         Execute complete benchmark lifecycle: setup -> generate -> run -> parse -> cleanup.
         Returns structured empirical result compatible with synthetic calibration.
@@ -400,10 +401,10 @@ class RealBenchmarkRunner:
                 exit_code, wall_time, job_id = self._execute_slurm(work_dir, topo)
                 result["job_id"] = job_id
             elif scheduler == "pbs" and os.getenv(env_var):
-                exit_code, wall_time, job_id = self._execute_pbs(work_dir, topo)
+                exit_code, wall_time, job_id = self._execute_pbs(work_dir, topo)  # type: ignore[assignment]
                 result["job_id"] = job_id
             elif scheduler == "lsf" and os.getenv(env_var):
-                exit_code, wall_time, job_id = self._execute_lsf(work_dir, topo)
+                exit_code, wall_time, job_id = self._execute_lsf(work_dir, topo)  # type: ignore[assignment]
                 result["job_id"] = job_id
             else:
                 exit_code, wall_time = self._execute_local(work_dir)
@@ -421,9 +422,10 @@ class RealBenchmarkRunner:
                 return result
 
             # 3. Parse Output
-            log_file = work_dir / "case.dayfile" if self.config.backend == "wien2k" else work_dir / "pwscf.out"
-            if not log_file.exists():
-                log_file = next(work_dir.glob("*.out"), None)
+            log_file: Optional[Path] = work_dir / "case.dayfile" if self.config.backend == "wien2k" else work_dir / "pwscf.out"
+            if log_file is None or not log_file.exists():
+                found = list(work_dir.glob("*.out"))
+                log_file = found[0] if found else None
                 
             if log_file:
                 result["log_path"] = str(log_file)
@@ -457,7 +459,7 @@ class RealBenchmarkRunner:
 def calibrate_real_vs_synthetic(
     real_result: RealBenchmarkResult,
     synthetic_time_sec: float
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute empirical vs theoretical deviation for model calibration.
     Returns error percentage, bottleneck hint, and calibration multiplier.

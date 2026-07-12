@@ -19,14 +19,13 @@ Usage:
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import numpy as np
 
 from ..core.case_parser import CaseFileParser
 from ..logging_config import get_logger
-from .bayesian import BayesianOptimizer, _CATEGORICAL_MODES, compute_expected_improvement
-from .history import ExecutionHistory
+from .bayesian import _CATEGORICAL_MODES, compute_expected_improvement
 
 logger = get_logger(__name__)
 
@@ -47,7 +46,7 @@ class TunerResult:
     iterations: int = 0
     uncertainty_rkmax: float = 0.0
     uncertainty_mixing: float = 0.0
-    observations: List[Dict[str, Any]] = None  # type: ignore
+    observations: list[dict[str, Any]] = None  # type: ignore
 
     def __post_init__(self):
         if self.observations is None:
@@ -92,10 +91,10 @@ def _encode_tuning_config(
     return np.concatenate([vec_base, vec_tune])
 
 
-def _decode_tuning_config(vec: np.ndarray) -> Dict[str, Any]:
+def _decode_tuning_config(vec: np.ndarray) -> dict[str, Any]:
     """Decode a 10-dim feature vector to a tuning configuration."""
-    total_cores = max(1, min(256, int(round(vec[0] * 256.0))))
-    omp_threads = max(1, min(64, int(round(vec[1] * 64.0))))
+    total_cores = max(1, min(256, round(vec[0] * 256.0)))
+    omp_threads = max(1, min(64, round(vec[1] * 64.0)))
     mode_idx = int(np.argmax(vec[2:5]))
     mode = _CATEGORICAL_MODES[mode_idx] if mode_idx < len(_CATEGORICAL_MODES) else "kpoint"
 
@@ -144,12 +143,12 @@ class BayesianParameterTuner:
         self.verbose = verbose
 
         self._rng = np.random.RandomState(42)
-        self._X: List[np.ndarray] = []
-        self._y: List[float] = []
+        self._X: list[np.ndarray] = []
+        self._y: list[float] = []
         self._best_y: Optional[float] = None
         self._best_x: Optional[np.ndarray] = None
 
-        from .bayesian import _GaussianProcessARD, _GaussianProcess
+        from .bayesian import _GaussianProcess, _GaussianProcessARD
         self._gp_cls = _GaussianProcessARD if use_ard else _GaussianProcess
         self._gp = self._gp_cls()
 
@@ -171,9 +170,9 @@ class BayesianParameterTuner:
 
         case = Path(self.case_name)
         try:
-            kx = int(round(kppra ** (1.0 / 3.0)))
-            ky = int(round(kppra ** (1.0 / 3.0)))
-            kz = int(round(kppra ** (1.0 / 3.0)))
+            kx = round(kppra ** (1.0 / 3.0))
+            ky = round(kppra ** (1.0 / 3.0))
+            kz = round(kppra ** (1.0 / 3.0))
 
             cmd = [
                 "x", "kgen", str(kx), str(ky), str(kz),
@@ -247,7 +246,7 @@ class BayesianParameterTuner:
         noise = self._rng.normal(0, quality * 0.3)
         return max(1e-12, quality + noise)
 
-    def _get_next_suggestion(self) -> Dict[str, Any]:
+    def _get_next_suggestion(self) -> dict[str, Any]:
         if self.n_observations == 0:
             rkmax = float(self._rng.uniform(5.5, 9.0))
             kppra = int(self._rng.uniform(1000, 15000))
@@ -284,7 +283,7 @@ class BayesianParameterTuner:
         config = _decode_tuning_config(best_vec)
         return self._apply_physics_constraints(config)
 
-    def _apply_physics_constraints(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    def _apply_physics_constraints(self, config: dict[str, Any]) -> dict[str, Any]:
         """Enforce physical validity of optimized parameters.
 
         Based on Blaha et al. (2020), J. Chem. Phys. 152, 074101
@@ -342,7 +341,7 @@ class BayesianParameterTuner:
             pass
         return 0
 
-    def tune(self, use_simulated: bool = True, max_cores: int = 1) -> TunerResult:
+    def tune(self, use_simulated: bool = True, max_cores: int = 1) -> TunerResult:  # noqa: C901
         """Run Bayesian optimization loop for `budget` iterations.
 
         Args:

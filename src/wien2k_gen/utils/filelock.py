@@ -202,7 +202,7 @@ class FileLock:
             self._fallback_dir.mkdir(parents=True, exist_ok=False)
             self._pid_file.write_text(str(os.getpid()), encoding="utf-8")
         except FileExistsError:
-            raise LockAcquisitionError("Directory lock already exists (held by another process)")
+            raise LockAcquisitionError("Directory lock already exists (held by another process)") from None
         except OSError as e:
             raise LockAcquisitionError(f"Atomic dir creation failed: {e}") from e
 

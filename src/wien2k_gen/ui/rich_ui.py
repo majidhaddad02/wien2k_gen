@@ -23,7 +23,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, ContextManager, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from rich.align import Align
 
@@ -148,12 +148,12 @@ class ConsoleManager:
             self.console.print(*objects, **kwargs)
         except BrokenPipeError:
             # Handle piping to head/less gracefully
-            sys.stderr = open(os.devnull, "w")
+            sys.stderr = open(os.devnull, "w")  # noqa: SIM115
             sys.exit(0)
         except Exception as e:
             logging.getLogger(__name__).warning(f"Console print failed: {e}")
 
-    def status(self, message: str) -> ContextManager:
+    def status(self, message: str) -> Any:
         """Return Rich status spinner context manager."""
         if not self.config.progress_enabled:
             return _null_status()
@@ -211,7 +211,7 @@ def print_status_indicator(status: str, message: str) -> None:
         "success": ("✅", "green"),
         "warning": ("⚠️", "yellow"),
         "error": ("❌", "red"),
-        "info": ("ℹ️", "blue"),
+        "info": ("ℹ️", "blue"),  # noqa: RUF001
         "running": ("⏳", "dim white")
     }
     icon, color = status_map.get(status, ("•", "white"))
@@ -219,7 +219,7 @@ def print_status_indicator(status: str, message: str) -> None:
     _cli_manager.print(f"[dim]{ts}[/] [{color}]{icon} {status.upper()}[/] {message}")
 
 
-def print_error_panel(errors: List[str], title: str = "Critical Errors") -> None:
+def print_error_panel(errors: list[str], title: str = "Critical Errors") -> None:
     """Display consolidated error panel with Rich formatting."""
     if not errors:
         return
@@ -228,7 +228,7 @@ def print_error_panel(errors: List[str], title: str = "Critical Errors") -> None
     _cli_manager.print(panel)
 
 
-def print_warning_panel(warnings: List[str], title: str = "Warnings") -> None:
+def print_warning_panel(warnings: list[str], title: str = "Warnings") -> None:
     """Display consolidated warning panel."""
     if not warnings:
         return
@@ -287,8 +287,9 @@ def print_submission_result(result: SubmissionResult) -> None:
         _cli_manager.print("[bold green]✅ Job submitted successfully![/] ")
         _cli_manager.print(f"[bold]Job ID:[/] {result.get('job_id', 'N/A')} ")
         _cli_manager.print(f"[bold]Script:[/] {result.get('script_path', 'N/A')} ")
-        if result.get("estimated_start_time"):
-            _cli_manager.print(f"[bold]Est. Start:[/] {result['estimated_start_time'].isoformat()} ")
+        est_start = result.get("estimated_start_time")
+        if est_start is not None:
+            _cli_manager.print(f"[bold]Est. Start:[/] {est_start.isoformat()} ")
     else:
         print_error_panel(result.get("errors", ["Unknown submission failure"]), "Submission Failed")
         
@@ -381,7 +382,7 @@ class CLIWorkflowRunner:
     def __init__(self, config: Optional[CLIConfig] = None) -> None:
         self.config = config or CLIConfig()
         _cli_manager.config = self.config
-        self._cleanup_hooks: List[Callable] = []
+        self._cleanup_hooks: list[Callable] = []
 
     def add_cleanup(self, hook: Callable) -> None:
         """Register cleanup function for exit signals."""
@@ -444,7 +445,7 @@ def set_json_output(enabled: bool) -> None:
     _cli_manager.config.json_output = enabled
 
 
-def print_table_from_dict(title: str, data: Dict[str, Any]) -> None:
+def print_table_from_dict(title: str, data: dict[str, Any]) -> None:
     """Quick helper to render any dict as a Rich table."""
     table = Table(title=title, box=None, padding=(0, 1))
     table.add_column("Key", style="cyan")

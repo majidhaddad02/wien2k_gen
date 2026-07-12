@@ -25,7 +25,7 @@ import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 # Optional dependencies with graceful fallbacks
 try:
@@ -72,8 +72,8 @@ class ExportResult(TypedDict, total=False):
     path: Optional[str]
     format: str
     size_bytes: int
-    warnings: List[str]
-    errors: List[str]
+    warnings: list[str]
+    errors: list[str]
     duration_sec: float
 
 
@@ -117,7 +117,7 @@ class _ScientificEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def _sanitize_for_export(data: Any, depth: int = 0, max_depth: int = 10) -> Any:
+def _sanitize_for_export(data: Any, depth: int = 0, max_depth: int = 10) -> Any:  # noqa: C901
     """
     Recursively sanitize nested structures for safe serialization.
     Removes circular references, limits depth, and converts unsupported types.
@@ -275,7 +275,7 @@ def _export_hdf5(data: Any, path: Path, config: ExportConfig) -> int:
     return os.path.getsize(path)
 
 
-def _write_hdf5_structure(
+def _write_hdf5_structure(  # noqa: C901
     group: "h5py.Group",
     data: Any,
     compression: str = "gzip",
@@ -370,7 +370,7 @@ def _list_to_ndarray(data: list):
 # Core Export Orchestrator
 # =============================================================================
 
-def export_config(
+def export_config(  # noqa: C901
     data: Any,
     path: Union[str, Path],
     format_hint: Optional[str] = None,
@@ -391,8 +391,8 @@ def export_config(
     start_time = time.monotonic()
     cfg = config or {}
     target = Path(path).resolve()
-    warnings: List[str] = []
-    errors: List[str] = []
+    warnings: list[str] = []
+    errors: list[str] = []
 
     # 1. Format Detection & Validation
     ext = format_hint.lower().strip() if format_hint else target.suffix.lower().lstrip(".")
@@ -457,11 +457,11 @@ def export_config(
 
 
 def export_multiple(
-    outputs: Dict[str, Any],
+    outputs: dict[str, Any],
     base_path: Union[str, Path],
     format: str = "json",
     config: Optional[ExportConfig] = None
-) -> Dict[str, ExportResult]:
+) -> dict[str, ExportResult]:
     """
     Export multiple datasets to a directory with consistent naming and format.
     Useful for batch profiling reports, topology snapshots, or benchmark suites.

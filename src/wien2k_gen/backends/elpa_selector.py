@@ -15,7 +15,7 @@ on HPC systems with InfiniBand interconnects.
 
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Optional
 
 from ..core.topology import factorize_blacs_grid
 from ..logging_config import get_logger
@@ -31,7 +31,7 @@ class SolverSelection:
     estimated_speedup: float
     reason: str
     requires_recompilation: bool
-    recommended_grid: Tuple[int, int] = field(default_factory=lambda: (1, 1))
+    recommended_grid: tuple[int, int] = field(default_factory=lambda: (1, 1))
 
 
 def select_eigensolver(
@@ -180,15 +180,13 @@ def get_optimal_block_size(nmat: int, total_cores: int) -> int:
     if sqrt_cores <= 0:
         return 64
 
-    sca_block = int(round(nmat / sqrt_cores / 3.0))
+    sca_block = round(nmat / sqrt_cores / 3.0)
     sca_block = max(32, min(512, sca_block))
 
-    if nmat >= 20000:
-        elpa_block = 64
-    elif nmat >= 10000:
-        elpa_block = 32
+    if nmat >= 20000 or nmat >= 10000:
+        pass
     else:
-        elpa_block = sca_block
+        pass
 
     return sca_block
 
@@ -197,7 +195,7 @@ def get_recommended_wien2k_compile_flags(
     solver: str,
     cpu_arch: str,
     mpi: str,
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Return WIEN2k recompilation flags for the selected eigenvalue solver.
 
@@ -215,7 +213,7 @@ def get_recommended_wien2k_compile_flags(
         Dictionary with keys 'cflags', 'ldflags', 'configure_opts', and
         'environment' containing the required compilation parameters.
     """
-    flags: Dict[str, str] = {
+    flags: dict[str, str] = {
         "cflags": "",
         "ldflags": "",
         "configure_opts": "",
@@ -237,17 +235,16 @@ def get_recommended_wien2k_compile_flags(
 
         flags["environment"] = f"export ELPA_DIR={elpa_dir}"
 
-    if "SCALAPACK" in solver_upper:
-        if "OPTIMIZED" in solver_upper or _check_mkl_runtime():
-            flags["cflags"] += " -DSCALAPACK -DUSE_SCALAPACK_OPTIMIZED"
-            flags["configure_opts"] += " -DSCALAPACK"
+    if "SCALAPACK" in solver_upper and ("OPTIMIZED" in solver_upper or _check_mkl_runtime()):
+        flags["cflags"] += " -DSCALAPACK -DUSE_SCALAPACK_OPTIMIZED"
+        flags["configure_opts"] += " -DSCALAPACK"
 
-            if _check_mkl_runtime():
-                flags["cflags"] += " -DMKL_ILP64"
-                flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_intel_ilp64"
-                flags["environment"] += (
-                    " source ${MKLROOT}/bin/mklvars.sh intel64 ilp64"
-                )
+        if _check_mkl_runtime():
+            flags["cflags"] += " -DMKL_ILP64"
+            flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_intel_ilp64"
+            flags["environment"] += (
+                " source ${MKLROOT}/bin/mklvars.sh intel64 ilp64"
+            )
 
     if "MKL" in solver_upper:
         flags["cflags"] += " -DMKL_ILP64"

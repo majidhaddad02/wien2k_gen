@@ -16,10 +16,11 @@ Key features:
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Union
+from typing import Union
 
 from ..logging_config import get_logger
 
@@ -117,16 +118,12 @@ def atomic_write(
     finally:
         # Cleanup temporary file if rename didn't happen
         if fd is not None:
-            try:
+            with contextlib.suppress(OSError):
                 os.close(fd)
-            except OSError:
-                pass
         
         if tmp_path and os.path.exists(tmp_path):
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp_path)
-            except OSError:
-                pass
 
 
 # =============================================================================
@@ -145,7 +142,7 @@ def atomic_write_json(path: Union[str, Path], data: dict, indent: int = 2) -> bo
     )
 
 
-def atomic_write_list(path: Union[str, Path], lines: List[str], newline: str = "\n") -> bool:
+def atomic_write_list(path: Union[str, Path], lines: list[str], newline: str = "\n") -> bool:
     """
     Convenience function to write a list of lines atomically.
     """

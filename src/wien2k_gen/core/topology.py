@@ -21,7 +21,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 from ..logging_config import get_logger
 
@@ -50,7 +50,7 @@ class TopologyType(Enum):
 # BLACS Grid Factorization for ScaLAPACK/ELPA
 # =============================================================================
 
-def factorize_blacs_grid(total_ranks: int) -> Tuple[int, int]:
+def factorize_blacs_grid(total_ranks: int) -> tuple[int, int]:
     """
     Find the best p x q factorization of total_ranks with minimal |p - q| difference.
     Uses the algorithm from ScaLAPACK's pdlaset.f: start from sqrt(N), decrement p
@@ -116,7 +116,7 @@ def _nearest_factorizable(target: int) -> int:
     if _is_blacs_friendly(target):
         return target
 
-    sqrt_target = max(4, int(target ** 0.5))
+    max(4, int(target ** 0.5))
     # Search outward from sqrt(target) for BLACS-friendly candidates.
     # Two passes: first search larger values (prefer slight overshoot),
     # then smaller (fallback to undershoot).
@@ -130,7 +130,7 @@ def _nearest_factorizable(target: int) -> int:
     return target
 
 
-def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
+def adjust_for_blacs_grid(per_node_ranks: list[int]) -> list[int]:
     """
     Adjust per-node rank allocation to BLACS-friendly counts while preserving
     the total as closely as possible.
@@ -206,7 +206,7 @@ def adjust_for_blacs_grid(per_node_ranks: List[int]) -> List[int]:
     return adjusted
 
 
-def _post_validate_blacs(per_node_ranks: List[int]) -> List[int]:
+def _post_validate_blacs(per_node_ranks: list[int]) -> list[int]:  # noqa: C901
     """
     Post-validation pass: ensure every per-node count is BLACS-friendly.
     For any count that is prime (1D grid only), force it to the nearest
@@ -281,17 +281,17 @@ class NUMANode:
     """
     node_id: int
     socket_id: int = 0
-    core_ids: List[int] = field(default_factory=list)
+    core_ids: list[int] = field(default_factory=list)
     memory_mb: int = 0
-    distance_to: Dict[int, int] = field(default_factory=dict)
+    distance_to: dict[int, int] = field(default_factory=dict)
     l3_cache_mb: float = 0.0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize NUMANode to JSON-compatible dictionary."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'NUMANode':
+    def from_dict(cls, data: dict[str, Any]) -> 'NUMANode':
         """Reconstruct NUMANode from dictionary data."""
         return cls(**data)
 
@@ -318,11 +318,11 @@ class GPUInfo:
     pci_bus: str = ""
     numa_affinity: int = -1
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'GPUInfo':
+    def from_dict(cls, data: dict[str, Any]) -> 'GPUInfo':
         return cls(**data)
 
 
@@ -337,7 +337,7 @@ class NodeSpec:
     logical_cores: int
     sockets: int
     cores_per_socket: int = 0
-    numa_nodes: List[NUMANode] = field(default_factory=list)
+    numa_nodes: list[NUMANode] = field(default_factory=list)
     memory_total_mb: int = 0
     memory_bandwidth_gb_s: float = 0.0
     network_type: str = "unknown"
@@ -345,7 +345,7 @@ class NodeSpec:
     network_latency_us: float = 0.0
     cpu_arch: str = "unknown"
     cpu_microarch: str = "unknown"
-    gpu_info: List[GPUInfo] = field(default_factory=list)
+    gpu_info: list[GPUInfo] = field(default_factory=list)
     gpus_available: int = 0
 
     def __post_init__(self):
@@ -359,7 +359,7 @@ class NodeSpec:
         if self.logical_cores < self.physical_cores:
             self.logical_cores = self.physical_cores
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize NodeSpec recursively."""
         data = asdict(self)
         data['numa_nodes'] = [n.to_dict() for n in self.numa_nodes]
@@ -367,7 +367,7 @@ class NodeSpec:
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'NodeSpec':
+    def from_dict(cls, data: dict[str, Any]) -> 'NodeSpec':
         """Reconstruct NodeSpec from dictionary data."""
         if 'numa_nodes' in data:
             data['numa_nodes'] = [NUMANode.from_dict(n) for n in data['numa_nodes']]
@@ -397,15 +397,15 @@ class Topology:
     Supports homogeneous and heterogeneous clusters, NUMA/socket/core hierarchy,
     network topology awareness, and scheduler-specific hint propagation.
     """
-    nodes: List[str] = field(default_factory=list)
-    cores_per_node: List[int] = field(default_factory=list)
+    nodes: list[str] = field(default_factory=list)
+    cores_per_node: list[int] = field(default_factory=list)
     env_type: str = "unknown"
     total_cores: int = 0
-    node_specs: Dict[str, NodeSpec] = field(default_factory=dict)
-    memory_per_node: List[int] = field(default_factory=list)
-    network_topology: Optional[Dict[str, Any]] = None
+    node_specs: dict[str, NodeSpec] = field(default_factory=dict)
+    memory_per_node: list[int] = field(default_factory=list)
+    network_topology: Optional[dict[str, Any]] = None
     heterogeneous: bool = False
-    scheduler_hints: Dict[str, Any] = field(default_factory=dict)
+    scheduler_hints: dict[str, Any] = field(default_factory=dict)
     gpu_topology: Optional['GPUTopology'] = None
 
     def __post_init__(self):
@@ -473,7 +473,7 @@ class Topology:
         try:
             return self.cores_per_node[self.nodes.index(node_name)]
         except ValueError:
-            raise KeyError(f"Node '{node_name}' not found in topology.")
+            raise KeyError(f"Node '{node_name}' not found in topology.") from None
 
     def get_memory_for_node(self, node_name: str) -> Optional[int]:
         """Retrieve allocated memory (MB) for a specific node, if known."""
@@ -515,7 +515,7 @@ class Topology:
 
     def split_load_balanced(
         self, total_ranks: int, threads_per_rank: int = 1
-    ) -> List[int]:
+    ) -> list[int]:
         """
         Distribute MPI ranks across NUMA nodes using greedy water-filling,
         then adjust per-node counts to BLACS-friendly numbers for optimal
@@ -567,9 +567,9 @@ class Topology:
         )
         return per_node
 
-    def get_optimal_mpi_distribution(
+    def get_optimal_mpi_distribution(  # noqa: C901
         self, total_ranks: int, threads_per_rank: int = 1, parallelization_mode: str = "cyclic"
-    ) -> Dict[str, List[int]]:
+    ) -> dict[str, list[int]]:
         """
         Distribute MPI ranks across nodes respecting core limits and preventing oversubscription.
         
@@ -615,7 +615,7 @@ class Topology:
                         break
             # Residual: assign any remaining ranks via round-robin
             while rank < total_ranks:
-                for i, node in enumerate(self.nodes):
+                for _i, node in enumerate(self.nodes):
                     if rank >= total_ranks:
                         break
                     distribution[node].append(rank)
@@ -623,7 +623,7 @@ class Topology:
         else:
             # Cyclic distribution: round-robin across nodes
             while rank < total_ranks:
-                for i, node in enumerate(self.nodes):
+                for _i, node in enumerate(self.nodes):
                     if rank >= total_ranks:
                         break
                     distribution[node].append(rank)
@@ -670,7 +670,7 @@ class Topology:
         cmd_parts.extend(["-n", str(total_ranks), "--"])
         return " ".join(cmd_parts)
 
-    def detect_topology_type(self) -> TopologyType:
+    def detect_topology_type(self) -> TopologyType:  # noqa: C901
         """
         Detect which network topology the cluster uses.
 
@@ -713,7 +713,7 @@ class Topology:
                 return TopologyType.DRAGONFLY
 
         if self.nodes:
-            name_groups: Dict[str, List[str]] = {}
+            name_groups: dict[str, list[str]] = {}
             for node in self.nodes:
                 prefix = re.sub(r"\d+$", "", node) if "re" in dir() else node.rsplit("-", 1)[0]
                 name_groups.setdefault(prefix, []).append(node)
@@ -726,9 +726,9 @@ class Topology:
 
         return TopologyType.UNKNOWN
 
-    def get_optimal_placement(
+    def get_optimal_placement(  # noqa: C901
         self, nranks: int, mode: str = "kpoint"
-    ) -> List[Tuple[str, int]]:
+    ) -> list[tuple[str, int]]:
         """
         Compute optimal node placement based on detected network topology
         and the number of MPI ranks.
@@ -742,12 +742,12 @@ class Topology:
         Returns list of (node_name, cores_assigned) tuples.
         """
         topo_type = self.detect_topology_type()
-        placement: List[Tuple[str, int]] = []
+        placement: list[tuple[str, int]] = []
 
         if not self.nodes or nranks <= 0:
             return placement
 
-        total_cores_available = sum(self.cores_per_node)
+        sum(self.cores_per_node)
 
         if topo_type == TopologyType.FAT_TREE:
             ranks_remaining = nranks
@@ -786,7 +786,7 @@ class Topology:
 
         return placement
 
-    def get_mpi_binding_hints(self) -> Dict[str, str]:
+    def get_mpi_binding_hints(self) -> dict[str, str]:
         """
         Return MPI binding hints appropriate for the detected network topology.
 
@@ -809,7 +809,7 @@ class Topology:
             Hager & Wellein (2010), "Introduction to HPC", CRC Press, §7.4-7.6
         """
         topo_type = self.detect_topology_type()
-        hints: Dict[str, str] = {}
+        hints: dict[str, str] = {}
 
         if topo_type == TopologyType.FAT_TREE:
             hints["openmpi"] = "--map-by ppr:N:node --bind-to core"
@@ -845,7 +845,7 @@ class Topology:
     # Serialization & I/O Methods
     # =============================================================================
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert topology to JSON-serializable dictionary."""
         data = asdict(self)
         data['node_specs'] = {k: v.to_dict() for k, v in self.node_specs.items()}
@@ -856,7 +856,7 @@ class Topology:
         return json.dumps(self.to_dict(), indent=indent)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Topology':
+    def from_dict(cls, data: dict[str, Any]) -> 'Topology':
         """Reconstruct Topology from dictionary data."""
         node_specs = {}
         for hostname, spec_data in data.get('node_specs', {}).items():
@@ -919,19 +919,19 @@ class GPUTopology:
     Captures all GPUs, per-node count, multi-GPU status, and NVLink availability
     for optimized GPU-aware DFT execution planning.
     """
-    gpus: List[GPUInfo] = field(default_factory=list)
+    gpus: list[GPUInfo] = field(default_factory=list)
     gpu_per_node: int = 0
     multi_gpu: bool = False
     nvlink_available: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize GPUTopology to JSON-compatible dictionary."""
         data = asdict(self)
         data['gpus'] = [g.to_dict() for g in self.gpus]
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'GPUTopology':
+    def from_dict(cls, data: dict[str, Any]) -> 'GPUTopology':
         """Reconstruct GPUTopology from dictionary data."""
         if 'gpus' in data:
             data['gpus'] = [GPUInfo.from_dict(g) for g in data['gpus']]
@@ -948,17 +948,14 @@ def detect_gpu_topology() -> GPUTopology:
     Returns:
         GPUTopology instance with populated GPU list and topology metadata.
     """
-    gpus: List[GPUInfo] = []
+    gpus: list[GPUInfo] = []
 
     nvidia_gpus = _detect_nvidia_gpus_topology()
     if nvidia_gpus:
         gpus = nvidia_gpus
     else:
         amd_gpus = _detect_amd_gpus_topology()
-        if amd_gpus:
-            gpus = amd_gpus
-        else:
-            gpus = _detect_sysfs_gpus_topology()
+        gpus = amd_gpus or _detect_sysfs_gpus_topology()
 
     gpu_per_node = len(gpus)
     multi_gpu = gpu_per_node > 1
@@ -975,7 +972,7 @@ def detect_gpu_topology() -> GPUTopology:
     )
 
 
-def _detect_nvidia_gpus_topology() -> List[GPUInfo]:
+def _detect_nvidia_gpus_topology() -> list[GPUInfo]:
     """Detect NVIDIA GPUs using nvidia-smi with topology fields."""
     import subprocess as _sp
     try:
@@ -994,7 +991,7 @@ def _detect_nvidia_gpus_topology() -> List[GPUInfo]:
             return []
 
         gpus = []
-        for line_num, line in enumerate(result.stdout.strip().split("\n")):
+        for _line_num, line in enumerate(result.stdout.strip().split("\n")):
             if not line.strip():
                 continue
             parts = [p.strip() for p in line.split(",")]
@@ -1036,7 +1033,7 @@ def _detect_nvidia_gpus_topology() -> List[GPUInfo]:
         return []
 
 
-def _detect_amd_gpus_topology() -> List[GPUInfo]:
+def _detect_amd_gpus_topology() -> list[GPUInfo]:
     """Detect AMD GPUs using rocm-smi."""
     import subprocess as _sp
     try:
@@ -1091,7 +1088,7 @@ def _detect_amd_gpus_topology() -> List[GPUInfo]:
         return []
 
 
-def _detect_sysfs_gpus_topology() -> List[GPUInfo]:
+def _detect_sysfs_gpus_topology() -> list[GPUInfo]:
     """Detect GPUs via sysfs PCI device enumeration as fallback."""
     gpus = []
     drm_path = Path("/sys/class/drm")

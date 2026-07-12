@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal, Optional
 
 # =============================================================================
 # Domain Enums (JSON-safe via string inheritance)
@@ -101,7 +101,7 @@ class StageConfig:
     io_strategy: Literal["local", "split", "collective"] = "local"
     vector_split_factor: Optional[int] = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -112,9 +112,9 @@ class ResourceSuggestion:
     recommended_total_cores: int = 1
     omp_threads_per_rank: int = 1
     mpi_ranks_per_node: int = 1
-    cores_per_node: List[int] = field(default_factory=list)
+    cores_per_node: list[int] = field(default_factory=list)
     vector_split_active: bool = False
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     reason: str = ""
     confidence: float = 1.0
     estimated_memory_gb: Optional[float] = None
@@ -122,12 +122,12 @@ class ResourceSuggestion:
     lapw1_cfg: StageConfig = field(default_factory=StageConfig)
     lapw2_cfg: StageConfig = field(default_factory=StageConfig)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["mode"] = self.mode.value  # Convert Enum to string for JSON
         return d
 
-    def validate_memory(self, topo_memory_limit_mb: Optional[float] = None) -> List[str]:
+    def validate_memory(self, topo_memory_limit_mb: Optional[float] = None) -> list[str]:
         """
         Validate memory allocation against scheduler/hardware limits.
         Note: Accepts limit as argument to avoid circular imports with core.hardware
@@ -194,30 +194,30 @@ class Wien2kFlags:
         if self.has_forces:
             flags.append("-fc")
 
-        return " ".join([cmd] + flags)
+        return " ".join([cmd, *flags])
 
 
 @dataclass(frozen=True)
 class TopologyData:
     """Hardware & scheduler topology container. Immutable for thread-safety."""
-    nodes: List[str] = field(default_factory=list)
-    cores_per_node: List[int] = field(default_factory=list)
+    nodes: list[str] = field(default_factory=list)
+    cores_per_node: list[int] = field(default_factory=list)
     env_type: str = "local"
     total_cores: int = 0
-    scheduler_hints: Dict[str, Any] = field(default_factory=dict)
+    scheduler_hints: dict[str, Any] = field(default_factory=dict)
     heterogeneous: bool = False
-    memory_per_node: List[int] = field(default_factory=list)
+    memory_per_node: list[int] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.heterogeneous and self.cores_per_node:
             is_het = len(set(self.cores_per_node)) > 1
             object.__setattr__(self, "heterogeneous", is_het)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TopologyData":
+    def from_dict(cls, data: dict[str, Any]) -> "TopologyData":
         """Reconstruct from dictionary with safe fallbacks."""
         valid = {f.name for f in fields(cls)}
         return cls(**{k: v for k, v in data.items() if k in valid})
@@ -229,15 +229,15 @@ class PipelineResult:
     success: bool = False
     config_path: Optional[str] = None
     config_content: Optional[str] = None
-    validation_errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    validation_errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     dry_run_content: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def is_valid(self) -> bool:
         return self.success and not self.validation_errors
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -271,7 +271,7 @@ class SubmissionConfig:
     preemption_grace_sec: int = 60
     dry_run: bool = False
 
-    def to_slurm_directives(self) -> Dict[str, Any]:
+    def to_slurm_directives(self) -> dict[str, Any]:
         """Convert to submit/slurm.py compatible directive dictionary."""
         return {k: v for k, v in asdict(self).items() if k not in ("dry_run", "preemption_grace_sec")}
 
@@ -291,10 +291,10 @@ class BenchmarkResult:
     job_id: Optional[int] = None
     log_path: Optional[str] = None
     error_message: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["backend"] = self.backend.value
         d["mode"] = self.mode.value
@@ -327,7 +327,7 @@ def to_serializable(obj: Any) -> Any:
     return str(obj)
 
 
-def deep_merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+def deep_merge_configs(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """
     Deep-merge two configuration dictionaries with last-write-wins semantics.
     Preserves nested structures and avoids shallow-copy mutation bugs.
@@ -348,8 +348,8 @@ def validate_enum_field(value: Any, enum_cls: type, field_name: str) -> Enum:
     """
     try:
         return value if isinstance(value, enum_cls) else enum_cls(value)
-    except ValueError:
-        raise ValueError(f"Invalid '{field_name}': expected {enum_cls.__name__}, got '{value}'")
+    except ValueError as e:
+        raise ValueError(f"Invalid '{field_name}': expected {enum_cls.__name__}, got '{value}'") from e
 
 
 # =============================================================================

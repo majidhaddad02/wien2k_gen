@@ -14,6 +14,7 @@ All documentation and inline comments are in English per project standards.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import math
@@ -21,12 +22,13 @@ import os
 import platform
 import signal
 import statistics
+import subprocess
 import threading
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from ..core.topology import Topology
 
@@ -48,7 +50,7 @@ def _get_current_backend():
         _get_current_backend_fn = _gcb
     return _get_current_backend_fn()
 
-from ..core.hardware import (
+from ..core.hardware import (  # noqa: E402
     calculate_peak_fp64_gflops,
     get_cpu_architecture,
     get_interconnect_info,
@@ -56,9 +58,9 @@ from ..core.hardware import (
     get_numa_node_count,
     get_total_mem_kb,
 )
-from ..logging_config import get_logger
-from ..utils.atomic_write import atomic_write
-from ..utils.filelock import FileLock
+from ..logging_config import get_logger  # noqa: E402
+from ..utils.atomic_write import atomic_write  # noqa: E402
+from ..utils.filelock import FileLock  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -72,7 +74,7 @@ class ProfileResult:
     Structured result of profiling a single configuration.
     Includes statistical metrics, reliability assessment, and hardware context.
     """
-    config: Dict[str, Any]
+    config: dict[str, Any]
     mean_time_sec: float
     std_time_sec: float
     min_time_sec: float
@@ -103,7 +105,7 @@ class ProfileResult:
         cv = self.std_time_sec / self.mean_time_sec
         return cv <= max_stdev_ratio
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
@@ -114,15 +116,15 @@ class ProfilingReport:
     Comprehensive report of profiling session.
     Aggregates results from multiple candidate configurations with recommendations.
     """
-    best_config: Optional[Dict[str, Any]]
+    best_config: Optional[dict[str, Any]]
     best_time_sec: float
-    all_results: List[ProfileResult]
+    all_results: list[ProfileResult]
     total_time_sec: float
     candidates_tested: int
     hardware_signature: str
     problem_signature: str
     interconnect_type: str
-    recommendations: List[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
 
     def to_json(self, indent: int = 2) -> str:
         """Serialize report to formatted JSON string."""
@@ -200,7 +202,7 @@ def _estimate_memory_footprint_gb(
     )
 
 
-def _apply_interconnect_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+def _apply_interconnect_env(env: Optional[dict[str, str]] = None) -> dict[str, str]:
     """
     Inject optimal MPI/UCX environment variables based on detected interconnect.
     Crucial for accurate benchmarking on heterogeneous HPC networks.
@@ -242,7 +244,7 @@ def _get_memory_limit_mb() -> int:
 # =============================================================================
 
 @asynccontextmanager
-async def managed_process(cmd: List[str], env: Optional[Dict[str, str]] = None):
+async def managed_process(cmd: list[str], env: Optional[dict[str, str]] = None):
     """
     Context manager for subprocess execution with guaranteed, safe cleanup.
     Features:
@@ -287,7 +289,7 @@ class AutoProfiler:
     def __init__(
         self,
         topo: Topology,
-        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        progress_callback: Optional[Callable[[dict[str, Any]], None]] = None
     ):
         self.topo = topo
         self.progress_callback = progress_callback
@@ -336,9 +338,9 @@ class AutoProfiler:
             pass
         return 0
 
-    async def _run_short_calculation(
+    async def _run_short_calculation(  # noqa: C901
         self,
-        config: Dict[str, Any], 
+        config: dict[str, Any], 
         n_runs: int = 3
     ) -> ProfileResult:
         """
@@ -375,7 +377,7 @@ class AutoProfiler:
             params.get("atoms", 10), params.get("is_soc", False), params.get("is_hybrid", False)
         ) * 1024.0
 
-        times: List[float] = []
+        times: list[float] = []
         successes = 0
         peak_memory = 0
 
@@ -388,7 +390,7 @@ class AutoProfiler:
                 break
 
             start = time.monotonic()
-            mem_samples: List[int] = []
+            mem_samples: list[int] = []
 
             try:
                 async with managed_process(cmd, env=self._interconnect_env) as proc:
@@ -478,7 +480,7 @@ class AutoProfiler:
 
     async def profile_candidates(
         self,
-        candidates: List[Dict[str, Any]],
+        candidates: list[dict[str, Any]],
         max_time: float = 180.0,
         min_runs: int = 3,
         require_reliable: bool = True
@@ -489,7 +491,7 @@ class AutoProfiler:
         self._total_configs = len(candidates)
         self._current_config_idx = 0
         start_session = time.monotonic()
-        results: List[ProfileResult] = []
+        results: list[ProfileResult] = []
 
         logger.info(f"Starting profiling session: {len(candidates)} candidates, max {max_time:.0f}s")
 
@@ -532,7 +534,7 @@ class AutoProfiler:
         best = min(valid_results, key=lambda r: r.mean_time_sec) if valid_results else None
         ic_info = get_interconnect_info()
 
-        recommendations: List[str] = []
+        recommendations: list[str] = []
         if best:
             if best.std_time_sec / max(0.01, best.mean_time_sec) > 0.25:
                 recommendations.append("High variance detected. Consider increasing min_runs or checking I/O contention.")
@@ -558,10 +560,10 @@ class AutoProfiler:
 # Public API Functions
 # =============================================================================
 
-async def profile_and_select_async(
+async def profile_and_select_async(  # noqa: C901
     topo: Topology,
     max_time: float = 180.0,
-    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None
 ) -> ProfilingReport:
     """
     Async orchestrator: generate candidates, profile, cache, return best.
@@ -593,7 +595,7 @@ async def profile_and_select_async(
             logger.debug(f"Cache read skipped: {e}")
 
     # Generate candidates with memory filtering
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
     base_params = backend.detect_problem_size()
     total_mem_mb = get_total_mem_kb()
     job_limit = get_job_memory_limit_mb()
@@ -650,7 +652,7 @@ async def profile_and_select_async(
 def profile_and_select(
     topo: Topology,
     max_time: float = 180.0,
-    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    progress_callback: Optional[Callable[[dict[str, Any]], None]] = None
 ) -> ProfilingReport:
     """Synchronous wrapper for CLI/UI integration."""
     loop = asyncio.new_event_loop()
@@ -678,7 +680,5 @@ def setup_profiling_signals(profiler: AutoProfiler) -> None:
     # Register for main thread only
     if threading.current_thread() is threading.main_thread():
         for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGUSR1):
-            try:
+            with contextlib.suppress(ValueError, OSError):
                 signal.signal(sig, _handler)
-            except (ValueError, OSError):
-                pass  # Ignore if not in main thread or restricted env

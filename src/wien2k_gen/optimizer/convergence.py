@@ -15,13 +15,14 @@ All documentation and inline comments are in English per project standards.
 import dataclasses
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional, Union
 
 from ..core.constants import RYDBERG_TO_EV
 
@@ -47,11 +48,11 @@ class ConvergenceResult:
     stdout: str
     stderr: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConvergenceResult":
+    def from_dict(cls, data: dict[str, Any]) -> "ConvergenceResult":
         return cls(**data)
 
 
@@ -74,10 +75,10 @@ def _detect_progress_bar() -> Any:
 
 
 def _run_wien2k_command(
-    cmd: Union[str, List[str]],
+    cmd: Union[str, list[str]],
     cwd: Union[str, Path],
     timeout: Optional[float] = None,
-) -> Tuple[int, str, str]:
+) -> tuple[int, str, str]:
     """
     Execute a WIEN2k command in the given working directory.
 
@@ -95,10 +96,7 @@ def _run_wien2k_command(
     tuple
         (returncode, stdout, stderr).
     """
-    if isinstance(cmd, str):
-        cmd_list = shlex.split(cmd)
-    else:
-        cmd_list = list(cmd)
+    cmd_list = shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
 
     try:
         result = subprocess.run(
@@ -120,7 +118,7 @@ def _run_wien2k_command(
         return -1, "", str(exc)
 
 
-def _parse_total_energy(lines: List[str]) -> float:
+def _parse_total_energy(lines: list[str]) -> float:
     """
     Extract total energy from WIEN2k output lines.
 
@@ -150,7 +148,7 @@ def _parse_total_energy(lines: List[str]) -> float:
     return energy_ry
 
 
-def _extract_iterations(lines: List[str]) -> int:
+def _extract_iterations(lines: list[str]) -> int:
     """Count SCF iterations from output."""
     count = 0
     for line in lines:
@@ -159,7 +157,7 @@ def _extract_iterations(lines: List[str]) -> int:
     return count
 
 
-def _find_wien2k_commands(wien2k_cmd: Dict[str, str]) -> Dict[str, str]:
+def _find_wien2k_commands(wien2k_cmd: dict[str, str]) -> dict[str, str]:
     """
     Resolve WIEN2k command paths from user-supplied mapping.
 
@@ -174,7 +172,7 @@ def _find_wien2k_commands(wien2k_cmd: Dict[str, str]) -> Dict[str, str]:
     dict
         Resolved command dictionary with absolute paths.
     """
-    resolved: Dict[str, str] = {}
+    resolved: dict[str, str] = {}
     for name, cmd in wien2k_cmd.items():
         if os.path.isabs(cmd):
             resolved[name] = cmd
@@ -184,7 +182,7 @@ def _find_wien2k_commands(wien2k_cmd: Dict[str, str]) -> Dict[str, str]:
     return resolved
 
 
-def _modify_incar(incar_path: Path, updates: Dict[str, str]) -> List[str]:
+def _modify_incar(incar_path: Path, updates: dict[str, str]) -> list[str]:
     """
     Modify values in a WIEN2k case.in1 file.
 
@@ -200,14 +198,14 @@ def _modify_incar(incar_path: Path, updates: Dict[str, str]) -> List[str]:
     list[str]
         Updated lines of the file.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     if incar_path.exists():
         with open(incar_path) as fh:
             lines = fh.readlines()
     else:
         return lines
 
-    new_lines: List[str] = []
+    new_lines: list[str] = []
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -253,14 +251,14 @@ def _modify_klist(klist_path: Path, nx: int, ny: int, nz: int) -> None:
         fh.writelines(lines)
 
 
-def run_kpoint_convergence(
+def run_kpoint_convergence(  # noqa: C901
     base_case: str,
-    kpoint_grids: List[Tuple[int, int, int]],
-    wien2k_cmd: Dict[str, str],
+    kpoint_grids: list[tuple[int, int, int]],
+    wien2k_cmd: dict[str, str],
     base_path: Optional[str] = None,
     rkmax: float = 7.0,
     timeout_per_run: int = 3600,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run k-point convergence study by testing multiple k-point grids.
 
@@ -290,7 +288,7 @@ def run_kpoint_convergence(
     """
     cmds = _find_wien2k_commands(wien2k_cmd)
     base_dir = Path(base_path) if base_path else Path.cwd()
-    results: List[ConvergenceResult] = []
+    results: list[ConvergenceResult] = []
 
     progress_lib = _detect_progress_bar()
     bar_type = progress_lib[0]
@@ -314,7 +312,7 @@ def run_kpoint_convergence(
     prev_energy = None
 
     try:
-        for idx, (nx, ny, nz) in enumerate(kpoint_grids):
+        for _idx, (nx, ny, nz) in enumerate(kpoint_grids):
             # Create temporary work directory
             work_dir = Path(tempfile.mkdtemp(prefix=f"kpt_{nx}x{ny}x{nz}_"))
 
@@ -413,14 +411,14 @@ def run_kpoint_convergence(
     }
 
 
-def run_rkmax_convergence(
+def run_rkmax_convergence(  # noqa: C901
     base_case: str,
-    rkmax_values: List[float],
-    wien2k_cmd: Dict[str, str],
+    rkmax_values: list[float],
+    wien2k_cmd: dict[str, str],
     base_path: Optional[str] = None,
-    kpoints: Tuple[int, int, int] = (4, 4, 4),
+    kpoints: tuple[int, int, int] = (4, 4, 4),
     timeout_per_run: int = 3600,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Run RKmax convergence study.
 
@@ -449,7 +447,7 @@ def run_rkmax_convergence(
     """
     cmds = _find_wien2k_commands(wien2k_cmd)
     base_dir = Path(base_path) if base_path else Path.cwd()
-    results: List[ConvergenceResult] = []
+    results: list[ConvergenceResult] = []
 
     progress_lib = _detect_progress_bar()
     bar_type = progress_lib[0]
@@ -565,9 +563,9 @@ def run_rkmax_convergence(
 
 
 def find_converged_parameters(
-    convergence_data: Dict[str, Any],
+    convergence_data: dict[str, Any],
     tolerance: float = 1.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Determine the optimal (converged) parameters from convergence data.
 
@@ -613,7 +611,7 @@ def find_converged_parameters(
     }
 
 
-def generate_convergence_report(results: Dict[str, Any]) -> str:
+def generate_convergence_report(results: dict[str, Any]) -> str:
     """
     Generate a human-readable convergence report string.
 
@@ -627,7 +625,7 @@ def generate_convergence_report(results: Dict[str, Any]) -> str:
     str
         Formatted convergence report.
     """
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("=" * 72)
     lines.append("  WIEN2k Convergence Study Report")
     lines.append("=" * 72)
@@ -681,7 +679,7 @@ def generate_convergence_report(results: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def detect_scf_divergence(scf_content: str, energy_values: Optional[List[float]] = None) -> dict:
+def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]] = None) -> dict:  # noqa: C901
     """Detect SCF divergence and recommend automatic recovery actions.
 
     Divergence signatures:

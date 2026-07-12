@@ -1,5 +1,5 @@
 """
-VASP Backend – Production-Grade Configuration Generator for HPC Clusters.
+VASP Backend - Production-Grade Configuration Generator for HPC Clusters.
 Implements VASP 6.x specific logic for:
 • Parsing POSCAR/INCAR/KPOINTS to extract problem parameters & scaling metrics
 • Generating optimal KPAR/NCORE/LPLANE/SCALAPACK parallelization blocks
@@ -18,12 +18,14 @@ Key Improvements Applied:
 • Maintained and expanded code volume with safety layers, logging, and resiliency hooks.
 """
 
+import contextlib
 import datetime
 import math
+import os
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ..core.hardware import (
     get_job_memory_limit_mb,
@@ -55,7 +57,7 @@ class VaspBackend(Backend):
         """Extract VASP problem parameters from POSCAR, INCAR, and KPOINTS."""
         return self._detect_problem_size()
 
-    def generate_input(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Generate VASP INCAR parallelization block.
         Returns a formatted string ready to be appended to INCAR.
@@ -63,7 +65,7 @@ class VaspBackend(Backend):
         """
         return self._build_incar_parallel_block(topo, suggestion)
 
-    def get_execution_command(self, suggestion: Dict[str, Any]) -> str:
+    def get_execution_command(self, suggestion: dict[str, Any]) -> str:
         """
         Return dynamically constructed execution command.
         Auto-selects vasp_std, vasp_gam, or vasp_ncl based on problem characteristics.
@@ -87,13 +89,13 @@ class VaspBackend(Backend):
         # Construct launcher command
         if mode == "hybrid":
             ranks = max(1, total_cores // omp)
-            launcher = f"srun -n {ranks} -c {omp} --hint=nomultithread" if "slurm" in str(topo.env_type).lower() else f"mpirun -np {ranks}"
+            launcher = f"srun -n {ranks} -c {omp} --hint=nomultithread" if "SLURM_JOB_ID" in os.environ else f"mpirun -np {ranks}"
             return f"{launcher} {binary}"
         else:
-            launcher = f"srun -n {total_cores} --hint=nomultithread" if "slurm" in str(topo.env_type).lower() else f"mpirun -np {total_cores}"
+            launcher = f"srun -n {total_cores} --hint=nomultithread" if "SLURM_JOB_ID" in os.environ else f"mpirun -np {total_cores}"
             return f"{launcher} {binary}"
 
-    def validate_suggestion(self, suggestion: Dict[str, Any]) -> List[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate suggestion against VASP-specific mathematical constraints."""
         errors = []
         mode = suggestion.get("mode", "mpi")
@@ -104,8 +106,7 @@ class VaspBackend(Backend):
 
         # KPAR divisibility check
         kpar = suggestion.get("kpar", 1)
-        if kpar > 1 and nkpts > 0:
-            if nkpts % kpar != 0:
+        if kpar > 1 and nkpts > 0 and nkpts % kpar != 0:
                 errors.append(f"KPAR={kpar} does not divide NKPTS={nkpts}. VASP will crash or run inefficiently.")
 
         # NCORE divisibility check
@@ -125,7 +126,7 @@ class VaspBackend(Backend):
 
         return errors
 
-    def write_auxiliary_files(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """Write run_optimized.sh with environment setup and scheduler integration."""
         self._write_runner_script(topo, suggestion)
 
@@ -137,7 +138,7 @@ class VaspBackend(Backend):
         """Return default configuration filename for VASP."""
         return "INCAR"
 
-    def parse_output(self, log_path: Path) -> Dict[str, Any]:
+    def parse_output(self, log_path: Path) -> dict[str, Any]:
         """Parse VASP output files (OUTCAR/vasp.out) for convergence and timing."""
         if not log_path.exists():
             return {"exists": False, "converged": None, "errors": [], "timing": {}}
@@ -174,7 +175,7 @@ class VaspBackend(Backend):
     # VASP-Specific Optimization & Parsing Methods
     # =========================================================================
 
-    def _detect_problem_size(self) -> Dict[str, Any]:
+    def _detect_problem_size(self) -> dict[str, Any]:  # noqa: C901
         """
         Extract VASP problem parameters with robust fallbacks.
         Parses POSCAR (atoms), KPOINTS (grid), INCAR (flags).
@@ -197,7 +198,7 @@ class VaspBackend(Backend):
                         result["atoms"] = sum(int(x) for x in counts_line.split())
                     else:
                         # Fallback: count coordinate lines
-                        coord_lines = sum(1 for l in lines[8:] if len(l.split()) >= 3 and l[0].strip())
+                        coord_lines = sum(1 for line in lines[8:] if len(line.split()) >= 3 and line[0].strip())
                         result["atoms"] = max(1, coord_lines)
             except Exception as e:
                 logger.debug(f"POSCAR parsing failed: {e}")
@@ -207,7 +208,7 @@ class VaspBackend(Backend):
         if kpoints_files:
             try:
                 content = kpoints_files[0].read_text(encoding="utf-8", errors="replace")
-                lines = [l for l in content.splitlines() if l.strip() and not l.strip().startswith("!")]
+                lines = [line for line in content.splitlines() if line.strip() and not line.strip().startswith("!")]
                 if len(lines) >= 4:
                     grid_line = lines[2].strip()
                     parts = grid_line.split()
@@ -242,10 +243,8 @@ class VaspBackend(Backend):
                     elif key == "ISPIN" and val == "2":
                         result["is_spin"] = True
                     elif key == "ENCUT":
-                        try:
+                        with contextlib.suppress(ValueError):
                             result["encut"] = float(val)
-                        except ValueError:
-                            pass
                     elif key == "KGAMMA" and val.upper() in ["T", "TRUE", ".TRUE."]:
                         result["gamma_only"] = True
             except Exception as e:
@@ -258,7 +257,7 @@ class VaspBackend(Backend):
 
         return result
 
-    def _build_incar_parallel_block(self, topo: Topology, suggestion: Dict[str, Any]) -> str:
+    def _build_incar_parallel_block(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """
         Generate optimized INCAR parallelization directives.
         VASP 6.x strongly recommends KPAR and NCORE over legacy NPAR.
@@ -272,10 +271,7 @@ class VaspBackend(Backend):
 
         # Calculate optimal KPAR
         # KPAR must divide NKPTS and total MPI ranks
-        if mode == "hybrid":
-            mpi_ranks = max(1, total_cores // omp)
-        else:
-            mpi_ranks = total_cores
+        mpi_ranks = max(1, total_cores // omp) if mode == "hybrid" else total_cores
 
         # Find best KPAR: largest divisor of NKPTS that also divides MPI ranks
         kpar = 1
@@ -329,7 +325,7 @@ class VaspBackend(Backend):
 
         return "\n".join(lines)
 
-    def _write_runner_script(self, topo: Topology, suggestion: Dict[str, Any]) -> None:
+    def _write_runner_script(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """
         Write run_optimized.sh with environment setup, NUMA binding, and MPI configuration.
         Production features:

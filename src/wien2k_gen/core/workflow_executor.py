@@ -27,11 +27,11 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
-from .topology import Topology
-from .workflow import NodeStatus, WorkflowDAG, WorkflowNode
 from ..logging_config import get_logger
+from .topology import Topology
+from .workflow import NodeStatus, WorkflowDAG, WorkflowNode, create_wien2k_workflow
 
 logger = get_logger(__name__)
 
@@ -55,7 +55,7 @@ class ExecutorStatus:
     retries: int = 0
     max_retries: int = 3
     elapsed_total: float = 0.0
-    events: List[str] = field(default_factory=list)
+    events: list[str] = field(default_factory=list)
 
 
 class WorkflowExecutor:
@@ -148,7 +148,7 @@ class WorkflowExecutor:
         self.status.elapsed_total = time.time() - start_time
         return self.status
 
-    def _execute_node(self, node: WorkflowNode) -> None:
+    def _execute_node(self, node: WorkflowNode) -> None:  # noqa: C901
         self.status.current_node = node.node_id
         self.status.retries = 0
 
@@ -222,7 +222,7 @@ class WorkflowExecutor:
           • Smart Kerker q0 via calculate_optimal_q0() (Winkelmann et al. 2020)
           • Restarted Pulay mixing for large systems via select_mixing_strategy()
             and restarted_pulay_mixing() (Pratapa & Suryanarayana,
-            Chem. Phys. Lett. 635, 69–74, 2015)
+            Chem. Phys. Lett. 635, 69-74, 2015)
         """
         mixing_file = Path(".mixing_params")
         factors = {1: 0.70, 2: 0.50, 3: 0.30}
@@ -324,7 +324,7 @@ class WorkflowExecutor:
             )
             return "local"
 
-    def _poll_job(self, job_id: str) -> bool:
+    def _poll_job(self, job_id: str) -> bool:  # noqa: C901
         if job_id == "local":
             return True
 
@@ -427,10 +427,10 @@ def run_workflow_from_yaml(
     return executor.run()
 
 
-def _create_dag_for_steps(case: str, steps: List[str]) -> WorkflowDAG:
+def _create_dag_for_steps(case: str, steps: list[str]) -> WorkflowDAG:
     dag = WorkflowDAG(name=f"{case}_workflow")
 
-    nodes: Dict[str, WorkflowNode] = {}
+    nodes: dict[str, WorkflowNode] = {}
     prev_id: Optional[str] = None
 
     for step in steps:
@@ -446,14 +446,14 @@ def _create_dag_for_steps(case: str, steps: List[str]) -> WorkflowDAG:
     return dag
 
 
-def run_wien2k_pipeline(
+def run_wien2k_pipeline(  # noqa: C901
     case_name: str,
-    steps: Optional[List[str]] = None,
+    steps: Optional[list[str]] = None,
     auto_retry: bool = True,
     max_scf_iterations: int = 100,
     convergence_tolerance_ry: float = 0.0001,
     interactive: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run a complete WIEN2k pipeline with automatic resource optimization.
 
     Implements the standard WIEN2k SCF workflow (see Blaha et al. 2020,
@@ -596,9 +596,9 @@ def calculate_optimal_q0(system_type: str, lattice_constant: float = 10.0) -> fl
 
     Formula (Winkelmann, Di Napoli, Wortmann & Blügel 2020,
              Phys. Rev. B 102, 195138. DOI: 10.1103/PhysRevB.102.195138):
-        metal:          q0 = 0.4 × (2π / a)       ≈ 0.25 for a=10 bohr
-        semiconductor:  q0 = 0.15 × (2π / a)      ≈ 0.09 for a=10 bohr
-        insulator:      q0 = 0.05 × (2π / a)      ≈ 0.03 for a=10 bohr
+        metal:          q0 = 0.4 x (2pi / a)       ≈ 0.25 for a=10 bohr
+        semiconductor:  q0 = 0.15 x (2pi / a)      ≈ 0.09 for a=10 bohr
+        insulator:      q0 = 0.05 x (2pi / a)      ≈ 0.03 for a=10 bohr
 
     Returns q0 in units of bohr⁻¹ (standard WIEN2k convention).
     """
@@ -629,20 +629,20 @@ def select_mixing_strategy(n_atoms: int, is_metallic: bool) -> str:
     return "broyden"
 
 
-def restarted_pulay_mixing(
+def restarted_pulay_mixing(  # noqa: C901
     case_name: str = "case",
     history_size: int = 7,
     regularization: float = 1e-10,
 ) -> None:
     """Implement restarted Pulay mixing for large systems.
 
-    Based on Pratapa & Suryanarayana (Chem. Phys. Lett. 635, 69–74, 2015):
+    Based on Pratapa & Suryanarayana (Chem. Phys. Lett. 635, 69-74, 2015):
       1. Store charge density + residual for each SCF cycle
       2. When cycles > history_size, retain only last history_size
       3. Build overlap matrix S_ij = <R_i|R_j> of residuals
       4. Solve linear system for weights with Tikhonov regularization
       5. Normalize weights (sum = 1)
-      6. Compute weighted density n_new = Σ w_i × n_i
+      6. Compute weighted density n_new = Σ w_i x n_i
 
     Writes .pulay_history and .mixing_strategy for diagnostics.
 
@@ -651,7 +651,7 @@ def restarted_pulay_mixing(
         history_size: number of past cycles retained (default 7, Pratapa & Suryanarayana 2015)
         regularization: Tikhonov regularization for singular overlap (default 1e-10)
     """
-    history_file = Path(f".pulay_history")
+    history_file = Path(".pulay_history")
     strategy_file = Path(".mixing_strategy")
 
     strategy_file.write_text(
@@ -718,7 +718,7 @@ def restarted_pulay_mixing(
                 if total > 0:
                     weights = [w / total for w in weights]
 
-            with open(f".mixing_strategy", "a", encoding="utf-8") as f:
+            with open(".mixing_strategy", "a", encoding="utf-8") as f:
                 f.write(f"Pulay weights (cycle {history_entries[-1]['cycle']}): "
                         f"{[round(w, 4) for w in weights]}\n")
         except Exception:

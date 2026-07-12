@@ -26,7 +26,7 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ..logging_config import get_logger
 
@@ -82,16 +82,16 @@ class WorkflowNode:
     node_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     name: str = ""
     status: NodeStatus = NodeStatus.PENDING
-    start_time: Optional[float] = None
-    end_time: Optional[float] = None
-    input_files: List[str] = field(default_factory=list)
-    output_files: List[str] = field(default_factory=list)
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    parent_ids: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    start_time: float | None = None
+    end_time: float | None = None
+    input_files: list[str] = field(default_factory=list)
+    output_files: list[str] = field(default_factory=list)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    parent_ids: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Elapsed wall-clock seconds, or *None* if not yet finished."""
         if self.start_time is not None and self.end_time is not None:
             return self.end_time - self.start_time
@@ -102,14 +102,14 @@ class WorkflowNode:
         """A node is ready when it is *pending* (has not started yet)."""
         return self.status == NodeStatus.PENDING
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
         result = asdict(self)
         result["status"] = self.status.value
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> WorkflowNode:
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowNode:
         """Rehydrate a node from a dictionary (supports legacy fields)."""
         node = cls(
             node_id=data.get("node_id", ""),
@@ -154,22 +154,22 @@ class WorkflowDAG:
     name : str
         Human-readable label for the entire workflow.
     """
-    def __init__(self, workflow_id: Optional[str] = None, name: str = "") -> None:
+    def __init__(self, workflow_id: str | None = None, name: str = "") -> None:
         self.workflow_id: str = workflow_id or uuid.uuid4().hex
         self.name: str = name
-        self._nodes: Dict[str, WorkflowNode] = {}
-        self._children: Dict[str, List[str]] = defaultdict(list)
+        self._nodes: dict[str, WorkflowNode] = {}
+        self._children: dict[str, list[str]] = defaultdict(list)
 
     # ---- Node Management ----------------------------------------------------
 
     def add_node(
         self,
         name: str,
-        parameters: Optional[Dict[str, Any]] = None,
-        parents: Optional[List[str]] = None,
-        input_files: Optional[List[str]] = None,
-        output_files: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        parameters: dict[str, Any] | None = None,
+        parents: list[str] | None = None,
+        input_files: list[str] | None = None,
+        output_files: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """
         Register a new node in the DAG.
@@ -209,7 +209,7 @@ class WorkflowDAG:
         self,
         node_id: str,
         status: NodeStatus,
-        outputs: Optional[List[str]] = None,
+        outputs: list[str] | None = None,
     ) -> None:
         """
         Transition a node's status, optionally recording output files.
@@ -228,13 +228,13 @@ class WorkflowDAG:
             node.output_files = list(outputs)
         logger.debug("Node %s -> %s (duration=%.1fs)", node_id, status.value, node.duration or 0)
 
-    def get_ready_nodes(self) -> List[WorkflowNode]:
+    def get_ready_nodes(self) -> list[WorkflowNode]:
         """
         Return *pending* nodes whose upstream parents are all COMPLETED.
 
         Nodes with zero parents are immediately ready.
         """
-        ready: List[WorkflowNode] = []
+        ready: list[WorkflowNode] = []
         for node in self._nodes.values():
             if node.status != NodeStatus.PENDING:
                 continue
@@ -247,7 +247,7 @@ class WorkflowDAG:
 
     # ---- Topological Sort ---------------------------------------------------
 
-    def get_execution_order(self) -> List[str]:
+    def get_execution_order(self) -> list[str]:
         """
         Return node IDs in topological (Kahn) order.
 
@@ -256,11 +256,11 @@ class WorkflowDAG:
         ValueError
             If the graph contains a cycle.
         """
-        in_degree: Dict[str, int] = {nid: len(node.parent_ids) for nid, node in self._nodes.items()}
+        in_degree: dict[str, int] = {nid: len(node.parent_ids) for nid, node in self._nodes.items()}
         queue: deque[str] = deque(nid for nid, deg in in_degree.items() if deg == 0)
-        order: List[str] = []
+        order: list[str] = []
 
-        adj: Dict[str, List[str]] = defaultdict(list)
+        adj: dict[str, list[str]] = defaultdict(list)
         for nid, node in self._nodes.items():
             for pid in node.parent_ids:
                 adj[pid].append(nid)
@@ -280,7 +280,7 @@ class WorkflowDAG:
 
     # ---- Serialization ------------------------------------------------------
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize the entire DAG to a JSON-friendly dictionary."""
         return {
             "workflow_id": self.workflow_id,
@@ -289,7 +289,7 @@ class WorkflowDAG:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> WorkflowDAG:
+    def from_dict(cls, data: dict[str, Any]) -> WorkflowDAG:
         """Reconstruct a DAG from a serialized dictionary."""
         dag = cls(workflow_id=data.get("workflow_id"), name=data.get("name", ""))
         for node_data in data.get("nodes", []):
@@ -322,7 +322,7 @@ class WorkflowDAG:
 
     def _visualize_ascii(self) -> str:
         """ASCII tree representation of the DAG."""
-        lines: List[str] = [f"WorkflowDAG: {self.name} ({self.workflow_id})"]
+        lines: list[str] = [f"WorkflowDAG: {self.name} ({self.workflow_id})"]
         lines.append("-" * 60)
 
         root_ids = [nid for nid, node in self._nodes.items() if not node.parent_ids]
@@ -492,7 +492,7 @@ class WorkflowStore:
             logger.info("Deleted workflow %s", workflow_id[:8])
         return deleted
 
-    def list_workflows(self) -> List[Dict[str, Any]]:
+    def list_workflows(self) -> list[dict[str, Any]]:
         """
         Return summary metadata for every stored workflow.
 
@@ -505,7 +505,7 @@ class WorkflowStore:
         - completed_count
         - failed_count
         """
-        summaries: List[Dict[str, Any]] = []
+        summaries: list[dict[str, Any]] = []
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT workflow_id, name, created_at, updated_at, dag_json FROM workflows ORDER BY updated_at DESC"
@@ -529,7 +529,7 @@ class WorkflowStore:
 
     # ---- Statistics & Analytics ---------------------------------------------
 
-    def get_statistics(self, workflow_id: str) -> Dict[str, Any]:
+    def get_statistics(self, workflow_id: str) -> dict[str, Any]:
         """
         Compute aggregate statistics for a workflow.
 
@@ -541,13 +541,13 @@ class WorkflowStore:
         - max_duration_sec
         - max_duration_node (name of the slowest node)
         - success_rate (completed / total)
-        - bottlenecks (list of node names whose duration exceeds avg + 2σ)
+        - bottlenecks (list of node names whose duration exceeds avg + 2o)
         """
         dag = self.load_dag(workflow_id)
         nodes = list(dag.iter_nodes())
 
         counts = {s.value: 0 for s in NodeStatus}
-        durations: List[Tuple[str, float]] = []
+        durations: list[tuple[str, float]] = []
 
         for node in nodes:
             counts[node.status.value] += 1
@@ -591,8 +591,8 @@ class WorkflowStore:
 
 def create_wien2k_workflow(
     case_name: str = "case",
-    parameters: Optional[Dict[str, Any]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    parameters: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> WorkflowDAG:
     """
     Build the standard WIEN2k SCF pipeline:
@@ -666,10 +666,10 @@ def create_wien2k_workflow(
 
 
 def create_convergence_workflow(
-    kpoint_grids: List[Tuple[int, int, int]],
-    rkmax_values: List[float],
+    kpoint_grids: list[tuple[int, int, int]],
+    rkmax_values: list[float],
     case_name: str = "case",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: dict[str, Any] | None = None,
 ) -> WorkflowDAG:
     """
     Build a convergence-study DAG that independently varies k-point mesh
@@ -705,7 +705,7 @@ def create_convergence_workflow(
         metadata=meta,
     )
 
-    scf_ids: List[str] = []
+    scf_ids: list[str] = []
     for kgrid in kpoint_grids:
         for rk in rkmax_values:
             label = f"kpoint_{kgrid[0]}x{kgrid[1]}x{kgrid[2]}_rk{rk:.0f}".replace(".", "p")
@@ -737,8 +737,8 @@ def create_convergence_workflow(
 
 def create_band_structure_workflow(
     case_name: str = "case",
-    parameters: Optional[Dict[str, Any]] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    parameters: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> WorkflowDAG:
     """
     Build the standard WIEN2k band-structure pipeline:
@@ -801,7 +801,7 @@ def create_band_structure_workflow(
         metadata=meta,
     )
 
-    spaghetti_id = dag.add_node(
+    dag.add_node(
         name="spaghetti",
         parameters=params,
         parents=[lapw1_id],
@@ -834,7 +834,7 @@ def _status_icon(status: NodeStatus) -> str:
     }.get(status, "?")
 
 
-def _validate_parents_exist(parent_ids: List[str], existing: set) -> None:
+def _validate_parents_exist(parent_ids: list[str], existing: set) -> None:
     """Raise ValueError if any parent is not already in the DAG."""
     missing = set(parent_ids) - existing
     if missing:
@@ -844,7 +844,7 @@ def _validate_parents_exist(parent_ids: List[str], existing: set) -> None:
         )
 
 
-def _validate_node_exists(node_id: str, nodes: Dict[str, WorkflowNode]) -> None:
+def _validate_node_exists(node_id: str, nodes: dict[str, WorkflowNode]) -> None:
     """Raise KeyError if the node does not exist."""
     if node_id not in nodes:
         raise KeyError(f"Node '{node_id}' not found in the DAG.")

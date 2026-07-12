@@ -17,6 +17,7 @@ Key Features:
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -26,7 +27,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 from ..logging_config import get_logger
 
@@ -40,17 +41,17 @@ class DiagnosticReport(TypedDict, total=False):
     """Comprehensive diagnostic snapshot for cluster troubleshooting."""
     timestamp: float
     hostname: str
-    os_info: Dict[str, str]
-    python_env: Dict[str, str]
-    hardware: Dict[str, Any]
-    mpi_omp: Dict[str, Any]
-    libraries: Dict[str, bool]
-    environment: Dict[str, str]
-    filesystem: Dict[str, Any]
-    network: Dict[str, Any]
-    wien2k_specific: Dict[str, Any]
-    warnings: List[str]
-    critical_errors: List[str]
+    os_info: dict[str, str]
+    python_env: dict[str, str]
+    hardware: dict[str, Any]
+    mpi_omp: dict[str, Any]
+    libraries: dict[str, bool]
+    environment: dict[str, str]
+    filesystem: dict[str, Any]
+    network: dict[str, Any]
+    wien2k_specific: dict[str, Any]
+    warnings: list[str]
+    critical_errors: list[str]
 
 
 @dataclass
@@ -68,7 +69,7 @@ class DiagnosticConfig:
 # Safe Subprocess & Utility Helpers
 # =============================================================================
 
-def _run_cmd(cmd: Union[str, List[str]], timeout: int = 5, suppress_stderr: bool = True) -> Optional[str]:
+def _run_cmd(cmd: Union[str, list[str]], timeout: int = 5, suppress_stderr: bool = True) -> Optional[str]:
     """
     Safely execute shell command with timeout.
     Returns stdout on success, None on failure/timeout.
@@ -89,7 +90,7 @@ def _run_cmd(cmd: Union[str, List[str]], timeout: int = 5, suppress_stderr: bool
         return None
 
 
-def _parse_key_value(output: str, delimiter: str = ":") -> Dict[str, str]:
+def _parse_key_value(output: str, delimiter: str = ":") -> dict[str, str]:
     """Parse lscpu-style key-value output into dictionary."""
     mapping = {}
     for line in output.splitlines():
@@ -111,7 +112,7 @@ def _safe_int(val: Any, default: int = 0) -> int:
 # Diagnostic Collectors
 # =============================================================================
 
-def _detect_os_and_python() -> Dict[str, str]:
+def _detect_os_and_python() -> dict[str, str]:
     """Collect OS, kernel, architecture, and Python runtime info."""
     return {
         "os": platform.system(),
@@ -123,9 +124,9 @@ def _detect_os_and_python() -> Dict[str, str]:
     }
 
 
-def _detect_hardware() -> Dict[str, Any]:
+def _detect_hardware() -> dict[str, Any]:
     """Detect CPU topology, NUMA layout, and memory configuration."""
-    hw: Dict[str, Any] = {
+    hw: dict[str, Any] = {
         "cpu_model": "unknown",
         "cores_physical": 0,
         "cores_logical": 0,
@@ -151,29 +152,27 @@ def _detect_hardware() -> Dict[str, Any]:
     # NUMA nodes
     numa = _run_cmd("numactl --hardware")
     if numa:
-        nodes = [l.strip() for l in numa.splitlines() if l.strip().startswith("available:")]
+        nodes = [line.strip() for line in numa.splitlines() if line.strip().startswith("available:")]
         if nodes:
             hw["numa_nodes"] = _safe_int(nodes[0].split()[1], 1)
             
     # Memory
     mem = _run_cmd("grep MemTotal /proc/meminfo")
     if mem:
-        try:
+        with contextlib.suppress(Exception):
             hw["memory_gb"] = round(int(mem.split()[1]) / (1024 * 1024), 2)
-        except Exception:
-            pass
             
     return hw
 
 
-def _detect_mpi_omp() -> Dict[str, Any]:
+def _detect_mpi_omp() -> dict[str, Any]:
     """Detect MPI and OpenMP runtime environment."""
-    mpi: Dict[str, Any] = {
+    mpi: dict[str, Any] = {
         "vendor": "unknown",
         "version": "unknown",
         "launcher": "mpirun"
     }
-    omp: Dict[str, Any] = {
+    omp: dict[str, Any] = {
         "num_threads": os.getenv("OMP_NUM_THREADS", "1"),
         "affinity": os.getenv("OMP_PLACES", "unset")
     }
@@ -205,9 +204,9 @@ def _detect_mpi_omp() -> Dict[str, Any]:
     return {"mpi": mpi, "omp": omp}
 
 
-def _check_libraries() -> Dict[str, bool]:
+def _check_libraries() -> dict[str, bool]:
     """Check availability of critical HPC/DFT libraries."""
-    libs: Dict[str, bool] = {
+    libs: dict[str, bool] = {
         "mkl": False,
         "elpa": False,
         "openblas": False,
@@ -235,9 +234,9 @@ def _check_libraries() -> Dict[str, bool]:
     return libs
 
 
-def _check_filesystem_and_scratch() -> Dict[str, Any]:
+def _check_filesystem_and_scratch() -> dict[str, Any]:
     """Validate scratch directories, permissions, and disk space."""
-    fs: Dict[str, Any] = {
+    fs: dict[str, Any] = {
         "scratch_dir": None,
         "writable": False,
         "type": "unknown",
@@ -270,9 +269,9 @@ def _check_filesystem_and_scratch() -> Dict[str, Any]:
     return fs
 
 
-def _detect_network_interconnect() -> Dict[str, Any]:
+def _detect_network_interconnect() -> dict[str, Any]:
     """Detect network fabric type and basic performance hints."""
-    net: Dict[str, Any] = {
+    net: dict[str, Any] = {
         "type": "unknown",
         "provider": "unknown",
         "ib_devices": []
@@ -298,9 +297,9 @@ def _detect_network_interconnect() -> Dict[str, Any]:
     return net
 
 
-def _check_wien2k_environment() -> Dict[str, Any]:
+def _check_wien2k_environment() -> dict[str, Any]:
     """WIEN2k-specific checks: WIENROOT, binaries, parallel_options, case.* files."""
-    w2k: Dict[str, Any] = {
+    w2k: dict[str, Any] = {
         "wienroot": os.getenv("WIENROOT"),
         "binaries": [],
         "input_files": [],
@@ -329,7 +328,7 @@ def _check_wien2k_environment() -> Dict[str, Any]:
 # Aggregation & Report Generation
 # =============================================================================
 
-def _generate_warnings(report: DiagnosticReport) -> List[str]:
+def _generate_warnings(report: DiagnosticReport) -> list[str]:
     """Analyze report data and generate actionable warnings."""
     warnings = []
     hw = report.get("hardware", {})
@@ -371,7 +370,7 @@ def _generate_warnings(report: DiagnosticReport) -> List[str]:
     return warnings
 
 
-def _generate_critical_errors(report: DiagnosticReport) -> List[str]:
+def _generate_critical_errors(report: DiagnosticReport) -> list[str]:
     """Identify fatal configuration issues that prevent execution."""
     errors = []
     fs = report.get("filesystem", {})

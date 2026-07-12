@@ -1,14 +1,13 @@
 """Robustness tests — bad inputs, missing files, edge cases."""
 
-import os
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from wien2k_gen.core.case_parser import CaseFileParser, CaseData
+from wien2k_gen.core.case_parser import CaseData, CaseFileParser
 from wien2k_gen.core.topology import Topology
-from wien2k_gen.utils.validation import validate_machines, parse_machines_file
+from wien2k_gen.utils.validation import parse_machines_file
 
 
 class TestMissingFiles:
@@ -67,8 +66,9 @@ class TestEdgeCases:
 
     def test_negative_max_cores(self):
         """Negative max_cores should be treated like None (unlimited)."""
-        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
         import os as _os
+
+        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
         mock_env = {"WIENROOT": "/tmp"}
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(_os, "environ", mock_env)
@@ -100,8 +100,9 @@ class TestEdgeCases:
 
     def test_single_core_machine(self):
         topo = Topology(nodes=["n1"], cores_per_node=[1])
-        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
         import os as _os
+
+        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
         mock_env = {"WIENROOT": "/tmp"}
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(_os, "environ", mock_env)
@@ -151,14 +152,14 @@ class TestValidationRobustness:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / ".machines"
             p.write_text("")
-            config, warnings = parse_machines_file(p)
+            config, _warnings = parse_machines_file(p)
             assert config["nodes"] == []
 
     def test_junk_machines(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / ".machines"
             p.write_text("this is not a valid machines file\n!!!\n")
-            config, warnings = parse_machines_file(p)
+            config, _warnings = parse_machines_file(p)
             assert isinstance(config, dict)
 
     def test_valid_machines_parses(self):
@@ -172,7 +173,7 @@ class TestValidationRobustness:
 granularity:1
 extrafine:1
 """)
-            config, warnings = parse_machines_file(p)
+            config, _warnings = parse_machines_file(p)
             assert len(config["nodes"]) == 2
             assert config["kpar"] == 0
 
@@ -185,7 +186,7 @@ lapw0: localhost: 1
 1: localhost: 8
 granularity:1
 """)
-            config, warnings = parse_machines_file(p)
+            config, _warnings = parse_machines_file(p)
             assert len(config["nodes"]) == 1
 
 
@@ -194,7 +195,7 @@ class TestCLIGracefulDegradation:
 
     def test_import_without_rich(self):
         import sys
-        sys_modules_backup = dict(sys.modules)
+        dict(sys.modules)
         for mod in list(sys.modules.keys()):
             if mod.startswith("rich") or mod.startswith("textual"):
                 del sys.modules[mod]

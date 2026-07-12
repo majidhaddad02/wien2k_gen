@@ -1,5 +1,5 @@
 """
-Generic Configuration Builder – Orchestrates DFT backend configuration generation.
+Generic Configuration Builder - Orchestrates DFT backend configuration generation.
 Integrates hardware topology, resource suggestions, atomic file operations, and multi-backend validation.
 Designed for robust, exascale-ready WIEN2k and multi-code parallel execution setup.
 
@@ -18,7 +18,7 @@ import time
 import warnings
 from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional, Union
 
 from ..config import OUTPUT_FILE
 from ..logging_config import get_logger
@@ -63,13 +63,13 @@ except ImportError:
         recommended_total_cores: int = 1
         omp_threads_per_rank: int = 1
         mpi_ranks_per_node: int = 1
-        cores_per_node: List[int] = field(default_factory=list)
+        cores_per_node: list[int] = field(default_factory=list)
         vector_split_active: bool = False
-        warnings: List[str] = field(default_factory=list)
+        warnings: list[str] = field(default_factory=list)
         reason: str = ""
         confidence: float = 1.0
 
-        def to_dict(self) -> Dict[str, Any]:
+        def to_dict(self) -> dict[str, Any]:
             """Convert dataclass to dictionary for backend consumption."""
             return asdict(self)
 
@@ -84,8 +84,8 @@ class BuildResult:
     config_path: Optional[Path] = None
     config_content: Optional[str] = None
     error_message: Optional[str] = None
-    resource_estimate: Optional[Dict[str, Any]] = None
-    warnings: List[str] = field(default_factory=list)
+    resource_estimate: Optional[dict[str, Any]] = None
+    warnings: list[str] = field(default_factory=list)
     backup_path: Optional[Path] = None
     validation_passed: bool = False
     timestamp_ns: int = field(default_factory=lambda: 0, repr=False)
@@ -95,7 +95,7 @@ class BuildResult:
         if self.timestamp_ns == 0:
             self.timestamp_ns = time.time_ns()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize result for logging or UI consumption."""
         base = asdict(self)
         # Convert Path objects to strings for JSON compatibility
@@ -107,7 +107,7 @@ class BuildResult:
 # =============================================================================
 # Internal Helper Functions
 # =============================================================================
-def _normalize_suggestion(suggestion: Optional[Union[Dict[str, Any], ResourceSuggestion]]) -> Dict[str, Any]:
+def _normalize_suggestion(suggestion: Optional[Union[dict[str, Any], ResourceSuggestion]]) -> dict[str, Any]:
     """
     Safely normalize user or auto-generated suggestion into a flat dictionary.
     Preserves original keys while ensuring type compatibility.
@@ -163,7 +163,7 @@ def _rotate_backups(config_path: Path, max_retention: int = 3) -> Optional[Path]
         return None
 
 
-def _validate_suggestion_safety(suggestion: Dict[str, Any], topo: Topology) -> List[str]:
+def _validate_suggestion_safety(suggestion: dict[str, Any], topo: Topology) -> list[str]:
     """
     Perform pre-write sanity checks on resource suggestion to prevent invalid configurations.
     Catches common HPC misconfigurations before they reach the backend or file system.
@@ -184,7 +184,7 @@ def _validate_suggestion_safety(suggestion: Dict[str, Any], topo: Topology) -> L
     for c in topo.cores_per_node:
         if omp_threads * mpi_ranks > c:
             warnings_list.append(
-                f"Potential oversubscription: {omp_threads}×{mpi_ranks} > {c} physical cores on a node."
+                f"Potential oversubscription: {omp_threads}x{mpi_ranks} > {c} physical cores on a node."
             )
             break
             
@@ -214,10 +214,10 @@ def _get_config_filename(backend: Any, default_name: str = OUTPUT_FILE) -> Path:
 # =============================================================================
 # Main Build Orchestrator
 # =============================================================================
-def build_auto(
+def build_auto(  # noqa: C901
     topo: Topology,
     backup: bool = True,
-    suggestion: Optional[Union[Dict[str, Any], ResourceSuggestion]] = None,
+    suggestion: Optional[Union[dict[str, Any], ResourceSuggestion]] = None,
     dry_run: bool = False,
     validate: bool = True
 ) -> Union[BuildResult, str]:

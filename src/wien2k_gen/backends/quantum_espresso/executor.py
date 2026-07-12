@@ -1,5 +1,5 @@
 """
-executor.py – Quantum ESPRESSO Process Executor
+executor.py - Quantum ESPRESSO Process Executor
 Manages QE job execution with HPC-grade subprocess lifecycle control,
 real-time output streaming, signal-aware preemption handling, and resource cleanup.
 Production features:
@@ -18,7 +18,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict
 
 from ...core.hardware import get_interconnect_info
 from ...core.topology import Topology
@@ -39,7 +39,7 @@ class QEExecutionResult(TypedDict, total=False):
     stderr_path: Path
     cpu_time_sec: float
     wall_time_sec: float
-    errors: List[str]
+    errors: list[str]
     preemption_triggered: bool
 
 
@@ -66,7 +66,7 @@ def _build_mpi_launcher(topo: Topology, total_cores: int, omp_threads: int) -> s
 def _setup_execution_environment(
     omp_threads: int,
     scratch_dir: Optional[Path] = None
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Prepare process environment for QE execution.
     Injects OMP, MPI, MKL, UCX, and scratch variables.
@@ -131,7 +131,7 @@ def _create_scratch_directory() -> Optional[Path]:
     return None
 
 
-def execute_qe_calculation(
+def execute_qe_calculation(  # noqa: C901
     command: str,
     topo: Topology,
     omp_threads: int = 1,
@@ -157,7 +157,7 @@ def execute_qe_calculation(
     """
     start_time = time.monotonic()
     preemption_triggered = False
-    errors: List[str] = []
+    errors: list[str] = []
 
     # Prepare logs
     if not stdout_log:
@@ -191,71 +191,62 @@ def execute_qe_calculation(
 
     proc = None
     try:
-        # Open log files
-        stdout_fh = open(stdout_log, "w", encoding="utf-8")
-        stderr_fh = open(stderr_log, "w", encoding="utf-8")
+        with open(stdout_log, "w", encoding="utf-8") as stdout_fh, \
+             open(stderr_log, "w", encoding="utf-8") as stderr_fh:
 
-        logger.info(f"Starting QE execution: {command}")
-        logger.debug(f"Environment: OMP={omp_threads}, scratch={scratch_dir}")
+            logger.info(f"Starting QE execution: {command}")
+            logger.debug(f"Environment: OMP={omp_threads}, scratch={scratch_dir}")
 
-        # Start subprocess with process group isolation
-        proc = subprocess.Popen(
-            shlex.split(command),
-            shell=False,
-            env=env,
-            stdout=stdout_fh,
-            stderr=stderr_fh,
-            start_new_session=True,
-            cwd=os.getcwd()
-        )
+            # Start subprocess with process group isolation
+            proc = subprocess.Popen(
+                shlex.split(command),
+                shell=False,
+                env=env,
+                stdout=stdout_fh,
+                stderr=stderr_fh,
+                start_new_session=True,
+                cwd=os.getcwd()
+            )
 
-        # Poll loop with timeout
-        elapsed = 0.0
-        while proc.poll() is None:
-            if timeout_sec > 0:
-                elapsed = time.monotonic() - start_time
-                if elapsed >= timeout_sec:
-                    logger.warning(f"Timeout reached ({timeout_sec:.0f}s). Terminating...")
-                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                    time.sleep(2)
-                    if proc.poll() is None:
-                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    proc.wait()
-                    errors.append(f"Execution timeout after {timeout_sec:.0f}s")
-                    break
-            time.sleep(1.0)
+            # Poll loop with timeout
+            elapsed = 0.0
+            while proc.poll() is None:
+                if timeout_sec > 0:
+                    elapsed = time.monotonic() - start_time
+                    if elapsed >= timeout_sec:
+                        logger.warning(f"Timeout reached ({timeout_sec:.0f}s). Terminating...")
+                        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        time.sleep(2)
+                        if proc.poll() is None:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                        proc.wait()
+                        errors.append(f"Execution timeout after {timeout_sec:.0f}s")
+                        break
+                time.sleep(1.0)
 
-        exit_code = proc.returncode or 0
-        wall_time = time.monotonic() - start_time
+            exit_code = proc.returncode or 0
+            wall_time = time.monotonic() - start_time
 
-        # Close file handles
-        stdout_fh.close()
-        stderr_fh.close()
+            if exit_code == 0:
+                logger.info(f"QE execution completed successfully in {wall_time:.1f}s")
+            else:
+                errors.append(f"Process exited with code {exit_code}")
+                logger.error(f"QE execution failed with exit code {exit_code}")
 
-        if exit_code == 0:
-            logger.info(f"QE execution completed successfully in {wall_time:.1f}s")
-        else:
-            errors.append(f"Process exited with code {exit_code}")
-            logger.error(f"QE execution failed with exit code {exit_code}")
-
-        return {
-            "success": exit_code == 0,
-            "exit_code": exit_code,
-            "stdout_path": stdout_log,
-            "stderr_path": stderr_log,
-            "cpu_time_sec": wall_time,  # Approximation; parse from log for exact
-            "wall_time_sec": wall_time,
-            "errors": errors,
-            "preemption_triggered": preemption_triggered
-        }
+            return {
+                "success": exit_code == 0,
+                "exit_code": exit_code,
+                "stdout_path": stdout_log,
+                "stderr_path": stderr_log,
+                "cpu_time_sec": wall_time,  # Approximation; parse from log for exact
+                "wall_time_sec": wall_time,
+                "errors": errors,
+                "preemption_triggered": preemption_triggered
+            }
 
     except Exception as e:
         logger.error(f"Execution setup failed: {e}", exc_info=True)
         errors.append(f"Setup error: {e}")
-        if "stdout_fh" in locals() and stdout_fh:
-            stdout_fh.close()
-        if "stderr_fh" in locals() and stderr_fh:
-            stderr_fh.close()
         if proc and proc.poll() is None:
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)

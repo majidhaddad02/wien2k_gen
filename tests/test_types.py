@@ -6,7 +6,6 @@ References:
 - WIEN2k Usersguide, Sections 4.1-4.4.
 """
 
-import pytest
 from wien2k_gen.types import (
     CalculationType,
     ExecutionMode,

@@ -1,5 +1,5 @@
 """
-Wien2kGen – Production-Grade Parallel Configuration & HPC Job Dispatcher.
+Wien2kGen - Production-Grade Parallel Configuration & HPC Job Dispatcher.
 Automates WIEN2k, VASP, and Quantum ESPRESSO setup with topology-aware optimization,
 SLURM integration, benchmarking, and interactive TUI/CLI workflows.
 
@@ -18,13 +18,13 @@ __version__ = "0.1.0"
 __author__ = "HPC Workflow Team"
 __license__ = "MIT"
 
-from typing import Any, List
+from typing import Any
 
 # =============================================================================
 # Lazy Import & API Exposure (PEP 562)
 # =============================================================================
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> Any:  # noqa: C901
     """
     Lazy attribute resolution for fast startup & circular-import prevention.
     Enables `from wien2k_gen import launch_tui, get_config, Topology, etc.` 
@@ -156,23 +156,11 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     """
     Support IDE auto-completion & dir() introspection for lazy attributes.
     """
-    return list(globals().keys()) + [
-        "detect", "Topology", "suggest_optimal_resources", "recommend",
-        "build_auto", "build_mpi", "build_hybrid", "build_kpoint",
-        "get_backend", "set_backend", "list_backends", "get_current_backend",
-        "setup_scratch", "cleanup_scratch", "write_parallel_options",
-        "run_wizard", "run_sbatch_wizard", "launch_monitor",
-        "get_config", "load_config",
-        "PipelineResult", "ResourceSuggestion", "TopologyData",
-        "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
-        "CalculationType", "Wien2kVersion", "Wien2kFlags",
-        "ExecutionHistory", "BayesianOptimizer", "suggest_from_history",
-        "__version__"
-    ]
+    return [*list(globals().keys()), "detect", "Topology", "suggest_optimal_resources", "recommend", "build_auto", "build_mpi", "build_hybrid", "build_kpoint", "get_backend", "set_backend", "list_backends", "get_current_backend", "setup_scratch", "cleanup_scratch", "write_parallel_options", "run_wizard", "run_sbatch_wizard", "launch_monitor", "get_config", "load_config", "PipelineResult", "ResourceSuggestion", "TopologyData", "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget", "CalculationType", "Wien2kVersion", "Wien2kFlags", "ExecutionHistory", "BayesianOptimizer", "suggest_from_history", "__version__"]
 
 
 # =============================================================================
@@ -180,25 +168,46 @@ def __dir__() -> List[str]:
 # =============================================================================
 
 __all__ = [
-    "__version__",
-    # Core
-    "detect", "Topology",
-    # Optimization
-    "suggest_optimal_resources", "recommend",
-    "load_cached_suggestion", "save_cached_suggestion",
-    # Builders
-    "build_auto", "build_mpi", "build_hybrid", "build_kpoint",
-    # Backends
-    "get_backend", "set_backend", "list_backends", "get_current_backend",
-    # Utils
-    "setup_scratch", "cleanup_scratch", "write_parallel_options",
-    # Interactive
-    "run_wizard", "run_sbatch_wizard", "launch_tui",
-    # Config
-    "get_config", "load_config",
-    # Types
-    "PipelineResult", "ResourceSuggestion", "TopologyData",
-    "BackendCode", "ExecutionMode", "JobStatus", "OptimizationTarget",
+    "BackendCode",
+    "BayesianOptimizer",
     # History & Bayesian
-    "ExecutionHistory", "BayesianOptimizer", "suggest_from_history",
+    "ExecutionHistory",
+    "ExecutionMode",
+    "JobStatus",
+    "OptimizationTarget",
+    # Types
+    "PipelineResult",
+    "ResourceSuggestion",
+    "Topology",
+    "TopologyData",
+    "__version__",
+    # Builders
+    "build_auto",
+    "build_hybrid",
+    "build_kpoint",
+    "build_mpi",
+    "cleanup_scratch",
+    # Core
+    "detect",
+    # Backends
+    "get_backend",
+    # Config
+    "get_config",
+    "get_current_backend",
+    "launch_tui",
+    "list_backends",
+    "load_cached_suggestion",
+    "load_config",
+    "recommend",
+    "run_sbatch_wizard",
+    # Interactive
+    "run_wizard",
+    "save_cached_suggestion",
+    "set_backend",
+    # Utils
+    "setup_scratch",
+    "suggest_from_history",
+    # Optimization
+    "suggest_optimal_resources",
+    "write_parallel_options",
 ]

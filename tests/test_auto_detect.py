@@ -3,13 +3,14 @@ Production-Grade Tests for Backend Auto-Detection & Manager Integration.
 Covers file signature matching, priority resolution, conflict handling,
 missing input validation, and BackendManager singleton behavior.
 """
-import pytest
-from unittest.mock import patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from wien2k_gen.backend_manager import BackendManager
+from wien2k_gen.exceptions import MissingInputError
 from wien2k_gen.types import BackendCode
-from wien2k_gen.exceptions import MissingInputError, BackendError
 
 
 class TestAutoDetectSignatures:

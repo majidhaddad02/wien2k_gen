@@ -13,7 +13,7 @@ All comments and documentation are in English per project standards.
 import math
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Literal, Optional, TypedDict
 
 from ..core.hardware import (
     calculate_peak_fp64_gflops,
@@ -115,7 +115,7 @@ class ModeScore(TypedDict):
 # Empirical values based on WIEN2k, VASP, and QE benchmark data.
 # =============================================================================
 
-BACKEND_OPERATIONAL_INTENSITY: Dict[str, Dict[str, float]] = {
+BACKEND_OPERATIONAL_INTENSITY: dict[str, dict[str, float]] = {
     "wien2k": {
         "lapw0":      0.3,   # memory-bound, potential calculation
         "lapw1":      0.5,   # base OI, scales with nmat (exact diagonalization)
@@ -163,33 +163,33 @@ class ResourceSuggestion:
     mode: Literal["kpoint", "hybrid", "mpi"]
     recommended_total_cores: int
     recommended_nodes: int
-    cores_per_node: List[int]
-    mpi_ranks_per_node: List[int]
+    cores_per_node: list[int]
+    mpi_ranks_per_node: list[int]
     omp_threads_per_rank: int
     vector_split_active: bool
     vector_split_value: Optional[int]
     
     # Metadata
     reason: str
-    problem_params: Dict[str, Any]
+    problem_params: dict[str, Any]
     hardware_profile: HardwareProfile
-    warnings: List[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     estimated_time_minutes: Optional[float] = None
     estimated_memory_gb: Optional[float] = None
     confidence_score: float = 1.0
     max_efficient_cores: Optional[int] = None
-    saturation_data: Optional[Dict[str, Any]] = None
+    saturation_data: Optional[dict[str, Any]] = None
 
     # Stage-specific overrides
     lapw0_cfg: StageConfig = field(default_factory=StageConfig)
     lapw1_cfg: StageConfig = field(default_factory=StageConfig)
     lapw2_cfg: StageConfig = field(default_factory=StageConfig)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return asdict(self)
 
-    def validate_against_scheduler(self, topo: Topology) -> List[str]:
+    def validate_against_scheduler(self, topo: Topology) -> list[str]:
         """
         Check if suggestion is compatible with scheduler limits.
         Returns list of error messages (empty if valid).
@@ -262,14 +262,14 @@ def estimate_memory_footprint_gb(
     Charge density and LAPACK work arrays may be partially replicated.
 
     Components modeled:
-    • Hamiltonian matrix:  nmat² × 16B  (complex double)         → distributed
-    • Eigenvectors:        nmat × nbands × 16B                    → distributed
-    • Charge density:      empirical factor × nmat × atoms         → replicated
+    • Hamiltonian matrix:  nmat² x 16B  (complex double)         -> distributed
+    • Eigenvectors:        nmat x nbands x 16B                    -> distributed
+    • Charge density:      empirical factor x nmat x atoms         -> replicated
     • LAPACK work arrays:  ~50% of Hamiltonian (partially replicated)
-    • SOC multiplier:      2× for spinor wavefunctions
-    • Hybrid functional:   1.2× overhead
+    • SOC multiplier:      2x for spinor wavefunctions
+    • Hybrid functional:   1.2x overhead
     • RKMAX scaling:       ~RKMAX²
-    • Safety factor:       1.5× per-rank (down from 3× aggregate)
+    • Safety factor:       1.5x per-rank (down from 3x aggregate)
     """
     if nmat <= 0:
         return 2.0
@@ -288,7 +288,7 @@ def estimate_memory_footprint_gb(
     lapack_work_gb = 0.5 * hamiltonian_gb
 
     # Distribute matrix memory across MPI ranks
-    # ScaLAPACK block-cyclic: ~nmat²/(p×q) per rank. Use ranks for estimate.
+    # ScaLAPACK block-cyclic: ~nmat²/(pxq) per rank. Use ranks for estimate.
     distributed_share = max(1.0, float(ranks))
     distributed_gb = (hamiltonian_gb + eigenvector_gb) / distributed_share
     replicated_gb = (charge_density_gb + 0.2 * lapack_work_gb)  # 20% replicated
@@ -297,7 +297,7 @@ def estimate_memory_footprint_gb(
     rkmax_factor = max(1.0, (rkmax / 7.0) ** 2)
     soc_factor = 2.0 if is_soc else 1.0
     hybrid_factor = 1.2 if is_hybrid else 1.0
-    safety_factor = 1.5  # Per-rank safety (was 3.0× for aggregate estimate)
+    safety_factor = 1.5  # Per-rank safety (was 3.0x for aggregate estimate)
 
     total_gb = (distributed_gb + replicated_gb) * \
                rkmax_factor * soc_factor * hybrid_factor * safety_factor
@@ -318,8 +318,8 @@ def estimate_arithmetic_intensity(
     - lapw1 (Davidson diagonalization): OI = nmat / 32.0
       FLOPs ~ O(nmat³), data movement ~ O(nmat²), OI ~ nmat/const.
       Hager & Wellein (2010), Kresse & Furthmüller (1996)
-    - lapw2 (vector ops): OI = 0.1 + nmat × 0.0001
-    - VASP electronic steps: OI = 0.25 + nmat × 0.00005
+    - lapw2 (vector ops): OI = 0.1 + nmat x 0.0001
+    - VASP electronic steps: OI = 0.25 + nmat x 0.00005
     - QE FFT: OI = 0.15 (constant)
     - Other kernels: lookup from BACKEND_OPERATIONAL_INTENSITY table
     """
@@ -340,10 +340,7 @@ def estimate_arithmetic_intensity(
         backend_table = BACKEND_OPERATIONAL_INTENSITY.get(backend_key, {})
         base_oi = backend_table.get(kernel_key, 0.1)
         # Apply light scaling if nmat is large and kernel might be diagonalization-like
-        if nmat > 5000 and base_oi <= 0.5:
-            oi = base_oi + nmat * 0.00005
-        else:
-            oi = base_oi
+        oi = base_oi + nmat * 5e-05 if nmat > 5000 and base_oi <= 0.5 else base_oi
 
     return round(oi, 6)
 
@@ -359,7 +356,7 @@ def roofline_crossover_analysis(
 
     Uses the classical Roofline model (Williams, Waterman & Patterson 2009):
     - Compute ceiling: peak FLOPs aggregated across all cores (GFLOPS)
-    - Memory ceiling: sustained memory bandwidth (GB/s) × 0.7 efficiency
+    - Memory ceiling: sustained memory bandwidth (GB/s) x 0.7 efficiency
     - Crossover OI = compute_ceiling / memory_ceiling (FLOPs/byte)
     - Memory-bound when OI < crossover_oi, compute-bound otherwise
     - Optimal cores derived from actual crossover ratio, not fixed fraction
@@ -399,18 +396,15 @@ def roofline_crossover_analysis(
     # Crossover OI: FLOPs/byte at the ridge point
     crossover_oi = compute_ceiling / max(1.0, memory_ceiling)
 
-    # Attainable performance: OI × bandwidth cap = max FLOPs before stalling
+    # Attainable performance: OI x bandwidth cap = max FLOPs before stalling
     attainable_flops = oi * memory_ceiling
 
     # Determine regime
-    if oi >= crossover_oi:
-        regime = "compute_bound"
-    else:
-        regime = "memory_bound"
+    regime = "compute_bound" if oi >= crossover_oi else "memory_bound"
 
     # Optimal core count at crossover point
     if regime == "memory_bound":
-        # Memory saturation: optimal cores = cores × (oi / crossover_oi) × 0.9
+        # Memory saturation: optimal cores = cores x (oi / crossover_oi) x 0.9
         # At crossover OI, all cores are usable. Below it, fewer cores suffice.
         usage_fraction = max(0.1, min(1.0, (oi / max(0.001, crossover_oi)) * 0.9))
         optimal_cores = max(1, int(cores * usage_fraction))
@@ -486,14 +480,14 @@ def estimate_max_kp_cores_roofline(
     # Enforce practical guardrails
     return max(1, min(max_cores_from_roofline, cores_available, 128))
 
-def estimate_amdahl_saturation(
+def estimate_amdahl_saturation(  # noqa: C901
     kpoints: int,
     nmat: int,
     atoms: int,
     total_cores_available: int,
     num_nodes: int = 1,
     mode: str = "kpoint",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Estimate Amdahl's Law saturation point for WIEN2k parallel execution.
 
@@ -507,7 +501,7 @@ def estimate_amdahl_saturation(
 
     References:
     - Amdahl, G.M. (1967). "Validity of the single processor approach to achieving
-      large scale computing capabilities". AFIPS Conf. Proc. 30, 483–485.
+       large scale computing capabilities". AFIPS Conf. Proc. 30, 483-485.
     - Hager, G. & Wellein, G. (2010). "Introduction to HPC for Scientists and
       Engineers". CRC Press. §4.2 (Amdahl's Law), §5.3 (scaling limits).
     - Blaha, P. et al. (2020). J. Chem. Phys. 152, 074101 (WIEN2k Usersguide §4.5).
@@ -533,7 +527,7 @@ def estimate_amdahl_saturation(
 
     # Multi-node MPI communication overhead.
     # MPI collectives scale as O(log P) (Hager & Wellein 2010, §6.4).
-    # Empirical: ~0.05 per ×2 node doubling; capped at 0.35 serial fraction.
+    # Empirical: ~0.05 per x2 node doubling; capped at 0.35 serial fraction.
     if num_nodes > 1:
         import math as _math
         comm_overhead = 0.05 * _math.log2(num_nodes)
@@ -593,13 +587,13 @@ def estimate_amdahl_saturation(
     # Step 6: Saturation warnings
     # ----------------------------
     is_saturated = total_cores_available > max_efficient_cores * 1.5
-    warnings: List[str] = []
+    warnings: list[str] = []
 
     if total_cores_available >= max_efficient_cores * 2.0:
         warnings.append(
             f"SEVERE SATURATION: {total_cores_available} cores requested but only "
             f"~{max_efficient_cores} can be used efficiently (Amdahl serial fraction "
-            f"s={s:.2f}, max theoretical speedup ≈ {max_speedup_amdahl:.0f}×). "
+            f"s={s:.2f}, max theoretical speedup ~ {max_speedup_amdahl:.0f}x). "
             f"Extra cores waste resources with marginal speedup."
         )
     elif is_saturated:
@@ -637,7 +631,7 @@ def estimate_amdahl_saturation(
     }
 
 
-def distribute_cores_heterogeneous(total_cores: int, topo: Topology) -> List[int]:
+def distribute_cores_heterogeneous(total_cores: int, topo: Topology) -> list[int]:
     """
     Distribute cores across potentially heterogeneous nodes.
     Uses weighted allocation based on:
@@ -731,7 +725,7 @@ def _score_mode(
 # Main Optimization Function
 # =============================================================================
 
-def suggest_optimal_resources(
+def suggest_optimal_resources(  # noqa: C901
     topo: Topology,
     user_max_cores: Optional[int] = None,
     optimization_target: OptimizationTarget = OptimizationTarget.TIME
@@ -821,14 +815,14 @@ def suggest_optimal_resources(
 
     # Block-size rule for MPI fine-grain (ScaLAPACK efficiency)
     block_thresh = 1500
-    max_mpi_cores_per_kpoint = max(1, (nmat // block_thresh) ** 2) if nmat > 0 else total_cores_available
+    max(1, (nmat // block_thresh) ** 2) if nmat > 0 else total_cores_available
 
     # OpenMP scaling limit (architecture-dependent)
     omp_limit = 16 if hw_profile["mkl"] and "intel" in hw_profile["arch"] else 8
     max_omp_threads = min(get_physical_cores(), omp_limit)
 
     # === Multi-objective mode selection ===
-    mode_scores: Dict[str, ModeScore] = {}
+    mode_scores: dict[str, ModeScore] = {}
     for mode in ["kpoint", "hybrid", "mpi"]:
         mode_scores[mode] = _score_mode(
             mode=mode, nk=nk, nmat=nmat, total_cores=total_cores_available,
@@ -971,7 +965,7 @@ def suggest_optimal_resources(
         omp_threads_per_rank=t,
         vector_split_active=vector_split_active,
         vector_split_value=vector_split_value,
-        reason=f"{mode_reason} | Cores: {total_cores_used} ({r} ranks × {t} threads)",
+        reason=f"{mode_reason} | Cores: {total_cores_used} ({r} ranks x {t} threads)",
         problem_params=params,
         hardware_profile=hw_profile,
         warnings=warnings_list,
@@ -1017,7 +1011,7 @@ def suggest_optimal_resources(
     )
     return suggestion
 
-def recommend(topo: Topology, user_max_cores: Optional[int] = None) -> Dict[str, Any]:
+def recommend(topo: Topology, user_max_cores: Optional[int] = None) -> dict[str, Any]:
     """
     Wrapper for backward compatibility.
     Returns simplified dict for legacy code.
@@ -1065,7 +1059,7 @@ def get_optimization_report(
     # --- Roofline analysis for the most compute-intensive kernel ---
     roofline = roofline_crossover_analysis(hw, oi_lapw1, "wien2k_lapw1")
 
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("=" * 64)
     lines.append("  WIEN2kGEN OPTIMIZATION REPORT")
     lines.append("=" * 64)

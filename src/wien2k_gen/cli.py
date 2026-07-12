@@ -22,9 +22,8 @@ import shutil
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional, cast
 
 from rich.console import Console
 from rich.panel import Panel
@@ -37,6 +36,7 @@ from .core.hardware import get_physical_cores
 from .core.pipeline import run_pipeline
 from .core.scheduler import _detect_scheduler, auto_detect_memory
 from .core.scheduler import detect as detect_topology
+from .core.terminal_monitor import launch_monitor, list_active_jobs
 from .exceptions import (
     Wien2kGenError,
     format_error_for_ui,
@@ -47,7 +47,6 @@ from .submit import SUBMIT_PROVIDERS
 from .submit.slurm import SlurmDirectives, SlurmJobSpec, submit_slurm_job
 from .types import BackendCode, ExecutionMode, OptimizationTarget, PipelineResult
 from .ui.analysis import generate_report, parse_scf_log
-from .core.terminal_monitor import launch_monitor, list_active_jobs
 from .ui.rich_ui import detect_terminal_capabilities, get_plain_console, get_rich_console
 from .utils.diagnostic import export_diagnostics_json, run_diagnostics
 
@@ -257,12 +256,12 @@ def _get_exec_command() -> str:
         from .backend_manager import get_current_backend
         backend = get_current_backend()
         params = backend.detect_problem_size()
-        return params.get("exec_command", "run_lapw -p")
+        return params.get("exec_command", "run_lapw -p")  # type: ignore[return-value]
     except Exception:
         return "run_lapw -p"
 
 
-def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
     """Execute pipeline configuration generation with Rich UI output."""
     max_cores = args.max_cores
     if args.reserve_os_cores is not None:
@@ -272,7 +271,7 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
         console.print(f"[dim]Reserving {args.reserve_os_cores} OS cores → using {max_cores} of {phys}[/dim]")
     topo = detect_topology(max_cores=max_cores)
     
-    suggestion = {}
+    suggestion: dict[str, Any] = {}
     if args.mode: 
         suggestion["mode"] = ExecutionMode(args.mode)
     if args.cores: 
@@ -294,7 +293,7 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
                 gpu_rec = get_gpu_recommendation(topo, nmat=5000, nkpt=8, mode=suggestion.get("mode", "mpi"))
                 suggestion["gpu_recommendation"] = gpu_rec
                 if args.gpu_mixed_precision:
-                    fp_rec = get_mixed_precision_recommendation(topo, nmat=5000)
+                    fp_rec = get_mixed_precision_recommendation("wien2k", nmat=5000)
                     suggestion["mixed_precision"] = fp_rec
                 console.print(f"[green]GPU detection: {len(gpus)} device(s) found.[/green]")
             else:
@@ -325,7 +324,7 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
             if max_eff:
                 table.add_row("Max Efficient Cores", f"[yellow]{max_eff}[/yellow]")
 
-            sat_data = suggestion.get("saturation_data", {})
+            sat_data: dict[str, Any] = suggestion.get("saturation_data", {})
             if sat_data:
                 eff = sat_data.get("efficiency_pct")
                 if eff is not None:
@@ -355,7 +354,7 @@ def _handle_generate(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     return {"success": result.success, "path": result.config_path, "warnings": result.warnings}
 
 
-def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Execute job submission to scheduler with multi-scheduler support."""
     scheduler = _resolve_scheduler(getattr(args, "scheduler", "auto"))
     topo = detect_topology(max_cores=args.ntasks or None)
@@ -380,11 +379,11 @@ def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         res = submit_slurm_job(spec=spec, dry_run=args.dry_run, script_path=Path(args.export) if args.export else None)
 
         if args.json_output:
-            return res
+            return {"success": res.get("success"), "job_id": res.get("job_id"), "script_path": str(res.get("script_path", ""))}
             
         if res.get("success"):
             if args.dry_run:
-                console.print(Panel(res.get("dry_run_content", "Script content not available"), title="SBATCH Preview", border_style="cyan"))
+                console.print(Panel(res.get("dry_run_content") or "Script content not available", title="SBATCH Preview", border_style="cyan"))
             else:
                 console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{res.get('job_id')}[/]\nScript: [dim]{res.get('script_path')}[/]", border_style="green"))
         else:
@@ -395,12 +394,12 @@ def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         provider_cls = SUBMIT_PROVIDERS.get(scheduler)
         if provider_cls:
             provider = provider_cls()
-            res = provider.submit(
+            pbs_res = provider.submit(
                 topo=topo,
                 exec_command="run_lapw -p",
                 directives={
                     "job_name": args.job_name,
-                    "queue" if scheduler == "pbs" else "queue": args.partition,
+                    "queue": args.partition,
                     "nodes": args.nodes,
                     "walltime": args.time,
                     "mem" if scheduler == "pbs" else "memory": args.mem,
@@ -409,28 +408,28 @@ def _handle_submit(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
                 dry_run=args.dry_run,
             )
             if args.json_output:
-                return res
-            if res.get("success"):
-                console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{res.get('job_id')}[/]\nScript: [dim]{res.get('script_path')}[/]", border_style="green"))
+                return {"success": pbs_res.get("success"), "job_id": pbs_res.get("job_id"), "script_path": str(pbs_res.get("script_path", ""))}
+            if pbs_res.get("success"):
+                console.print(Panel(f"[green]✓ Job submitted successfully.[/]\nJob ID: [bold cyan]{pbs_res.get('job_id')}[/]\nScript: [dim]{pbs_res.get('script_path')}[/]", border_style="green"))
             else:
-                console.print(Panel(f"[red]✗ Submission failed: {res.get('errors')}[/]", border_style="red"))
-            return {"success": res.get("success"), "job_id": res.get("job_id"), "path": str(res.get("script_path", ""))}
+                console.print(Panel(f"[red]✗ Submission failed: {pbs_res.get('errors')}[/]", border_style="red"))
+            return {"success": pbs_res.get("success"), "job_id": pbs_res.get("job_id"), "path": str(pbs_res.get("script_path", ""))}
         else:
             return {"success": False, "errors": [f"Scheduler provider '{scheduler}' not available."]}
 
     return {"success": False, "errors": [f"Unknown scheduler: {scheduler}"]}
 
 
-def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Run empirical or synthetic benchmark suite."""
     topo = detect_topology(max_cores=args.max_cores)
     
     if args.type == "synthetic":
-        from .benchmark.synthetic import generate_strong_scaling_suite
-        problem = {"atoms": 20, "kpoints": 8, "nmat": 1500, "is_hybrid": False}
+        from .benchmark.synthetic import SyntheticWorkloadParams, generate_strong_scaling_suite
+        problem: SyntheticWorkloadParams = {"atoms": 20, "kpoints": 8, "nmat": 1500, "is_hybrid": False}
         suite = generate_strong_scaling_suite(problem, topo, max_cores=args.max_cores)
         console.print(Panel(f"[green]✓ Synthetic benchmark complete. {len(suite)} runs generated.[/]", border_style="green"))
-        return {"type": "synthetic", "runs": len(suite), "data": [s.to_dict() if hasattr(s, 'to_dict') else s for s in suite]}
+        return {"type": "synthetic", "runs": len(suite), "data": [dict(s) for s in suite]}
     else:
         scheduler = _resolve_scheduler(getattr(args, "scheduler", "auto"))
         runner = RealBenchmarkRunner({
@@ -441,7 +440,7 @@ def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any
         })
         result = runner.run(topo)
         if args.json_output:
-            return result
+            return dict(result)
             
         status_color = "green" if result["status"] == "success" else "red"
         console.print(Panel(
@@ -453,7 +452,7 @@ def _handle_benchmark(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any
         return {"run_id": result["run_id"], "status": result["status"], "wall_time": result["wall_time_sec"]}
 
 
-def _handle_hardware(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_hardware(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Show hardware info with optional NUMA/hybrid/IO optimization recommendations."""
     from .core.hardware import (
         get_cpu_architecture,
@@ -538,14 +537,14 @@ def _handle_hardware(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     return {"cores": cores, "arch": arch, "generation": generation}
 
 
-def _handle_diagnostics(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_diagnostics(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Collect & export system diagnostics."""
     report = run_diagnostics()
     if args.export:
         export_diagnostics_json(report, args.export)
         
     if args.json_output:
-        return report
+        return dict(report)
         
     table = Table(title="System Diagnostics Summary", border_style="blue")
     table.add_column("Metric", style="cyan")
@@ -560,17 +559,17 @@ def _handle_diagnostics(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, A
     return {"hostname": report.get("hostname"), "warnings": len(report.get("warnings", [])), "errors": len(report.get("critical_errors", []))}
 
 
-def _handle_analyze(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_analyze(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Parse SCF log & generate analysis report."""
     parsed = parse_scf_log(args.log, code_hint=args.code)
     report = generate_report(parsed, scaling_data=None, include_recommendations=True)
     
     if args.export:
         with open(args.export, "w", encoding="utf-8") as f:
-            json.dump(report.to_dict() if hasattr(report, 'to_dict') else report, f, indent=2, default=str)
+            json.dump(report.to_dict(), f, indent=2, default=str)
             
     if args.json_output:
-        return report.to_dict() if hasattr(report, 'to_dict') else report
+        return report.to_dict()
         
     console.print(Panel(
         f"[green]✓ Analysis complete.[/]\n"
@@ -582,13 +581,13 @@ def _handle_analyze(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     return {"code": parsed.get("code"), "converged": parsed.get("converged"), "cycles": parsed.get("total_cycles")}
 
 
-def _handle_tui(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_tui(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Interactive terminal UI removed. Use `wien2k_gen monitor` for live SCF display."""
     console.print("[yellow]TUI has been removed. Use `wien2k_gen monitor [case]` for live SCF monitoring.[/yellow]")
     return {"status": "tui_removed"}
 
 
-def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Monitor SCF convergence with live Rich terminal display."""
     if args.json_output:
         return {"status": "monitor_skipped_in_json_mode"}
@@ -600,7 +599,7 @@ def _handle_monitor(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         return {"status": "listed"}
 
 
-def _handle_run(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_run(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Execute a WIEN2k workflow from a YAML file."""
     try:
         from .core.workflow_executor import run_workflow_from_yaml
@@ -631,7 +630,7 @@ def _handle_run(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     return {"status": status.state.value, "elapsed": status.elapsed_total, "events": status.events}
 
 
-def _handle_workflow(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_workflow(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Generate workflow YAML templates."""
     steps = [s.strip() for s in args.steps.split(",")]
 
@@ -662,7 +661,7 @@ def _handle_workflow(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     return {"status": "created", "output": output, "steps": steps}
 
 
-def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
     """SCF convergence diagnostics with root cause analysis.
 
     Connects backend intelligence (charge sloshing diagnosis, Bayesian tuning,
@@ -753,12 +752,12 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     if has_qtlb:
         qtlb_body = ""
         if "rkmax" in content.lower() or "kmax" in content.lower():
-            qtlb_body += "• Reduce RKMAX by 0.5–1.0\n"
+            qtlb_body += "• Reduce RKMAX by 0.5–1.0\n"  # noqa: RUF001
         if "overlap" in content.lower():
             qtlb_body += "• Reduce RMT values or check sphere overlap\n"
         if "linearization" in content.lower() or "ene" in content.lower():
             qtlb_body += "• Add more linearization energies in case.in1\n"
-        qtlb_body += "• Increase GMAX to 2.5×RKMAX\n"
+        qtlb_body += "• Increase GMAX to 2.5×RKMAX\n"  # noqa: RUF001
         qtlb_body += "• Check init_lapw —b (non-default linearization)"
         console.print(Panel(qtlb_body, title="[red bold]QTL-B Error — Root Cause Analysis", border_style="red"))
 
@@ -809,7 +808,7 @@ def _handle_diagnose(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     }
 
 
-def _handle_optimize(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_optimize(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Bayesian auto-tuning of RKMAX, k-points, and mixing parameter."""
     try:
         from .optimizer.bayesian_tuner import optimize_convergence_parameters
@@ -866,7 +865,7 @@ def _handle_optimize(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     }
 
 
-def _handle_screen(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_screen(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """High-throughput screening via Materials Project API."""
     try:
         from .core.materials_project import screen_materials
@@ -922,10 +921,10 @@ def _handle_screen(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     return {"downloaded": result.downloaded, "converted": result.converted, "errors": len(result.errors)}
 
 
-def _handle_predict(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_predict(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Predict SCF convergence time and probability before calculation."""
     try:
-        from .optimizer.ml_predict import ConvergencePrediction, predict_convergence
+        from .optimizer.ml_predict import predict_convergence
     except ImportError as e:
         return {"error": f"ML predictor not available: {e}"}
 
@@ -971,12 +970,13 @@ def _handle_predict(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
     }
 
 
-def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Show intelligent optimization advice with Roofline, Amdahl, NUMA analysis.
 
     This is the UI layer that connects the backend intelligence to the user,
     providing Roofline, Amdahl, and NUMA analysis in a human-readable format.
     """
+    from .core.case_parser import CaseFileParser
     from .core.hardware import (
         calculate_peak_fp64_gflops,
         get_cpu_architecture,
@@ -984,11 +984,6 @@ def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         get_numa_node_count,
         get_physical_cores,
     )
-    from .optimizer.advisor import (
-        estimate_amdahl_saturation,
-        estimate_max_kp_cores_roofline,
-    )
-    from .core.case_parser import CaseFileParser
 
     plain = getattr(args, "plain", False)
     target = getattr(args, "target", "time")
@@ -1075,11 +1070,12 @@ def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
 def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
                        peak_gflops, numa_nodes, topo, plain, target):
     """Print rich terminal advice panel with Roofline + Amdahl + suggestions."""
+    import os as _os
+
     from .optimizer.advisor import (
         estimate_amdahl_saturation,
         roofline_crossover_analysis,
     )
-    import os as _os
     _os.environ.setdefault("WIEN2K_NO_DETECT", "1")
     roofline = roofline_crossover_analysis(
         {"mem_bw_gb_s": mem_bw, "arch": arch, "peak_fp64_gflops": peak_gflops},
@@ -1087,14 +1083,11 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
     )
     amdahl = estimate_amdahl_saturation(kpoints, nmat, atoms, cores)
 
-    if plain:
-        _lang = _build_plain_language()
-    else:
-        _lang = {}
+    _lang = _build_plain_language() if plain else {}
 
     console.print(Panel(
         f"[cyan bold]WIEN2k Optimization Advisor[/]\n"
-        f"System: {nmat}×{nmat} matrix, {kpoints} k-points, {atoms} atoms | "
+        f"System: {nmat}×{nmat} matrix, {kpoints} k-points, {atoms} atoms | "  # noqa: RUF001
         f"[dim]{arch} • {cores} cores • {numa_nodes} NUMA nodes • {mem_bw:.0f} GB/s mem[/]\n"
         f"[dim]Target: optimize for [bold]{target}[/][/]",
         border_style="cyan",
@@ -1102,13 +1095,13 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
 
     bottleneck = None
     if roofline["regime"] == "memory_bound" and mem_bw < 100:
-        label = "Memory Bandwidth" if not plain else "Memory Bandwidth"
+        label = "Memory Bandwidth"
         msg = ("حافظه کم آوردی — MPI بیشتر اضافه نکن، OpenMP بده" if plain
                else "LAPW1 is memory-hungry — extra MPI ranks won't help, use OpenMP instead")
         bottleneck = (f"[red]{label}[/]", "red", msg)
     elif isinstance(amdahl, dict) and amdahl.get("saturation_cores", cores) < max(cores * 0.6, 1):
         sat = amdahl["saturation_cores"]
-        label = "Amdahl Saturation" if not plain else "Amdahl Saturation"
+        label = "Amdahl Saturation"
         msg = (f"قانون آمال میگه بیش از {sat} هسته بی‌فایده‌ست" if plain
                else f"More than {sat} cores won't improve performance (Amdahl's Law)")
         bottleneck = (f"[yellow]{label}[/]", "yellow", msg)
@@ -1126,7 +1119,7 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
     table.add_row(
         ("نوع گلوگاه" if plain else "Roofline Regime"),
         f"[{'red' if roofline['regime'] == 'memory_bound' else 'green'}]{roofline['regime'].replace('_', ' ').title()}[/]",
-        roofline_label := (regime_fa if plain else regime_en),
+        (regime_fa if plain else regime_en),
     )
     table.add_row(
         ("کارایی Roofline" if plain else "Roofline Efficiency"),
@@ -1191,14 +1184,14 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
 
     if kpoints > 1 and kpoints % cores != 0:
         rec_table.add_row(str(counter),
-            ("تعداد k-point رو مضربی از هسته‌ها کن" if plain else "Set k-points to a multiple of core count"),
+            ("تعداد k-point رو مضربی از هسته‌ها کن" if plain else "Set k-points to a multiple of core count"),  # noqa: RUF001
             ("توزیع نامتوازن بار" if plain else "Uneven load distribution"),
             ("متوسط" if plain else "MEDIUM"))
         counter += 1
 
     console.print(rec_table)
-    console.print(f"\n[dim]➤ Run [bold]wien2k_gen optimize --simulated[/] to auto-tune RKMAX/KPPRA/mixing[/]")
-    console.print(f"[dim]➤ Run [bold]wien2k_gen generate[/] to produce optimized .machines[/]")
+    console.print("\n[dim]➤ Run [bold]wien2k_gen optimize --simulated[/] to auto-tune RKMAX/KPPRA/mixing[/]")
+    console.print("[dim]➤ Run [bold]wien2k_gen generate[/] to produce optimized .machines[/]")
 
 
 _SIMPLE_LANGUAGE = {
@@ -1217,7 +1210,7 @@ def _build_plain_language():
     return _SIMPLE_LANGUAGE
 
 
-def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Run automated convergence testing."""
     try:
         from .optimizer.convergence import (
@@ -1238,7 +1231,7 @@ def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     results = {}
 
     if args.mode in ("kpoints", "both"):
-        kpoint_grids = [tuple(int(x) for x in g.split(",")) for g in args.kpoints.split()]
+        kpoint_grids = [cast(tuple[int, int, int], tuple(int(x) for x in g.split(","))) for g in args.kpoints.split()]
         console.print(f"[bold]Running k-point convergence with grids: {kpoint_grids}...[/bold]")
         results["kpoints"] = run_kpoint_convergence(args.case, kpoint_grids, wien2k_cmd)
 
@@ -1257,7 +1250,7 @@ def _handle_converge(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]
     return {"status": "completed", "results": {k: v for k, v in results.items()}}
 
 
-def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Query execution history database."""
     try:
         from .optimizer.history import ExecutionHistory
@@ -1314,7 +1307,7 @@ def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
             table.add_column("Date")
             table.add_column("Status")
             for r in recs:
-                ts = r.timestamp[:10] if r.timestamp else "?"
+                ts = str(r.timestamp)[:10] if r.timestamp else "?"
                 table.add_row(r.run_id[:8], r.backend, str(r.total_cores), f"{r.walltime_sec:.1f}s", ts, "✓" if r.success else "✗")
             console.print(table)
         else:
@@ -1323,7 +1316,7 @@ def _handle_history(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
         return {"records": len(recs)}
 
 
-def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> Dict[str, Any]:
+def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     """Extract band structure and DOS data from WIEN2k output."""
     try:
         from .core.electronic_structure import compute_band_gap, parse_band_structure, parse_dos
@@ -1341,7 +1334,7 @@ def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> Dict[str,
     console.print(f"[cyan]Analyzing bands for case: [bold]{case_name}[/bold] in {base_path}[/cyan]")
 
     band_data = parse_band_structure(case_name, base_path)
-    gap_info = compute_band_gap(case_name, base_path)
+    gap_info = compute_band_gap(band_data)
 
     table = Table(title="Band Structure Summary", border_style="cyan")
     table.add_column("Property", style="cyan")
@@ -1377,7 +1370,7 @@ def _handle_analyze_bands(args: argparse.Namespace, cfg: AppConfig) -> Dict[str,
 # CLI Execution Engine
 # =============================================================================
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:  # noqa: C901
     """
     CLI entry point with structured setup, dispatch, and error handling.
     Returns OS exit code: 0 (success), 1 (app error), 2 (CLI syntax error).
@@ -1388,7 +1381,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         args = parser.parse_args(argv)
     except SystemExit as e:
-        return e.code if e.code is not None else 2
+        return int(e.code) if e.code is not None else 2
 
     plain_mode = getattr(args, "plain", False) or getattr(args, "no_color", False)
     caps = detect_terminal_capabilities()

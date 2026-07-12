@@ -4,28 +4,21 @@ Tests hardware detection functions using mocked /proc and subprocess calls.
 Uses SysFSHardwareInfo for direct provider testing and @patch for system isolation.
 """
 
-import os
 import json
-import pytest
-from unittest.mock import patch, MagicMock, mock_open
+import os
 from pathlib import Path
+from unittest.mock import MagicMock, mock_open, patch
+
+import pytest
 
 from wien2k_gen.core.hardware import (
-    SysFSHardwareInfo,
     HardwareInfoProvider,
-    get_provider,
-    set_provider,
+    SysFSHardwareInfo,
     get_logical_cores,
-    get_physical_cores,
-    get_total_mem_kb,
-    check_elpa_available,
-    get_scratch_filesystem_type,
-    HardwareProfile,
-    get_hardware_profile,
-    get_numa_node_count,
-    get_vector_isa_and_width,
+    get_provider,
     parse_cpu_list,
     parse_memory_string,
+    set_provider,
 )
 
 
@@ -232,8 +225,7 @@ class TestELPAAvailability:
             assert provider.check_elpa_available() is False
 
     def test_elpa_with_wienroot(self, provider):
-        with patch.dict(os.environ, {"WIENROOT": "/custom/path"}):
-            with patch("pathlib.Path.exists", return_value=True):
+        with patch.dict(os.environ, {"WIENROOT": "/custom/path"}), patch("pathlib.Path.exists", return_value=True):
                 assert provider.check_elpa_available() is True
 
 
@@ -325,8 +317,7 @@ class TestHardwareProfile:
 
 class TestContainerDetection:
     def test_not_containerized(self, provider):
-        with patch.object(Path, "exists", return_value=False):
-            with patch.dict(os.environ, {}, clear=True):
+        with patch.object(Path, "exists", return_value=False), patch.dict(os.environ, {}, clear=True):
                 assert provider.is_containerized() is False
 
     def test_docker_containerized(self, provider):
@@ -334,6 +325,5 @@ class TestContainerDetection:
             assert provider.is_containerized() is True
 
     def test_singularity_containerized(self, provider):
-        with patch.object(Path, "exists", return_value=False):
-            with patch.dict(os.environ, {"SINGULARITY_CONTAINER": "1"}):
-                assert provider.is_containerized() is True
+        with patch.object(Path, "exists", return_value=False), patch.dict(os.environ, {"SINGULARITY_CONTAINER": "1"}):
+            assert provider.is_containerized() is True

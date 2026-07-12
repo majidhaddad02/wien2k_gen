@@ -22,7 +22,7 @@ import traceback
 from enum import Enum
 
 # Avoid circular import: use TYPE_CHECKING and lazy import for get_logger
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 if TYPE_CHECKING:
     pass
@@ -72,7 +72,7 @@ class Wien2kGenError(Exception):
         severity: Union[ErrorSeverity, str] = ErrorSeverity.ERROR,
         domain: Union[ErrorDomain, str] = ErrorDomain.UNKNOWN,
         hint: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
+        context: Optional[dict[str, Any]] = None,
         original_exception: Optional[Exception] = None,
         recoverable: bool = False
     ) -> None:
@@ -113,7 +113,7 @@ class Wien2kGenError(Exception):
             ))
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to JSON-compatible dictionary for logging/UI."""
         return {
             "error_code": self.error_code,
@@ -351,35 +351,35 @@ def log_exception_structured(exc: Exception, level: int = logging.ERROR) -> None
 # =============================================================================
 
 __all__ = [
-    # Enums
-    "ErrorSeverity",
-    "ErrorDomain",
-    # Base Exception
-    "Wien2kGenError",
-    # Topology
-    "TopologyError",
-    "DetectionFailedError",
-    "InvalidTopologyError",
-    # Scheduler
-    "SchedulerError",
-    "SubmissionFailedError",
-    "PreemptionError",
+    # Backend
+    "BackendError",
     # Configuration
     "ConfigurationError",
-    "ValidationError",
+    "DetectionFailedError",
+    "ErrorDomain",
+    # Enums
+    "ErrorSeverity",
     "GenerationError",
     # Runtime
     "HPCRuntimeError",
+    "InvalidTopologyError",
     "MPIError",
-    "ScratchError",
-    "TimeoutError",
-    # Backend
-    "BackendError",
     "MissingInputError",
     "ParsingError",
-    # Utilities
-    "raise_with_context",
+    "PreemptionError",
+    # Scheduler
+    "SchedulerError",
+    "ScratchError",
+    "SubmissionFailedError",
+    "TimeoutError",
+    # Topology
+    "TopologyError",
+    "ValidationError",
+    # Base Exception
+    "Wien2kGenError",
     "format_error_for_ui",
     "is_wien2k_error",
     "log_exception_structured",
+    # Utilities
+    "raise_with_context",
 ]

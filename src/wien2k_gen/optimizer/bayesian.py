@@ -14,10 +14,12 @@ Production features:
 All documentation and inline comments are in English per project standards.
 """
 
+import json
 import math
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 import numpy as np
 
@@ -129,19 +131,19 @@ def matern_kernel(
     nu: float = 2.5,
 ) -> np.ndarray:
     """
-    Matérn kernel with ν = 2.5 (twice differentiable).
+    Matern kernel with v = 2.5 (twice differentiable).
 
-    k(r) = (1 + √5·r/ℓ + 5r²/3ℓ²) · exp(-√5·r/ℓ)
+    k(r) = (1 + sqrt(5)·r/l + 5r^2/3l^2) · exp(-sqrt(5)·r/l)
 
     Preferred over RBF for modelling non-smooth objective surfaces
-    such as SCF convergence behaviour (Snoek et al. 2012, NIPS 25, 2951–2959;
+    such as SCF convergence behaviour (Snoek et al. 2012, NIPS 25, 2951-2959;
     Rasmussen & Williams 2006, Gaussian Processes for Machine Learning).
 
     Args:
         x1: First input matrix (shape (n, d)).
         x2: Second input matrix (shape (m, d)).
         length_scales: Per-dimension length scale vector (shape (d,)).
-        nu: Smoothness parameter (not used directly, fixed ν=2.5 formula above).
+        nu: Smoothness parameter (not used directly, fixed v=2.5 formula above).
 
     Returns:
         Kernel matrix of shape (n, m).
@@ -159,7 +161,7 @@ def matern_kernel(
 
     r = np.sqrt(r_sq + _EPS)
     sqrt5_r = math.sqrt(5.0) * r
-    # Matérn ν=2.5: (1 + √5·r + 5r²/3) · exp(-√5·r)
+    # Matern v=2.5: (1 + sqrt(5)·r + 5r^2/3) · exp(-sqrt(5)·r)
     K = (1.0 + sqrt5_r + (5.0 / 3.0) * r_sq) * np.exp(-sqrt5_r)
     return K
 
@@ -208,7 +210,7 @@ def compute_q_expected_improvement(
     ei_single = improvement * cdf_z + sigma * pdf_z
     ei_single = np.maximum(ei_single, 0.0)
 
-    # Batch penalty: q-EI = EI_single × q_penalty
+    # Batch penalty: q-EI = EI_single x q_penalty
     # As batch size increases, the marginal benefit per point decreases
     # because points in the batch may redundantly explore the same region.
     q_penalty = 1.0 / math.sqrt(float(q))
@@ -259,7 +261,7 @@ def compute_expected_improvement(
 # =============================================================================
 
 def latin_hypercube_sampling(
-    bounds: List[Tuple[float, float]],
+    bounds: list[tuple[float, float]],
     n_samples: int,
     random_state: Optional[int] = None,
 ) -> np.ndarray:
@@ -292,7 +294,7 @@ def latin_hypercube_sampling(
         # Sample one point from each interval
         for i in range(n_samples):
             lower = low + i * interval_width
-            upper = lower + interval_width
+            lower + interval_width
             samples[i, d] = lower + rng.uniform(0.0, interval_width)
 
     # Shuffle each column independently
@@ -307,11 +309,11 @@ def latin_hypercube_sampling(
 # =============================================================================
 
 def add_physics_priors(
-    structure: Dict[str, Any],
+    structure: dict[str, Any],
     nmat: int = 0,
     is_soc: bool = False,
     is_metallic: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Enforce physically-motivated parameter constraints.
 
@@ -373,7 +375,7 @@ def add_physics_priors(
 
 def load_warm_start_history(
     history_file: str = ".bo_history.json",
-) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
     """Load previous Bayesian optimization results for warm starting.
 
     Reads .bo_history.json and extracts (X, y) from completed evaluations.
@@ -412,7 +414,7 @@ def load_warm_start_history(
     return None, None
 
 
-def save_bo_history(history_file: str, evaluations: List[Dict[str, Any]]) -> None:
+def save_bo_history(history_file: str, evaluations: list[dict[str, Any]]) -> None:
     """Save Bayesian optimization results for future warm starts."""
     path = Path(history_file)
     data = {"evaluations": evaluations}
@@ -424,7 +426,7 @@ def save_bo_history(history_file: str, evaluations: List[Dict[str, Any]]) -> Non
 # Bayesian Optimization Loop
 # =============================================================================
 
-def define_search_space(structure: Dict[str, Any]) -> Dict[str, Any]:
+def define_search_space(structure: dict[str, Any]) -> dict[str, Any]:
     """Define search space bounds and types for WIEN2k parameters.
 
     Returns dict with bounds, types, and defaults for each parameter.
@@ -454,8 +456,8 @@ def define_search_space(structure: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def bayesian_optimize_scf_params(
-    structure: Dict[str, Any],
-    eval_objective: Callable[[Dict[str, float]], float],
+    structure: dict[str, Any],
+    eval_objective: Callable[[dict[str, float]], float],
     budget: int = 20,
     initial_samples: int = 10,
     kernel_type: str = "matern",
@@ -463,7 +465,7 @@ def bayesian_optimize_scf_params(
     parallel_batch: int = 4,
     warm_start: bool = True,
     history_file: str = ".bo_history.json",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Full Bayesian optimization loop for WIEN2k SCF parameters.
 
     Algorithm:
@@ -494,7 +496,7 @@ def bayesian_optimize_scf_params(
     bounds = [space[k]["bounds"] for k in ["rkmax", "mixing_beta", "kpoint_density", "gmax"]]
     param_names = ["rkmax", "mixing_beta", "kpoint_density", "gmax"]
     dims = len(bounds)
-    evaluations: List[Dict[str, Any]] = []
+    evaluations: list[dict[str, Any]] = []
 
     # Initial samples: warm start or LHS
     X_init = None
@@ -580,7 +582,7 @@ def bayesian_optimize_scf_params(
     }
 
 
-def _params_dict(x: np.ndarray, names: List[str]) -> Dict[str, float]:
+def _params_dict(x: np.ndarray, names: list[str]) -> dict[str, float]:
     """Convert numpy array to parameter dict."""
     out = {}
     for i, name in enumerate(names):
@@ -646,7 +648,7 @@ class _GaussianProcess:
         self._X_train = X
         self._y_train = y
 
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
         Compute posterior mean and variance at test points.
 
@@ -713,7 +715,7 @@ class _GaussianProcessARD(_GaussianProcess):
         best_ls = current_ls.copy()
         best_nll = float("inf")
 
-        for step in range(self._n_opt_steps):
+        for _step in range(self._n_opt_steps):
             K = rbf_kernel_ard(X, X, current_ls)
             K += _NUGGET * np.eye(n, dtype=np.float64)
 
@@ -757,7 +759,7 @@ class _GaussianProcessARD(_GaussianProcess):
             self._L = np.linalg.cholesky(K)
         self._alpha = np.linalg.solve(self._L.T, np.linalg.solve(self._L, y.flatten()))
 
-    def get_relevance(self) -> Dict[str, float]:
+    def get_relevance(self) -> dict[str, float]:
         """
         Return per-dimension relevance scores.
 
@@ -805,15 +807,15 @@ def _encode_config(mode: str, total_cores: int, omp_threads: int) -> np.ndarray:
     return vec
 
 
-def _decode_config(vec: np.ndarray, min_cores: int, max_cores: int) -> Dict[str, Any]:
+def _decode_config(vec: np.ndarray, min_cores: int, max_cores: int) -> dict[str, Any]:
     """
     Decode a feature vector back to a configuration dictionary.
 
     Returns:
         Dict with keys 'mode', 'total_cores', 'omp_threads'.
     """
-    total_cores = max(min_cores, min(max_cores, int(round(vec[0] * 256.0))))
-    omp_threads = max(1, min(64, int(round(vec[1] * 64.0))))
+    total_cores = max(min_cores, min(max_cores, round(vec[0] * 256.0)))
+    omp_threads = max(1, min(64, round(vec[1] * 64.0)))
 
     one_hot = vec[2:2 + len(_CATEGORICAL_MODES)]
     mode_idx = int(np.argmax(one_hot))
@@ -964,7 +966,7 @@ def _estimate_memory_gb_for_config(nmat: int, total_cores: int) -> float:
 
     Args:
         nmat: Hamiltonian matrix size.
-        total_cores: Total CPU cores (MPI ranks × OMP threads).
+        total_cores: Total CPU cores (MPI ranks x OMP threads).
 
     Returns:
         Estimated per-rank memory in GB.
@@ -975,7 +977,7 @@ def _estimate_memory_gb_for_config(nmat: int, total_cores: int) -> float:
     per_rank_gb = aggregate_gb / float(ranks)
     # Small per-rank overhead for communication buffers + replicated data
     comm_overhead = 0.5  # GB per rank for MPI buffers, charge density copies
-    safety = 1.5  # Per-rank safety factor (was 3.0× on aggregate)
+    safety = 1.5  # Per-rank safety factor (was 3.0x on aggregate)
     return (per_rank_gb + comm_overhead) * safety
 
 
@@ -1058,8 +1060,8 @@ class BayesianOptimizer:
             if use_ard
             else _GaussianProcess(length_scales=length_scales)
         )
-        self._X: List[np.ndarray] = []
-        self._y: List[float] = []
+        self._X: list[np.ndarray] = []
+        self._y: list[float] = []
         self._best_y: Optional[float] = None
         self._lock = threading.Lock()
         self._n_dims = 2 + len(_CATEGORICAL_MODES)
@@ -1217,7 +1219,7 @@ class BayesianOptimizer:
         nmat: int,
         nkpt: int,
         user_max_cores: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Suggest the next configuration to evaluate using Expected Improvement.
 
@@ -1277,7 +1279,7 @@ class BayesianOptimizer:
                     sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
 
                     if self._transfer_mean is not None and self._transfer_weight > 0:
-                        source_gp = _GaussianProcess(length_scales=self._gp.length_scales)
+                        _GaussianProcess(length_scales=self._gp.length_scales)
                         mu_val = (1.0 - self._transfer_weight) * mu_val + \
                                  self._transfer_weight * float(np.mean(self._y)) if self._y else mu_val
 
@@ -1317,7 +1319,7 @@ class BayesianOptimizer:
         max_memory_gb: float,
         max_walltime_min: float,
         user_max_cores: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Suggest next configuration subject to memory and walltime budgets.
 
@@ -1424,7 +1426,7 @@ class BayesianOptimizer:
             result["transfer_weight"] = self._transfer_weight
             return result
 
-    def _random_suggestion(self, max_cores: int) -> Dict[str, Any]:
+    def _random_suggestion(self, max_cores: int) -> dict[str, Any]:
         """Fallback: return a randomly generated plausible configuration."""
         rng = np.random.RandomState(int(time.time() * 1e6) % (2 ** 31))
         cores = rng.randint(self.min_cores, max_cores + 1)
@@ -1441,7 +1443,7 @@ class BayesianOptimizer:
             "source": "random",
         }
 
-    def get_best_observed(self) -> Optional[Dict[str, Any]]:
+    def get_best_observed(self) -> Optional[dict[str, Any]]:
         """
         Return the best observed configuration so far.
 
@@ -1469,7 +1471,7 @@ class BayesianOptimizer:
         with self._lock:
             return len(self._X)
 
-    def get_parameter_relevance(self) -> Dict[str, float]:
+    def get_parameter_relevance(self) -> dict[str, float]:
         """Return ARD relevance scores if using ARD kernel."""
         with self._lock:
             if isinstance(self._gp, _GaussianProcessARD):
@@ -1559,12 +1561,12 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
             use_ard=use_ard,
         )
         self._current_fidelity: int = 0
-        self._fidelity_eval_count: Dict[int, int] = {0: 0, 1: 0, 2: 0}
+        self._fidelity_eval_count: dict[int, int] = {0: 0, 1: 0, 2: 0}
         self._ei_promotion_threshold = ei_promotion_threshold
         self._min_fidelity_evals = min_fidelity_evals
-        self._fidelity_gps: Dict[int, _GaussianProcess] = {}
-        self._fidelity_X: Dict[int, List[np.ndarray]] = {0: [], 1: [], 2: []}
-        self._fidelity_y: Dict[int, List[float]] = {0: [], 1: [], 2: []}
+        self._fidelity_gps: dict[int, _GaussianProcess] = {}
+        self._fidelity_X: dict[int, list[np.ndarray]] = {0: [], 1: [], 2: []}
+        self._fidelity_y: dict[int, list[float]] = {0: [], 1: [], 2: []}
 
     def _effective_nkpt(self, nkpt: int, fidelity_level: int) -> int:
         """Map fidelity level to effective k-point count for cost model."""
@@ -1589,7 +1591,7 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
         nmat: int,
         nkpt: int,
         user_max_cores: Optional[int] = None,
-    ) -> Tuple[Dict[str, Any], int]:
+    ) -> tuple[dict[str, Any], int]:
         """
         Suggest the next configuration AND fidelity level to evaluate.
 
@@ -1623,7 +1625,7 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
             current_best = self._best_y or float("inf")
 
             best_mf_ei = -1.0
-            best_config: Optional[Dict[str, Any]] = None
+            best_config: Optional[dict[str, Any]] = None
             best_fid = 0
 
             rng = np.random.RandomState(int(time.time() * 1e6) % (2 ** 31))
@@ -1703,7 +1705,7 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
         """Return the current fidelity level."""
         return self._current_fidelity
 
-    def get_fidelity_stats(self) -> Dict[str, Any]:
+    def get_fidelity_stats(self) -> dict[str, Any]:
         """Return per-fidelity evaluation counts and costs."""
         with self._lock:
             return {

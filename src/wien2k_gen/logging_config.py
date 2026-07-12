@@ -22,7 +22,7 @@ import logging
 import sys
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 # Avoid circular import: only import types at type-checking time
 if TYPE_CHECKING:
@@ -50,7 +50,7 @@ class ContextFilter(logging.Filter):
         cls.context.__dict__.update(kwargs)
 
     @classmethod
-    def get_context(cls) -> Dict[str, Any]:
+    def get_context(cls) -> dict[str, Any]:
         return getattr(cls.context, "__dict__", {})
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -75,9 +75,8 @@ class StructuredFormatter(logging.Formatter):
         # Check for structured error metadata
         if record.exc_info and record.exc_info[0] is not None:
             exc = record.exc_info[1]
-            if isinstance(exc, Exception) and is_wien2k_error(exc):
-                if getattr(exc, "hint", None):
-                    msg += f"\n   HINT: {exc.hint}"  # type: ignore[attr-defined]
+            if isinstance(exc, Exception) and is_wien2k_error(exc) and getattr(exc, "hint", None):
+                msg += f"\n   HINT: {exc.hint}"  # type: ignore[attr-defined]
         
         return msg
 
@@ -126,7 +125,7 @@ class LogManager:
     _instance: Optional["LogManager"] = None
     _lock = threading.Lock()
     _logger: logging.Logger = logging.getLogger("wien2k_gen")
-    _handler_ids: Dict[str, logging.Handler] = {}
+    _handler_ids: dict[str, logging.Handler] = {}  # noqa: RUF012
 
     def __new__(cls) -> "LogManager":
         with cls._lock:

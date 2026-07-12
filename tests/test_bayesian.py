@@ -5,22 +5,23 @@ and Expected Improvement edge cases. Uses mocked GP and ExecutionHistory.
 """
 
 import math
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
+
 import numpy as np
+import pytest
 
 from wien2k_gen.optimizer.bayesian import (
     BayesianOptimizer,
     MultiFidelityBayesianOptimizer,
+    _chemical_similarity,
+    _decode_config,
+    _encode_config,
+    _GaussianProcess,
+    _GaussianProcessARD,
+    _sigmoid_feasibility,
     compute_expected_improvement,
     rbf_kernel,
     rbf_kernel_ard,
-    _encode_config,
-    _decode_config,
-    _sigmoid_feasibility,
-    _GaussianProcess,
-    _GaussianProcessARD,
-    _chemical_similarity,
 )
 from wien2k_gen.optimizer.history import ExecutionHistory, ExecutionRecord
 
@@ -301,7 +302,7 @@ class TestMultiFidelityBayesianOptimizer:
         r3 = _make_record(75.0, "mpi", 128, 1)
         for r in [r1, r2, r3]:
             opt.update(r)
-        config, fid = opt.suggest_next_fidelity(nmat=5000, nkpt=8, user_max_cores=128)
+        config, _fid = opt.suggest_next_fidelity(nmat=5000, nkpt=8, user_max_cores=128)
         assert "fidelity" in config
         assert "mf_ei" in config
         assert config["source"] in ("model_mf", "model_mf_promoted")

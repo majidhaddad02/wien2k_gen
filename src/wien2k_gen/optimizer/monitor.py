@@ -21,7 +21,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 # Robust FileLock fallback
 try:
@@ -82,7 +82,7 @@ class ProblemVector:
         self,
         other: 'ProblemVector',
         adaptive: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Detect significant changes between two problem vectors.
         Uses adaptive thresholds: larger matrices are more sensitive to relative changes,
@@ -91,7 +91,7 @@ class ProblemVector:
         Returns:
             dict with 'changes' (field diffs), 'severity' (0.0-1.0), and 'should_rebuild' (bool)
         """
-        changes: Dict[str, Dict[str, Any]] = {}
+        changes: dict[str, dict[str, Any]] = {}
         severity = 0.0
 
         # NMAT: Dominates Hamiltonian diagonalization cost & memory footprint
@@ -128,7 +128,7 @@ class ProblemVector:
             "should_rebuild": severity > 0.3
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize for logging or JSON storage."""
         return asdict(self)
 
@@ -178,8 +178,8 @@ class ConvergenceAnalysis:
     convergence_type: str = "unknown"  # "monotonic", "oscillatory", "stalled", "divergent"
     mixing_recommendation: str = ""
     estimated_cycles_to_converge: int = -1
-    charge_distance_history: List[float] = field(default_factory=list)
-    energy_history: List[float] = field(default_factory=list)
+    charge_distance_history: list[float] = field(default_factory=list)
+    energy_history: list[float] = field(default_factory=list)
 
 
 # =============================================================================
@@ -262,13 +262,13 @@ def _get_dayfile_path() -> Optional[Path]:
     return None
 
 
-def _parse_dayfile_events(dayfile_path: Path) -> List[MonitorEvent]:
+def _parse_dayfile_events(dayfile_path: Path) -> list[MonitorEvent]:  # noqa: C901
     """
     Parse SCF dayfile content to detect convergence behavior, errors, or cycle completion.
     Uses regex-based extraction for robust matching across WIEN2k versions.
     Also invokes charge-sloshing and Broyden-mixing detectors.
     """
-    events: List[MonitorEvent] = []
+    events: list[MonitorEvent] = []
     if not dayfile_path.exists():
         return events
 
@@ -365,7 +365,7 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
     Returns:
         dict with keys:
             sloshing_detected: bool
-            severity: float (0.0 – 1.0, based on oscillation amplitude)
+            severity: float (0.0 - 1.0, based on oscillation amplitude)
             cycles_affected: List[int] of cycle indices exhibiting sloshing
             recommendation: str with actionable mixing advice
     """
@@ -388,10 +388,7 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
 
     numerator = sum(d * d for d in diffs)
     denominator = sum((v - sum(values) / n) ** 2 for v in values)
-    if denominator < 1e-30:
-        dw_stat = 2.0
-    else:
-        dw_stat = numerator / denominator if denominator > 0 else 2.0
+    dw_stat = 2.0 if denominator < 1e-30 else numerator / denominator if denominator > 0 else 2.0
 
     sloshing_detected = dw_stat > (2.5 + tolerance)
 
@@ -404,7 +401,7 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
     severity_raw = min(1.0, (dw_stat - 2.5) / 1.5)
     severity = round(0.8 * severity_raw + 0.2 * min(1.0, rel_range), 4)
 
-    cycles_affected: List[int] = []
+    cycles_affected: list[int] = []
     if sloshing_detected:
         osc_threshold = (max(diffs) - min(diffs)) * 0.3 if diffs else 0
         for i in range(2, n):
@@ -424,7 +421,7 @@ def detect_charge_sloshing(dayfile_content: str, tolerance: float = 0.5) -> dict
     }
 
 
-def diagnose_charge_sloshing_root_cause(
+def diagnose_charge_sloshing_root_cause(  # noqa: C901
     dayfile_content: str,
     case_name: str = "case",
     struct_path: Optional[str] = None,
@@ -448,7 +445,7 @@ def diagnose_charge_sloshing_root_cause(
         root_cause: str — one of "metallic", "symmetry_breaking",
                    "core_overlap", "mixing_too_aggressive", "unknown"
         actions: List[dict] — ordered list of remediation steps
-        confidence: float — 0.0–1.0 diagnostic confidence
+        confidence: float — 0.0-1.0 diagnostic confidence
     """
     slosh = detect_charge_sloshing(dayfile_content)
     if not slosh["sloshing_detected"]:
@@ -458,7 +455,7 @@ def diagnose_charge_sloshing_root_cause(
             "confidence": 0.0,
         }
 
-    indicators: Dict[str, float] = {}
+    indicators: dict[str, float] = {}
 
     # 1. Check for metallic system indicators
     if case_name:
@@ -483,9 +480,8 @@ def diagnose_charge_sloshing_root_cause(
             pass
 
     # 2. Check for symmetry breaking
-    if "symmetry" in dayfile_content.lower() or "symm" in dayfile_content.lower():
-        if "broken" in dayfile_content.lower() or "fail" in dayfile_content.lower():
-            indicators["symmetry_breaking"] = 0.85
+    if ("symmetry" in dayfile_content.lower() or "symm" in dayfile_content.lower()) and ("broken" in dayfile_content.lower() or "fail" in dayfile_content.lower()):
+        indicators["symmetry_breaking"] = 0.85
 
     # 3. Check for core overlap via RMT info
     rmt_pattern = re.compile(r'(?:RMT|rmt)\s*[=:]\s*([\d]+\.?\d*)', re.IGNORECASE)
@@ -572,7 +568,7 @@ _SLOSHING_REMEDIATION = {
 }
 
 
-def _build_sloshing_remediation(root_cause: str, severity: float) -> List[dict]:
+def _build_sloshing_remediation(root_cause: str, severity: float) -> list[dict]:
     """Build ordered remediation steps scaled by severity."""
     template = _SLOSHING_REMEDIATION.get(root_cause, _SLOSHING_REMEDIATION["mixing_too_aggressive"])
     actions = []
@@ -604,7 +600,7 @@ def detect_charge_sloshing_fft(dayfile_content: str) -> dict:
         dict with keys:
             sloshing_detected: bool
             dominant_frequency_hz: float (in cycles per SCF iteration)
-            hf_power_ratio: float (0.0–1.0, ratio of power above median freq)
+            hf_power_ratio: float (0.0-1.0, ratio of power above median freq)
             recommendation: str
     """
     cd_pattern = re.compile(
@@ -678,7 +674,7 @@ def detect_charge_sloshing_fft(dayfile_content: str) -> dict:
     }
 
 
-def _simple_dft(signal: List[float]) -> List[complex]:
+def _simple_dft(signal: list[float]) -> list[complex]:
     """
     Simple discrete Fourier transform (DFT) for short time series.
     Uses O(N^2) algorithm suitable for SCF cycle counts (N < 200).
@@ -935,7 +931,7 @@ def analyze_diis_mixing(dayfile_content: str) -> dict:
     }
 
 
-def analyze_convergence_history(dayfile_content: str) -> ConvergenceAnalysis:
+def analyze_convergence_history(dayfile_content: str) -> ConvergenceAnalysis:  # noqa: C901
     """
     Read full convergence history from SCF log content and classify the
     convergence trajectory, providing mixing recommendations and cycle estimates.
@@ -1039,7 +1035,7 @@ def analyze_convergence_history(dayfile_content: str) -> ConvergenceAnalysis:
     )
 
 
-def _estimate_rebuild_benefit(topo: Topology, current_params: Dict[str, Any]) -> Dict[str, Any]:
+def _estimate_rebuild_benefit(topo: Topology, current_params: dict[str, Any]) -> dict[str, Any]:
     """
     Estimate whether rebuilding the parallel configuration will yield meaningful performance gains.
     Compares current allocation against advisor-suggested optimal resources.
@@ -1073,9 +1069,9 @@ def _estimate_rebuild_benefit(topo: Topology, current_params: Dict[str, Any]) ->
 # Main Monitoring Loop
 # =============================================================================
 
-def monitor_and_rebuild(
+def monitor_and_rebuild(  # noqa: C901
     topo: Topology,
-    rebuild_callback: Optional[Callable[[Topology, Dict[str, Any]], bool]] = None,
+    rebuild_callback: Optional[Callable[[Topology, dict[str, Any]], bool]] = None,
     check_interval: int = 60,
     min_rebuild_interval: int = 300,
     adaptive_threshold: bool = True,
@@ -1118,13 +1114,13 @@ def monitor_and_rebuild(
             last_problem = _monitor_state.last_problem
 
             # Analyze parameter drift
-            change_analysis: Dict[str, Any] = {"changes": {}, "severity": 0.0, "should_rebuild": False}
+            change_analysis: dict[str, Any] = {"changes": {}, "severity": 0.0, "should_rebuild": False}
             if last_problem:
                 change_analysis = current_problem.significant_change(last_problem, adaptive=adaptive_threshold)
 
             # Decide if rebuild is warranted (FIXED: 'warra nted' -> 'warranted')
             should_rebuild = False
-            rebuild_reason: List[str] = []
+            rebuild_reason: list[str] = []
 
             if change_analysis.get("should_rebuild"):
                 should_rebuild = True
@@ -1199,8 +1195,7 @@ def monitor_and_rebuild(
                         log_path = Path(".wien2k_rebuild_log.jsonl")
                         
                         if _HAS_FILELOCK and _file_lock:
-                            with _file_lock:
-                                with open(log_path, "a", encoding="utf-8") as f:
+                            with _file_lock, open(log_path, "a", encoding="utf-8") as f:
                                     f.write(json.dumps(log_entry) + "\n")
                         else:
                             with open(log_path, "a", encoding="utf-8") as f:
@@ -1361,7 +1356,7 @@ def resume_monitoring() -> None:
     logger.debug("SCF monitor resumed")
 
 
-def get_monitor_status() -> Dict[str, Any]:
+def get_monitor_status() -> dict[str, Any]:
     """Return current monitor state for UI/CLI diagnostics."""
     with _monitor_state.lock:
         return {
@@ -1380,11 +1375,11 @@ def get_monitor_status() -> Dict[str, Any]:
 #
 # Optimal checkpoint interval heuristic (Daly 2006, J. Phys.: Conf. Ser.
 # 46, 514-518. DOI: 10.1088/1742-6596/46/1/071):
-#   optimal ≈ √(2 × C / R), where C = checkpoint cost, R = failure rate.
+#   optimal ≈ sqrt(2 x C / R), where C = checkpoint cost, R = failure rate.
 # Heuristic simplification for SCF: densify checkpoints as walltime shrinks.
 # ===========================================================================
 
-def estimate_remaining_walltime(job_id: str, scheduler: str = "slurm") -> Dict[str, Any]:
+def estimate_remaining_walltime(job_id: str, scheduler: str = "slurm") -> dict[str, Any]:  # noqa: C901
     """Estimate remaining walltime for a running job.
 
     Reads job info from SLURM (scontrol) or PBS (qstat -f).
@@ -1478,7 +1473,7 @@ def perform_incremental_checkpoint(
     checkpoint_dir: str = ".checkpoints",
     nowrite_vector: bool = False,
     is_soc: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Perform incremental checkpoint — copy only modified files.
 
     Files copied based on calculation context:
@@ -1570,7 +1565,7 @@ def cleanup_old_checkpoints(
     checkpoint_dir: str = ".checkpoints",
     max_checkpoints: int = 3,
     quota_warning_pct: float = 80.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Remove oldest checkpoints keeping only last max_checkpoints.
 
     Also checks disk quota and warns if checkpoint space exceeds threshold.
@@ -1613,7 +1608,7 @@ def cleanup_old_checkpoints(
 def resume_from_checkpoint(
     case_name: str,
     checkpoint_id: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Resume WIEN2k calculation from a saved checkpoint.
 
     Copies checkpoint files back to working directory and adjusts
@@ -1644,7 +1639,7 @@ def resume_from_checkpoint(
     files_restored = []
     for src_file in ckpt_dir.glob("*"):
         if src_file.is_file() and src_file.name != "CHECKPOINT_INFO":
-            dest = case / src_file.name.replace(ckpt_dir.name + "_", "")
+            case / src_file.name.replace(ckpt_dir.name + "_", "")
             if src_file.name.startswith(case.name):
                 _shutil.copy2(str(src_file), str(case / src_file.name))
             else:

@@ -4,18 +4,17 @@ Covers validation, environment precedence, file persistence, thread-safety,
 and edge-case handling for AppConfig & ConfigManager.
 """
 
-import os
 import json
-import pytest
-from pathlib import Path
+import os
 from unittest.mock import patch
 
-from wien2k_gen.config import AppConfig, ConfigManager, load_config, validate_config, ensure_dirs
-from wien2k_gen.exceptions import ConfigurationError
+import pytest
+
+from wien2k_gen.config import AppConfig, ConfigManager, load_config, validate_config
 
 
 class TestAppConfigValidation:
-    @pytest.mark.parametrize("max_cores,valid", [(0, False), (-5, False), (1, True), (64, True)])
+    @pytest.mark.parametrize(("max_cores", "valid"), [(0, False), (-5, False), (1, True), (64, True)])
     def test_max_cores_bounds(self, max_cores, valid):
         cfg = AppConfig(max_cores=max_cores)
         errors = ConfigManager()._validate_config(cfg)
@@ -51,8 +50,10 @@ class TestConfigManagerLifecycle:
                 errors.append(e)
                 
         threads = [threading.Thread(target=load_worker) for _ in range(5)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
         
         assert len(errors) == 0
         assert all(r.backend == "wien2k" for r in results)
@@ -62,7 +63,7 @@ class TestConfigManagerLifecycle:
         readonly = temp_config_dir / "readonly"
         readonly.mkdir(parents=True, exist_ok=True)
         with patch.dict(os.environ, {"SCRATCH": str(readonly)}):
-            cfg = load_config()
+            load_config()
             errors = validate_config()
             assert any("not writable" in e.lower() for e in errors)
 

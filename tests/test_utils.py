@@ -3,11 +3,9 @@ Production-Grade Tests for utils/ Module.
 Covers atomic_write, filelock, validation, and scratch staging logic.
 """
 
-import os
-import time
-import pytest
-from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from wien2k_gen.utils.atomic_write import atomic_write
 from wien2k_gen.utils.filelock import FileLock, LockTimeoutError
@@ -49,8 +47,7 @@ class TestFileLock:
         fallback_dir.mkdir(parents=True)
         (fallback_dir / "pid").write_text("999999")
         
-        with pytest.raises(LockTimeoutError):
-            with FileLock(target_path, timeout=0.1, delay=0.05):
+        with pytest.raises(LockTimeoutError), FileLock(target_path, timeout=0.1, delay=0.05):
                 pass
 
 

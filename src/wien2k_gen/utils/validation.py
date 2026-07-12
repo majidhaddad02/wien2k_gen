@@ -20,7 +20,7 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Optional, TypedDict, Union
 
 from ..logging_config import get_logger
 
@@ -38,10 +38,10 @@ class ValidationResult(TypedDict, total=False):
     """
     valid: bool
     path: Optional[str]
-    errors: List[str]
-    warnings: List[str]
-    info: List[str]
-    config: Optional[Dict[str, Any]]
+    errors: list[str]
+    warnings: list[str]
+    info: list[str]
+    config: Optional[dict[str, Any]]
     timestamp: float
 
 
@@ -50,8 +50,8 @@ class MachinesConfig(TypedDict, total=False):
     Parsed representation of a WIEN2k `.machines` file.
     Normalizes diverse formatting into a structured dictionary for validation.
     """
-    nodes: List[str]
-    cores_per_node: List[int]
+    nodes: list[str]
+    cores_per_node: list[int]
     mode: str  # 'mpi', 'hybrid', 'kpoint'
     omp_global: int
     kpar: int
@@ -61,14 +61,14 @@ class MachinesConfig(TypedDict, total=False):
     vector_split: int
     extrafine: int
     granularity: int
-    raw_lines: List[str]
+    raw_lines: list[str]
 
 
 # =============================================================================
 # WIEN2k .machines Parser
 # =============================================================================
 
-def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[str]]:
+def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[str]]:  # noqa: C901
     """
     Parse WIEN2k `.machines` file into structured config.
     Handles modern and legacy formats, ignores comments/blanks,
@@ -94,7 +94,7 @@ def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[st
         "granularity": 1,
         "raw_lines": []
     }
-    parse_warnings: List[str] = []
+    parse_warnings: list[str] = []
     target = Path(path)
 
     if not target.exists():
@@ -108,10 +108,10 @@ def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[st
         return config, parse_warnings
         
     raw_lines = content.splitlines()
-    config["raw_lines"] = [l.strip() for l in raw_lines if l.strip() and not l.strip().startswith("#")]
+    config["raw_lines"] = [line.strip() for line in raw_lines if line.strip() and not line.strip().startswith("#")]
 
     # Track node allocations to detect duplicates or mismatches
-    node_allocations: Dict[str, int] = {}
+    node_allocations: dict[str, int] = {}
     lapw1_nodes = set()
     lapw2_nodes = set()
 
@@ -124,11 +124,16 @@ def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[st
         val_match = re.match(r'^(omp_global|kpar|granularity|extrafine|lapw2_vector_split)\s*:\s*(\d+)', stripped, re.IGNORECASE)
         if val_match:
             key, val = val_match.group(1).lower(), int(val_match.group(2))
-            if key == "omp_global": config["omp_global"] = val
-            elif key == "kpar": config["kpar"] = val
-            elif key == "granularity": config["granularity"] = val
-            elif key == "extrafine": config["extrafine"] = val
-            elif key == "lapw2_vector_split": config["vector_split"] = val
+            if key == "omp_global":
+                config["omp_global"] = val
+            elif key == "kpar":
+                config["kpar"] = val
+            elif key == "granularity":
+                config["granularity"] = val
+            elif key == "extrafine":
+                config["extrafine"] = val
+            elif key == "lapw2_vector_split":
+                config["vector_split"] = val
             continue
             
         # lapw0 directive
@@ -146,8 +151,10 @@ def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[st
             if node not in node_allocations:
                 node_allocations[node] = 0
             node_allocations[node] += cores
-            if prog == "1": lapw1_nodes.add(node)
-            else: lapw2_nodes.add(node)
+            if prog == "1":
+                lapw1_nodes.add(node)
+            else:
+                lapw2_nodes.add(node)
             continue
             
         # k-point parallel mode (1: hostname)
@@ -186,7 +193,7 @@ def parse_machines_file(path: Union[str, Path]) -> Tuple[MachinesConfig, List[st
 # Validation Engine: Syntax, Consistency & Topology-Aware Checks
 # =============================================================================
 
-def _check_syntax(config: MachinesConfig) -> List[str]:
+def _check_syntax(config: MachinesConfig) -> list[str]:
     """Validate basic syntax, formatting, and required directives."""
     errors = []
     if not config["nodes"]:
@@ -200,7 +207,7 @@ def _check_syntax(config: MachinesConfig) -> List[str]:
     return errors
 
 
-def _check_consistency(config: MachinesConfig) -> Tuple[List[str], List[str]]:
+def _check_consistency(config: MachinesConfig) -> tuple[list[str], list[str]]:
     """Check internal mathematical & logical consistency."""
     errors = []
     warnings = []
@@ -222,8 +229,7 @@ def _check_consistency(config: MachinesConfig) -> Tuple[List[str], List[str]]:
                         f"Load imbalance expected in k-point distribution.")
                     
     # vector_split validation
-    if config["vector_split"] > 0:
-        if config["lapw2_cores"] % config["vector_split"] != 0:
+    if config["vector_split"] > 0 and config["lapw2_cores"] % config["vector_split"] != 0:
             warnings.append(f"lapw2_vector_split ({config['vector_split']}) does not divide lapw2 cores ({config['lapw2_cores']}).")
             
     # lapw0 sanity
@@ -233,7 +239,7 @@ def _check_consistency(config: MachinesConfig) -> Tuple[List[str], List[str]]:
     return errors, warnings
 
 
-def _check_topology_alignment(config: MachinesConfig, topo: Any) -> List[str]:
+def _check_topology_alignment(config: MachinesConfig, topo: Any) -> list[str]:
     """Cross-reference parsed config with detected hardware/scheduler topology."""
     warnings = []
     if topo is None:

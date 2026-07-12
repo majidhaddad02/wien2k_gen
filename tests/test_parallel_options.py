@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 from wien2k_gen.core.topology import Topology
-from wien2k_gen.utils.parallel_options import generate_parallel_options, DEFAULT_OPTIONS
+from wien2k_gen.utils.parallel_options import DEFAULT_OPTIONS, generate_parallel_options
 
 
 def _make_topo(env_type="slurm", cores_per_node=None, nodes=None):

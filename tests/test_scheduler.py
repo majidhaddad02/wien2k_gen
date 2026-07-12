@@ -4,18 +4,18 @@ Covers topology detection, scheduler environment parsing, hardware profiling,
 TopologyData validation, fallback behavior, and thread-safe execution.
 """
 
-import os
+import dataclasses
 import json
-import pytest
+import os
 import threading
-from unittest.mock import patch, MagicMock, call
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from wien2k_gen.core.scheduler import detect
-from wien2k_gen.core.topology import Topology, TopologyValidationError
+from wien2k_gen.core.topology import Topology
 from wien2k_gen.types import TopologyData
-from wien2k_gen.exceptions import DetectionFailedError, InvalidTopologyError
-
 
 # =============================================================================
 # Fixtures: Mock Outputs for System Commands
@@ -102,7 +102,7 @@ class TestSchedulerDetection:
     def test_topology_data_immutability(self):
         """TopologyData is frozen=True to prevent runtime mutation."""
         topo = TopologyData(nodes=["n1", "n2"], cores_per_node=[16, 16], total_cores=32)
-        with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             topo.total_cores = 64
 
     @patch("wien2k_gen.core.scheduler.get_physical_cores", return_value=12)
@@ -116,7 +116,7 @@ class TestSchedulerDetection:
         assert "pbs" in str(topo.scheduler_hints.get("scheduler", ""))
         assert topo.total_cores == 24
 
-    @pytest.mark.parametrize("nodes,cpus,expected", [
+    @pytest.mark.parametrize(("nodes", "cpus", "expected"), [
         (["n1", "n2", "n3"], [16, 16, 8], True),
         (["n1", "n2"], [32, 32], False),
         (["n1"], [16], False)
@@ -133,7 +133,6 @@ class TestTopologyThreadSafety:
     @patch("wien2k_gen.core.scheduler.FileLock")
     @patch("wien2k_gen.core.scheduler.get_physical_cores", return_value=16)
     def test_concurrent_detect_calls(self, mock_phys_cores, mock_filelock):
-        from pathlib import Path
         Path("/tmp/wien2k_gen_topology_cache.json").unlink(missing_ok=True)
         mock_filelock.return_value.__enter__.return_value = mock_filelock.return_value
         mock_filelock.return_value.__exit__.return_value = False
@@ -147,8 +146,10 @@ class TestTopologyThreadSafety:
                 errors.append(e)
 
         threads = [threading.Thread(target=worker) for _ in range(10)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         assert len(errors) == 0
         assert len(results) == 10

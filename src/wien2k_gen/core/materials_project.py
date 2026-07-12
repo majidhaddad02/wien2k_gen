@@ -22,12 +22,13 @@ Usage:
   wien2k_gen screen --mp-id "mp-149" --structure-only
 """
 
+import contextlib
 import json
 import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -46,7 +47,7 @@ class MPMaterial:
     """A material entry from Materials Project."""
     mp_id: str
     formula: str
-    elements: List[str] = field(default_factory=list)
+    elements: list[str] = field(default_factory=list)
     spacegroup: str = "P1"
     band_gap: float = 0.0
     is_metal: bool = False
@@ -64,8 +65,8 @@ class ScreeningResult:
     total_found: int = 0
     downloaded: int = 0
     converted: int = 0
-    materials: List[MPMaterial] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    materials: list[MPMaterial] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 class MaterialsProjectClient:
@@ -87,7 +88,7 @@ class MaterialsProjectClient:
             time.sleep(0.02 - elapsed)
         self._last_request_time = time.time()
 
-    def _request(self, endpoint: str, params: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def _request(self, endpoint: str, params: Optional[dict[str, str]] = None) -> dict[str, Any]:
         if params is None:
             params = {}
         params["_limit"] = params.get("_limit", "100")
@@ -114,10 +115,8 @@ class MaterialsProjectClient:
             with urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode("utf-8"))
 
-            try:
+            with contextlib.suppress(Exception):
                 cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            except Exception:
-                pass
 
             return data
         except Exception as e:
@@ -130,8 +129,8 @@ class MaterialsProjectClient:
             return {"data": []}
 
     def search_by_formula(
-        self, formula: str, elements: Optional[List[str]] = None, max_results: int = 100,
-    ) -> List[MPMaterial]:
+        self, formula: str, elements: Optional[list[str]] = None, max_results: int = 100,
+    ) -> list[MPMaterial]:
         """Search Materials Project by chemical formula.
 
         Args:
@@ -142,7 +141,7 @@ class MaterialsProjectClient:
         Returns:
             List of MPMaterial entries
         """
-        params: Dict[str, str] = {"formula": formula}
+        params: dict[str, str] = {"formula": formula}
         element_filter = elements or self._extract_elements_from_formula(formula)
 
         if element_filter:
@@ -154,8 +153,8 @@ class MaterialsProjectClient:
         return [self._parse_entry(e) for e in entries]
 
     def search_by_elements(
-        self, elements: List[str], max_results: int = 100,
-    ) -> List[MPMaterial]:
+        self, elements: list[str], max_results: int = 100,
+    ) -> list[MPMaterial]:
         """Search Materials Project by constituent elements.
 
         Args:
@@ -165,7 +164,7 @@ class MaterialsProjectClient:
         Returns:
             List of MPMaterial entries
         """
-        params: Dict[str, str] = {"elements": ",".join(elements[:8])}
+        params: dict[str, str] = {"elements": ",".join(elements[:8])}
         data = self._request("materials/search", params)
         entries = data.get("data", [])[:max_results]
 
@@ -211,7 +210,7 @@ class MaterialsProjectClient:
         data = self._request(f"materials/{mp_id}/cif")
         return data.get("data") or data.get("cif", "")
 
-    def _parse_entry(self, entry: Dict[str, Any]) -> MPMaterial:
+    def _parse_entry(self, entry: dict[str, Any]) -> MPMaterial:
         return MPMaterial(
             mp_id=entry.get("material_id", ""),
             formula=entry.get("formula_pretty", entry.get("formula", "")),
@@ -226,7 +225,7 @@ class MaterialsProjectClient:
         )
 
     @staticmethod
-    def _extract_elements_from_formula(formula: str) -> List[str]:
+    def _extract_elements_from_formula(formula: str) -> list[str]:
         import re
         elements = re.findall(r"[A-Z][a-z]?", formula.replace("*", "").replace("_", ""))
         return sorted(set(elements))
@@ -300,7 +299,7 @@ def convert_cif_to_wien2k_struct(cif_content: str, output_dir: Path, case_name: 
         "Th": 90, "Pa": 91, "U": 92, "Np": 93, "Pu": 94, "Am": 95,
     }
 
-    species: Dict[str, List[Tuple[int, float, float, float]]] = {}
+    species: dict[str, list[tuple[int, float, float, float]]] = {}
     for el, _, x, y, z in site_blocks:
         species.setdefault(el, []).append((Z_MAP.get(el, 1), float(x), float(y), float(z)))
 
@@ -318,9 +317,9 @@ def convert_cif_to_wien2k_struct(cif_content: str, output_dir: Path, case_name: 
         z = sites[0][0]
         title = f"{el.upper()}{' ' + case_name if i == 0 else ''}"
         lines.append(f"{title:10s} NPT=  0  R0=0.0005000000 RMT=    2.0000   Z: {float(z):3.1f}")
-        lines.append(f"LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000")
-        lines.append(f"                     0.0000000 1.0000000 0.0000000")
-        lines.append(f"                     0.0000000 0.0000000 1.0000000")
+        lines.append("LOCAL ROT MATRIX:    1.0000000 0.0000000 0.0000000")
+        lines.append("                     0.0000000 1.0000000 0.0000000")
+        lines.append("                     0.0000000 0.0000000 1.0000000")
         for z_at, x, y, z_val in sites:
             lines.append(f"   {z_at:3d}: X={x:12.8f} Y={y:12.8f} Z={z_val:12.8f}")
             lines.append("          MULT= 0          ISPLIT= 8")
@@ -333,7 +332,7 @@ def convert_cif_to_wien2k_struct(cif_content: str, output_dir: Path, case_name: 
 
 def screen_materials(
     formula: Optional[str] = None,
-    elements: Optional[List[str]] = None,
+    elements: Optional[list[str]] = None,
     mp_id: Optional[str] = None,
     max_results: int = 50,
     api_key: Optional[str] = None,
