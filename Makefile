@@ -90,8 +90,10 @@ install-completions:
 	@mkdir -p ~/.local/share/zsh/site-functions
 	@cp $(COMPLETIONS_DIR)/wien2k_gen.bash ~/.local/share/bash-completion/completions/wien2k_gen 2>/dev/null || true
 	@cp $(COMPLETIONS_DIR)/wien2k_sbatch.bash ~/.local/share/bash-completion/completions/wien2k_sbatch 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/wien2k_wizard.bash ~/.local/share/bash-completion/completions/wien2k_wizard 2>/dev/null || true
 	@cp $(COMPLETIONS_DIR)/wien2k_gen.zsh ~/.local/share/zsh/site-functions/_wien2k_gen 2>/dev/null || true
 	@cp $(COMPLETIONS_DIR)/wien2k_sbatch.zsh ~/.local/share/zsh/site-functions/_wien2k_sbatch 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/wien2k_wizard.zsh ~/.local/share/zsh/site-functions/_wien2k_wizard 2>/dev/null || true
 	@echo "🔗 Shell completions installed. Restart your shell or run: source ~/.bashrc"
 
 docker:
@@ -112,7 +114,7 @@ tui:
 	@$(VENV)/bin/$(APP_NAME) tui
 
 wizard:
-	@$(VENV)/bin/$(APP_NAME) wizard
+	@$(VENV)/bin/wien2k_wizard
 
 # ==============================================================================
 # Cleanup
