@@ -67,7 +67,7 @@ Returns: `"laptop"`, `"workstation"`, `"compute_node"`, `"cluster"`, `"unknown"`
     "type": "infiniband",
     "provider": "mlx5",
     "speed_gbps": 100.0,
-    "latency_ns": 1.0,
+    "latency_ns": 1.5,
     "active_rate_gbps": 100.0,
 }]
 ```
@@ -256,7 +256,7 @@ Smart Kerker q0 based on system type (Winkelmann et al. 2020, Phys. Rev. B 102, 
 Selects mixing strategy based on system size and type.
 Returns `"restarted_pulay_kerker"`, `"restarted_pulay"`, or `"broyden"`.
 
-**Decision matrix (Pratapa & Suryanarayana, Chem. Phys. Lett. 635, 2015):**
+**Decision matrix (Pratapa & Suryanarayana, Chem. Phys. Lett. 635, 69-74, 2015):**
 - large (>50 atoms) + metal → restarted_pulay_kerker
 - large (>50 atoms) + non-metal → restarted_pulay
 - small (≤50 atoms) → broyden
@@ -287,7 +287,7 @@ from wien2k_gen.optimizer.advisor import (
 #### `suggest_optimal_resources(topo, user_max_cores=None, optimization_target=OptimizationTarget.TIME) -> ResourceSuggestion`
 Main optimization function. Returns ResourceSuggestion with `mode`, `recommended_total_cores`, `recommended_nodes`, `mpi_ranks_per_node`, `omp_threads_per_rank`, `warnings`, `confidence_score`.
 
-#### `estimate_amdahl_saturation(kpoints, nmat, atoms, total_cores, num_nodes, mode="mpi") -> dict`
+#### `estimate_amdahl_saturation(kpoints, nmat, atoms, total_cores_available, num_nodes=1, mode="kpoint") -> dict`
 ```python
 {
     "serial_fraction": float,
@@ -301,10 +301,10 @@ Main optimization function. Returns ResourceSuggestion with `mode`, `recommended
 }
 ```
 
-#### `estimate_memory_footprint_gb(nmat, nbands=None, rkmax=7.0, atoms=10, is_soc=False, is_hybrid=False, total_cores=1) -> float`
+#### `estimate_memory_footprint_gb(nmat, nbands=None, rkmax=7.0, atoms=10, is_soc=False, is_hybrid=False, total_cores=1, omp_threads=1) -> float`
 Memory requirement estimate in GB.
 
-#### `roofline_crossover_analysis(peak_gflops, bandwidth_gb_s, operational_intensity) -> Dict`
+#### `roofline_crossover_analysis(hw_profile: dict, oi: float, target_backend: str) -> dict`
 Roofline model analysis with compute/memory-bound identification and crossover point.
 
 ---
@@ -397,6 +397,7 @@ Boolean ELPA recommendation with nmat < 5000 overhead warning.
 #### `recommend_rkmax(atomic_numbers, calculation_type="scf", rmt_ratios=None, is_soc=False) -> float`
 RKMAX recommendation with element hardness and SOC awareness.
 
+<!-- TODO: verify setrmt citation -->
 **Hard element adjustments (Blaha JCP 2020):**
 - O, F, N with small RMT → RKMAX ≥ 7.0
 - SOC → RKMAX ≥ 7.0 + 0.5
@@ -527,7 +528,7 @@ Intelligent GPU strategy recommendation with 4 scenarios:
 #### `generate_hybrid_machines(gpu_info, cpu_cores, num_kpoints, nmat) -> str`
 Generates hybrid `.machines` with GPU ranks for lapw1 and CPU ranks for lapw2/lapw0.
 
-#### `run_gpu_benchmark(case_name, gpu_id=0) -> Dict`
+#### `run_gpu_benchmark(case_name, gpu_id=0, n_sampling_steps=100, n_kpoints=1) -> Dict`
 Runs CPU vs GPU lapw1 timing comparison. Returns speedup and saves to `.gpu_benchmark.json`.
 
 ---
@@ -540,7 +541,6 @@ Runs CPU vs GPU lapw1 timing comparison. Returns speedup and saves to `.gpu_benc
 from wien2k_gen.ml.gnn_kpoint_predictor import (
     build_crystal_graph,
     predict_kpoints,
-    _kpoint_fallback,
     CGCNNModel,
     GraphConvLayer,
 )
@@ -567,10 +567,6 @@ GNN-based k-point grid prediction.
 ```
 
 Confidence < 0.70 triggers MP grid fallback.
-
-#### `_kpoint_fallback(structure, reason="") -> Dict`
-Monkhorst-Pack grid fallback: `k_i = max(1, round(k0/|a_i|))`.
-k0 = 30 for insulators/semiconductors, 40 for metals.
 
 #### `CGCNNModel`
 Lightweight 4-layer graph convolution network with residual connections, global mean+max pooling, and 2-layer MLP head. Pure NumPy — zero PyTorch dependency.
@@ -606,11 +602,11 @@ from wien2k_gen.backends.wien2k import Wien2kBackend, check_elpa_available
 ```python
 from wien2k_gen.types import (
     BackendCode,         # WIEN2K, QUANTUM_ESPRESSO, VASP, CP2K
-    CalculationType,     # SCF, SPIN_POLARIZED, SOC, SPIN_POLARIZED_SOC, LDA_U, HYBRID_FUNC, FORCES, EECE
-    ExecutionMode,       # KPOINT, HYBRID, MPI, FINE_GRAIN
+    CalculationType,     # SCF, SPIN_POLARIZED, SPIN_ORBIT, SPIN_POLARIZED_SOC, LDA_U, HYBRID_FUNC, FORCES, EECE
+    ExecutionMode,       # KPOINT, HYBRID, MPI, SERIAL, FINE_GRAIN
     Wien2kVersion,       # V19, V21, V23, V24, UNKNOWN
     Wien2kFlags,
-    OptimizationTarget,  # TIME, ENERGY, COST, BALANCED
+    OptimizationTarget,  # TIME, MEMORY, COST, BALANCED
 )
 ```
 

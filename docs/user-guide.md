@@ -254,7 +254,7 @@ For any given parallel mode and core count:
 
 ## SCF Convergence Diagnostics
 
-### Smart Kerker q0 (Winkelmann et al. 2020, PRB 102, 195138)
+### Smart Kerker q0 (Winkelmann et al. 2020, PRB 102, 195138, doi:10.1103/PhysRevB.102.195138)
 
 The system type is auto-detected from the band gap in `case.scf`:
 
@@ -283,10 +283,10 @@ The lattice constant `a` is extracted from the `.struct` file. The q0 parameter 
 |----------|-------------|-----------|-----------|
 | **Broyden** | Small systems (≤50 atoms) | Default WIEN2k mixing | — |
 | **Kerker** | Metallic systems | Preconditioned mixing with q0 control | Winkelmann et al. 2020 |
-| **Restarted Pulay** | Large systems (>50 atoms) | history_size=7, Tikhonov reg=1e-10 | Pratapa & Suryanarayana 2015 |
+| **Restarted Pulay** | Large systems (>50 atoms) | history_size=7, Tikhonov reg=1e-10 | Pratapa & Suryanarayana 2015, pp. 69-74 |
 | **Pulay + Kerker** | Large + metallic | Combined restart + preconditioning | — |
 
-The mixing strategy is selected automatically by `_adjust_mixing()` in the workflow executor based on:
+The mixing strategy is selected automatically by the internal `_adjust_mixing()` method in `workflow_executor` based on:
 1. System type from `.scf` band gap
 2. Number of atoms from `.struct`
 3. Current SCF convergence state
@@ -364,7 +364,7 @@ GPU memory is estimated as `nmat² × 16 bytes × kpts × 1.5 / (1024²)` MB wit
 
 ### RMT Optimization (setrmt Algorithm)
 
-Based on Blaha et al. (JCP 2020):
+Based on the setrmt algorithm (Blaha et al., JCP 2020):
 - Calculates nearest-neighbor distances via 3×3×3 supercell search
 - Optimal RMT = 0.95 × (nn_distance / 2), clamped [2.5, 4.0] a.u.
 - Detects RMT overlaps: warning >0.95, critical >1.00

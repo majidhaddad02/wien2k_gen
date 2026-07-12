@@ -49,7 +49,8 @@ docker run --rm -v $(pwd):/work wien2k_gen generate
 
 ### Singularity / Apptainer
 ```bash
-singularity build wien2k_gen.sif docker://ghcr.io/majidhaddad02/wien2k_gen
+<!-- TODO: add container registry URL when published -->
+singularity build wien2k_gen.sif docker-daemon://wien2k_gen:latest
 singularity exec --bind $(pwd):/work wien2k_gen.sif wien2k_gen generate
 ```
 

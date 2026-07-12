@@ -16,7 +16,15 @@ Core Engine
    :members:
    :undoc-members:
 
+.. automodule:: wien2k_gen.core.case_parser
+   :members:
+   :undoc-members:
+
 .. automodule:: wien2k_gen.core.pipeline
+   :members:
+   :undoc-members:
+
+.. automodule:: wien2k_gen.core.workflow_executor
    :members:
    :undoc-members:
 
@@ -31,7 +39,19 @@ Optimization
    :members:
    :undoc-members:
 
+.. automodule:: wien2k_gen.optimizer.bayesian
+   :members:
+   :undoc-members:
+
+.. automodule:: wien2k_gen.optimizer.gpu_detector
+   :members:
+   :undoc-members:
+
 .. automodule:: wien2k_gen.optimizer.monitor
+   :members:
+   :undoc-members:
+
+.. automodule:: wien2k_gen.optimizer.parallel
    :members:
    :undoc-members:
 
@@ -54,5 +74,12 @@ Types
 -----
 
 .. automodule:: wien2k_gen.types
+   :members:
+   :undoc-members:
+
+Machine Learning
+----------------
+
+.. automodule:: wien2k_gen.ml.gnn_kpoint_predictor
    :members:
    :undoc-members:

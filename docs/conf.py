@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "WIEN2k Generator"
 copyright = "2025, HPC Workflow Team"
 author = "HPC Workflow Team"
-release = "9.8.0"
+release = "0.1.0"
 
 # -- General configuration ---------------------------------------------------
 extensions = [

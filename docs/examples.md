@@ -218,7 +218,7 @@ wien2k_gen generate --export config.json
   "warnings": ["ELPA not found; MPI fine-grain may be slow"],
   "confidence_score": 0.85,
   "estimated_memory_gb": 48.2,
-  "estimated_time_minutes": 120.5
+  "vector_split_active": false
 }
 ```
 

@@ -5,6 +5,12 @@ WIEN2k Generator Documentation
    :maxdepth: 2
    :caption: Contents:
 
+   installation
+   user-guide
+   examples
+   parallel-modes
+   troubleshooting
+   contributing
    api
 
 Production-grade WIEN2k parallel configuration file generator and HPC job dispatcher
@@ -61,7 +67,7 @@ If you use WIEN2k Generator in your research, please cite:
      author = {Haddad, Majid and Jalali Asadabadi, Saed},
      title = {WIEN2k Generator: Production-Grade Parallel Configuration for HPC DFT},
      year = {2025},
-     version = {9.8.0},
+      version = {0.1.0},
      url = {https://github.com/majidhaddad02/wien2k_gen}
    }
 

@@ -103,6 +103,8 @@ Similar to MPI fine-grain but with proportional reduction from atom decompositio
 
 The optimizer uses a scoring system:
 
+<!-- TODO: verify scoring formula against code -->
+
 ```python
 score(mode) = w_kpt × kpoint_efficiency +
               w_mat × matrix_parallelism +

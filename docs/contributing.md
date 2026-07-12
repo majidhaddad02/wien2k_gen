@@ -64,10 +64,12 @@ src/wien2k_gen/
 │   ├── validation.py        # .machines validation
 │   ├── diagnostic.py        # System diagnostics
 │   └── ...
+├── cli.py             # Rich CLI
+├── wizard.py          # Interactive wizard
+├── backend_manager.py # Backend registration
 ├── ui/                # User interfaces
-│   ├── cli.py         # Rich CLI
-│   ├── interactive.py # Textual TUI
-│   ├── wizard.py      # Interactive wizard
+│   ├── rich_ui.py     # Rich text UI utilities
+│   ├── analysis.py    # UI analysis helpers
 │   └── ...
 ├── types.py           # Type definitions and enums
 ├── config.py          # Configuration management
