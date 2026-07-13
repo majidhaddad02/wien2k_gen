@@ -2,30 +2,43 @@
 Lightweight REST API Server for FORGE.
 Uses Python stdlib http.server only -- no external web framework.
 
+WARNING: The /submit endpoint is a stub and does NOT submit to any
+scheduler (SLURM/PBS). All state is volatile (in-memory, lost on restart).
+This is intended as a development/exploration tool only.
+
 Endpoints:
   GET  /api/v1/status             -> project version, uptime, active workflows
   GET  /api/v1/topology           -> hardware topology JSON
   POST /api/v1/optimize           -> accepts problem params, returns ResourceSuggestion
   GET  /api/v1/jobs               -> list submitted jobs
   GET  /api/v1/jobs/{job_id}      -> job details
-  POST /api/v1/submit             -> submit a job
+  POST /api/v1/submit             -> submit a job (STUB — no real scheduler)
   GET  /api/v1/convergence/{id}   -> convergence data
   GET  /api/v1/health             -> memory, disk, cpu usage
+
+Authentication:
+  Set FORGE_API_TOKEN in the environment.  Requests must include
+  header ``X-API-Key: <token>``.  Without a token the server refuses
+  to start.
 """
 
+import hmac
 import json
 import logging
 import os
+import secrets
 import signal
+import string
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from socketserver import ThreadingMixIn
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] api: %(message)s")
-logger = logging.getLogger("wien2k_api")
+logger = logging.getLogger("forge_api")
 
 START_TIME = time.time()
 
@@ -39,7 +52,11 @@ try:
 except ImportError:
     _HAS_PSUTIL = False
 
-_API_TOKEN = os.environ.get("WIEN2K_API_TOKEN", "")
+_API_TOKEN = os.environ.get("FORGE_API_TOKEN", "")
+
+if not _API_TOKEN:
+    _API_TOKEN = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+    logger.warning("FORGE_API_TOKEN not set — generated random token: %s", _API_TOKEN)
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -56,16 +73,15 @@ def _json_response(handler: BaseHTTPRequestHandler, data: Any, status: int = 200
 
 
 def _cors_headers(handler: BaseHTTPRequestHandler) -> None:
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+    if os.environ.get("FORGE_API_CORS", "") == "1":
+        handler.send_header("Access-Control-Allow-Origin", "*")
+        handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
 
 
 def _auth_check(handler: BaseHTTPRequestHandler) -> bool:
-    if not _API_TOKEN:
-        return True
     token = handler.headers.get("X-API-Key", "")
-    return token == _API_TOKEN
+    return hmac.compare_digest(token, _API_TOKEN)
 
 
 def _parse_path(path: str) -> tuple[str, Optional[str]]:
@@ -162,7 +178,11 @@ def _log(level: str, message: str) -> None:
 # request handler
 # ---------------------------------------------------------------------------
 
-class Wien2kAPIHandler(BaseHTTPRequestHandler):
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    """HTTPServer with per-request threading."""
+
+
+class ForgeAPIHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         logger.info(fmt % args)
 
@@ -341,8 +361,8 @@ class Wien2kAPIHandler(BaseHTTPRequestHandler):
             "convergence_data": [],
         }
 
-        # simulate job start (in production this would submit to SLURM/DRMAA, etc.)
-        _log("INFO", f"Job {job_id} submitted for backend={body.get('backend', 'wien2k')}")
+        # Stub: no real scheduler submission — all state is in-memory only.
+        _log("WARNING", f"Job {job_id}: submit is a STUB (no SLURM/PBS). Job will not execute.")
         job["status"] = "running"
         _workflows[wf_id]["status"] = "running"
 
@@ -354,8 +374,9 @@ class Wien2kAPIHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main(port: int = 8080) -> None:
-    server = HTTPServer(("0.0.0.0", port), Wien2kAPIHandler)
-    _log("INFO", f"FORGE API server starting on port {port}")
+    bind_host = os.environ.get("FORGE_API_HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((bind_host, port), ForgeAPIHandler)
+    _log("INFO", f"FORGE API server starting on {bind_host}:{port}")
 
     def _shutdown(signum: int, frame: Any) -> None:
         _log("INFO", f"Received signal {signum}, shutting down")
@@ -364,8 +385,8 @@ def main(port: int = 8080) -> None:
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    logger.info(f"Serving on http://0.0.0.0:{port}")
-    print(f"FORGE API server listening on http://0.0.0.0:{port}")
+    logger.info(f"Serving on http://{bind_host}:{port}")
+    print(f"FORGE API server listening on http://{bind_host}:{port}")
 
     try:
         server.serve_forever()
@@ -377,5 +398,5 @@ def main(port: int = 8080) -> None:
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("WIEN2K_API_PORT", 8080))
+    port = int(os.environ.get("FORGE_API_PORT", 8080))
     main(port)

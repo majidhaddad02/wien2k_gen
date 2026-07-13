@@ -1,6 +1,11 @@
 """
 Lightweight Crystal Graph Neural Network for K-point Prediction.
 
+**EXPERIMENTAL — DO NOT USE IN PRODUCTION**
+This module is NOT connected to the CLI or wizard. It ships random-initialized
+weights (no actual training) and produces meaningless predictions. Keep only
+for future R&D; remove before any stable release.
+
 Implements CGCNN-style graph convolution (Choudhary 2019) using only numpy.
 No PyTorch dependency — pure numpy matrix operations for zero-dependency inference.
 
@@ -18,7 +23,6 @@ References:
 from __future__ import annotations
 
 import math
-import pickle
 from pathlib import Path
 from typing import Any
 
@@ -242,16 +246,54 @@ class CGCNNModel:
         return out.flatten()
 
     def save(self, path: str) -> None:
-        """Save model weights to file."""
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
+        """Save model weights to .npz file (safe, no code execution)."""
+        weights: dict[str, np.ndarray] = {}
+        weights["conv1_W_self"] = self.conv1.W_self
+        weights["conv1_W_neigh"] = self.conv1.W_neigh
+        weights["conv1_W_edge"] = self.conv1.W_edge
+        weights["conv1_bias"] = self.conv1.bias
+        for i, conv in enumerate(self.convs):
+            weights[f"convs_{i}_W_self"] = conv.W_self
+            weights[f"convs_{i}_W_neigh"] = conv.W_neigh
+            weights[f"convs_{i}_W_edge"] = conv.W_edge
+            weights[f"convs_{i}_bias"] = conv.bias
+        weights["fc1_W"] = self.fc1_W
+        weights["fc1_b"] = self.fc1_b
+        weights["fc2_W"] = self.fc2_W
+        weights["fc2_b"] = self.fc2_b
+        np.savez(path, **weights)
         logger.info(f"GNN model saved to {path}")
 
     @staticmethod
     def load(path: str) -> CGCNNModel:
-        """Load model weights from file."""
-        with open(path, "rb") as f:
-            model = pickle.load(f)
+        """Load model weights from .npz file."""
+        data = np.load(path)
+        n_conv_layers = 0
+        while f"convs_{n_conv_layers}_W_self" in data:
+            n_conv_layers += 1
+        n_conv_layers = max(n_conv_layers, 1)
+        output_dim = data["fc2_b"].shape[0]
+        hidden_dim = data["conv1_W_self"].shape[1]
+
+        model = CGCNNModel(
+            node_dim=data["conv1_W_self"].shape[0],
+            hidden_dim=hidden_dim,
+            n_conv_layers=n_conv_layers,
+            output_dim=output_dim,
+        )
+        model.conv1.W_self = data["conv1_W_self"]
+        model.conv1.W_neigh = data["conv1_W_neigh"]
+        model.conv1.W_edge = data["conv1_W_edge"]
+        model.conv1.bias = data["conv1_bias"]
+        for i in range(n_conv_layers - 1):
+            model.convs[i].W_self = data[f"convs_{i}_W_self"]
+            model.convs[i].W_neigh = data[f"convs_{i}_W_neigh"]
+            model.convs[i].W_edge = data[f"convs_{i}_W_edge"]
+            model.convs[i].bias = data[f"convs_{i}_bias"]
+        model.fc1_W = data["fc1_W"]
+        model.fc1_b = data["fc1_b"]
+        model.fc2_W = data["fc2_W"]
+        model.fc2_b = data["fc2_b"]
         logger.info(f"GNN model loaded from {path}")
         return model
 
@@ -337,7 +379,7 @@ def _get_or_create_model(model_path: str | None = None, default_dir: str | None 
     if default_dir:
         model_dir = Path(default_dir)
         if model_dir.exists():
-            model_files = sorted(model_dir.glob("gnn_kpoint_v*.pt"))
+            model_files = sorted(model_dir.glob("gnn_kpoint_v*.npz"))
             if model_files:
                 try:
                     return CGCNNModel.load(str(model_files[-1]))

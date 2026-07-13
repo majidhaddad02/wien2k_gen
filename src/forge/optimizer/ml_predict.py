@@ -89,8 +89,7 @@ class SCFTimePredictor:
         self._model = None
         self._trained = False
         self._feature_names = [
-            "atoms", "inequiv", "ntype", "max_z", "avg_z", "volume",
-            "packing", "nmat", "nbands", "rkmax", "nkpt", "complexity",
+            "atoms", "nmat", "nbands", "rkmax", "nkpt", "complexity",
         ]
 
     def train_from_history(self, history_path: Optional[str] = None) -> None:
@@ -164,8 +163,7 @@ class SCFTimePredictor:
 
                 complexity = (nmat ** 1.5 * nkpt * atoms * rkmax / 7.0) / 1e6
                 features = [
-                    atoms, atoms, 1, 26, 26.0, 100.0,
-                    0.5, nmat, nmat // 10, rkmax, nkpt, complexity,
+                    atoms, nmat, nmat // 10, rkmax, nkpt, complexity,
                 ]
                 X_list.append(features)
                 y_time.append(float(r.get("walltime_sec", 3600)) / 3600.0)
@@ -202,8 +200,7 @@ class SCFTimePredictor:
             try:
                 import numpy as np
                 X = np.array([[
-                    sf.atoms, sf.atoms_inequiv, sf.ntype, sf.max_z, sf.avg_z,
-                    sf.volume_bohr3, sf.packing_fraction,
+                    sf.atoms,
                     ef.nmat, ef.nbands, ef.rkmax, ef.nkpt, complexity,
                 ]])
                 ml_time = float(self._model.predict(X)[0])

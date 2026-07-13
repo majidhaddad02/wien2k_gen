@@ -41,7 +41,8 @@ logger = get_logger(__name__)
 # =============================================================================
 # Cache Configuration & Serialization Helpers
 # =============================================================================
-_DETECTION_CACHE_FILE = Path("/tmp/forge_topology_cache.json")
+_CACHE_DIR = Path.home() / ".cache" / "forge"
+_DETECTION_CACHE_FILE = _CACHE_DIR / "topology_cache.json"
 _CACHE_TTL_SECONDS = 300  # 5 minutes cache lifetime
 
 def _is_json_serializable(obj: Any) -> bool:
@@ -106,6 +107,7 @@ def _save_cached_detection(result_data: dict[str, Any]) -> None:
     """Persist detection result with timestamp and environment hash."""
     lock_path = str(_DETECTION_CACHE_FILE) + ".lock"
     try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with FileLock(lock_path, timeout=2):
             payload = {
                 "timestamp": time.time(),

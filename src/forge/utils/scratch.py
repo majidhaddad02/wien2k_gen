@@ -14,6 +14,7 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -258,7 +259,7 @@ def _stage_slurm_sbcast(files: list[Path], dest_dir: str) -> tuple[list[str], li
             raise RuntimeError("sbcast not found in PATH")
             
         # Create temporary tar to minimize sbcast metadata overhead
-        tar_path = Path("/tmp") / f"wien2k_stage_{os.getpid()}.tar.gz"
+        tar_path = Path(tempfile.gettempdir()) / f".forge_stage_{os.getpid()}.tar.gz"
         proc = subprocess.run(
             ["tar", "-czf", str(tar_path), "-C", str(files[0].parent), *[f.name for f in files]],
             capture_output=True, text=True, timeout=30
