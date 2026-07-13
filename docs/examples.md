@@ -7,7 +7,7 @@
 ```bash
 init_lapw -b -vxc 13 -ecut -6 -rkmax 7.0 -numk 1000
 run_lapw -p  # generates case.scf with :NMAT 2567
-wien2k_gen generate
+forge generate
 ```
 
 **Generated `.machines`:**
@@ -27,7 +27,7 @@ extrafine:1
 
 **Generated `parallel_options`:**
 ```bash
-# Auto-generated parallel_options (wien2k_gen)
+# Auto-generated parallel_options (forge)
 # Topology: local | 32 cores | NUMA=2
 
 USE_REMOTE=0
@@ -50,7 +50,7 @@ OMP_NUM_THREADS=1
 ```bash
 #SBATCH --nodes=4
 #SBATCH --ntasks-per-node=64
-wien2k_gen generate
+forge generate
 ```
 
 **Generated `.machines`:**
@@ -97,7 +97,7 @@ WIEN_GRANULARITY=1
 - `case.inm` — U=0.30 Ry, J=0.00 Ry for Ni (atom 1)
 
 ```bash
-wien2k_gen generate
+forge generate
 ```
 
 **Detection output:**
@@ -127,7 +127,7 @@ runsp_lapw -p -so
 ## Scenario 5: Reserved Cores — 128-core EPYC Genoa Workstation
 
 ```bash
-wien2k_gen generate --reserve-os-cores 4
+forge generate --reserve-os-cores 4
 ```
 
 **Output:**
@@ -149,7 +149,7 @@ Recommended cores: 124
 ```bash
 #$ -pe mpi 64              # 64 slots across nodes
 #$ -l h_rt=24:00:00
-wien2k_gen generate --scheduler sge
+forge generate --scheduler sge
 ```
 
 **Detected:** SGE environment via `PE_HOSTFILE` → 64 slots across 4 nodes
@@ -165,7 +165,7 @@ wien2k_gen generate --scheduler sge
 ## Scenario 7: GPU-Accelerated — Large Supercell
 
 ```bash
-wien2k_gen generate --gpu
+forge generate --gpu
 ```
 
 **Output includes GPU-specific directives:**
@@ -178,7 +178,7 @@ wien2k_gen generate --gpu
 ## Scenario 8: Dry-Run Preview
 
 ```bash
-wien2k_gen generate --dry-run
+forge generate --dry-run
 ```
 
 ```
@@ -202,7 +202,7 @@ wien2k_gen generate --dry-run
 ## Scenario 9: JSON Export for Automation
 
 ```bash
-wien2k_gen generate --export config.json
+forge generate --export config.json
 ```
 
 **`config.json`:**

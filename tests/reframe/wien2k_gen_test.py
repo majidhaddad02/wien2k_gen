@@ -35,9 +35,9 @@ except ImportError:  # pragma: no cover
     performance_function = _performance_function  # type: ignore[no-redef]
 
 
-def _find_wien2k_gen() -> str:
-    """Locate the wien2k_gen CLI entry point."""
-    for candidate in ["wien2k_gen", "python -m wien2k_gen"]:
+def _find_forge() -> str:
+    """Locate the forge CLI entry point."""
+    for candidate in ["forge", "python -m forge"]:
         try:
             result = subprocess.run(
                 [*candidate.split(), "--version"],
@@ -49,16 +49,16 @@ def _find_wien2k_gen() -> str:
                 return candidate
         except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
-    return "wien2k_gen"
+    return "forge"
 
 
-_WIEN2K_GEN_CLI = _find_wien2k_gen()
+_WIEN2K_GEN_CLI = _find_forge()
 
 
 @rfm.simple_test
-class Wien2kGenSmokeTest(rfm.RunOnlyRegressionTest):
+class FORGESmokeTest(rfm.RunOnlyRegressionTest):
     """
-    Smoke test: verify wien2k_gen can generate a valid .machines file
+    Smoke test: verify forge can generate a valid .machines file
     with the 'generate' subcommand and does not crash on basic inputs.
     """
 
@@ -92,7 +92,7 @@ class Wien2kGenSmokeTest(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class Wien2kGenDryRunContentTest(rfm.RunOnlyRegressionTest):
+class FORGEDryRunContentTest(rfm.RunOnlyRegressionTest):
     """
     Verify dry-run output contains expected configuration directives.
     """
@@ -123,7 +123,7 @@ class Wien2kGenDryRunContentTest(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class Wien2kGenBenchmarkTest(rfm.RunOnlyRegressionTest):
+class FORGEBenchmarkTest(rfm.RunOnlyRegressionTest):
     """
     Benchmark: measure configuration generation time and check output quality.
 
@@ -183,7 +183,7 @@ class Wien2kGenBenchmarkTest(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class Wien2kGenModeDetectionTest(rfm.RunOnlyRegressionTest):
+class FORGEModeDetectionTest(rfm.RunOnlyRegressionTest):
     """
     Verify that the advisor correctly detects and recommends parallelisation
     modes (kpoint, hybrid, mpi) based on system characteristics.
@@ -212,7 +212,7 @@ class Wien2kGenModeDetectionTest(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class Wien2kGenMultiNodeTest(rfm.RunOnlyRegressionTest):
+class FORGEMultiNodeTest(rfm.RunOnlyRegressionTest):
     """
     Multi-node configuration test: verify correct core distribution across
     multiple nodes with heterogeneous-aware allocation.
@@ -251,7 +251,7 @@ class Wien2kGenMultiNodeTest(rfm.RunOnlyRegressionTest):
 
 
 @rfm.simple_test
-class Wien2kGenHistoryPersistenceTest(rfm.RunOnlyRegressionTest):
+class FORGEHistoryPersistenceTest(rfm.RunOnlyRegressionTest):
     """
     Verify execution history persistence: generate a config, verify history
     database is created and contains a record.
@@ -269,7 +269,7 @@ class Wien2kGenHistoryPersistenceTest(rfm.RunOnlyRegressionTest):
         cmd = (
             f"cd {stage_dir} && "
             f"{_WIEN2K_GEN_CLI} generate --nodes 1 --cores 4 --dry-run && "
-            f"test -f ~/.wien2k_gen/history.db && echo 'HISTORY_DB_OK' || echo 'HISTORY_DB_MISSING'"
+            f"test -f ~/.forge/history.db && echo 'HISTORY_DB_OK' || echo 'HISTORY_DB_MISSING'"
         )
         self.executable_opts = ["-c", cmd]
 

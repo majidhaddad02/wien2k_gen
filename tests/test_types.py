@@ -6,7 +6,7 @@ References:
 - WIEN2k Usersguide, Sections 4.1-4.4.
 """
 
-from wien2k_gen.types import (
+from forge.types import (
     CalculationType,
     ExecutionMode,
     Wien2kFlags,

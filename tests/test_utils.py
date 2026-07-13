@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from wien2k_gen.utils.atomic_write import atomic_write
-from wien2k_gen.utils.filelock import FileLock, LockTimeoutError
-from wien2k_gen.utils.validation import parse_machines_file, validate_machines
+from forge.utils.atomic_write import atomic_write
+from forge.utils.filelock import FileLock, LockTimeoutError
+from forge.utils.validation import parse_machines_file, validate_machines
 
 
 class TestAtomicWrite:
@@ -40,7 +40,7 @@ class TestFileLock:
         fallback = tmp_path / ".test.lock.lock.d"
         assert not fallback.exists()
 
-    @patch("wien2k_gen.utils.filelock.fcntl.flock", side_effect=OSError(11, "Resource temporarily unavailable"))
+    @patch("forge.utils.filelock.fcntl.flock", side_effect=OSError(11, "Resource temporarily unavailable"))
     def test_timeout_raises_error(self, mock_flock, tmp_path):
         target_path = tmp_path / "busy.lock"
         fallback_dir = tmp_path / ".busy.lock.lock.d"
@@ -72,7 +72,7 @@ granularity: 1
         content = "lapw1: node01: 64\nlapw2: node01: 64\nomp_global: 1"
         f = tmp_path / ".machines"
         f.write_text(content)
-        from wien2k_gen.types import TopologyData
+        from forge.types import TopologyData
         topo = TopologyData(nodes=["node01"], cores_per_node=[32], total_cores=32)
         res = validate_machines(f, topo=topo, strict_mode=False)
         assert any("exceed" in w.lower() for w in res["warnings"])

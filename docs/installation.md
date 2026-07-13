@@ -10,19 +10,19 @@
 ## Standard Installation
 
 ```bash
-pip install wien2k_gen
+pip install forge
 ```
 
 Verify:
 ```bash
-wien2k_gen --version
+forge --version
 ```
 
 ## From Source
 
 ```bash
-git clone https://github.com/majidhaddad02/wien2k_gen.git
-cd wien2k_gen
+git clone https://github.com/majidhaddad02/forge.git
+cd forge
 pip install -e ".[dev]"
 ```
 
@@ -32,26 +32,26 @@ For clusters without internet access:
 
 ```bash
 # On a machine with internet:
-pip download wien2k_gen -d ./offline_packages
+pip download forge -d ./offline_packages
 rsync -av offline_packages/ cluster:/path/to/packages/
 
 # On the cluster:
-pip install --no-index --find-links /path/to/packages/ wien2k_gen
+pip install --no-index --find-links /path/to/packages/ forge
 ```
 
 ## Container Deployment
 
 ### Docker
 ```bash
-docker build -t wien2k_gen .
-docker run --rm -v $(pwd):/work wien2k_gen generate
+docker build -t forge .
+docker run --rm -v $(pwd):/work forge generate
 ```
 
 ### Singularity / Apptainer
 ```bash
 <!-- TODO: add container registry URL when published -->
-singularity build wien2k_gen.sif docker-daemon://wien2k_gen:latest
-singularity exec --bind $(pwd):/work wien2k_gen.sif wien2k_gen generate
+singularity build forge.sif docker-daemon://forge:latest
+singularity exec --bind $(pwd):/work forge.sif forge generate
 ```
 
 ## Environment Variables
@@ -69,14 +69,14 @@ singularity exec --bind $(pwd):/work wien2k_gen.sif wien2k_gen generate
 | Package | Needed For |
 |---------|------------|
 | `rich` | Colored CLI output (auto-installed) |
-| `textual` | Interactive TUI (`wien2k_gen tui`) |
+| `textual` | Interactive TUI (`forge tui`) |
 | `numpy` | Roofline model calculations |
 | `psutil` | Enhanced process monitoring |
 
 ## Verifying Installation
 
 ```bash
-wien2k_gen diagnostics
+forge diagnostics
 ```
 
 This runs a full hardware and environment diagnostic, displaying:

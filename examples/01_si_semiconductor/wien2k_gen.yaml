@@ -73,7 +73,7 @@ benchmark:
 #    wien2k_wizard --struct Si.struct --name Si
 #
 # 3. Run SCF
-#    wien2k_gen run Si --ranks 32 --mode kpoint
+#    forge run Si --ranks 32 --mode kpoint
 #
 # 4. Analyze band structure
-#    wien2k_gen analyze Si --property band_gap --method GGA
+#    forge analyze Si --property band_gap --method GGA

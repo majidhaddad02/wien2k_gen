@@ -1,5 +1,5 @@
 # ==============================================================================
-# pyproject.toml – Modern PEP 621 Configuration for Wien2kGen
+# pyproject.toml – Modern PEP 621 Configuration for FORGE
 # Aligned with src/ layout, CI/CD best practices, and HPC deployment standards
 # ==============================================================================
 
@@ -11,7 +11,7 @@ build-backend = "setuptools.build_meta"
 # Project Metadata & Dependencies
 # ==============================================================================
 [project]
-name = "wien2k_gen"
+name = "forge"
 version = "0.1.0"
 description = "Production-grade WIEN2k parallel configuration & HPC job dispatcher"
 readme = "README.md"
@@ -97,10 +97,10 @@ energy = [
 # CLI Entry Points
 # ==============================================================================
 [project.scripts]
-wien2k_gen = "wien2k_gen.cli:main"
-wien2k_sbatch = "wien2k_gen.cli_sbatch:run_sbatch_cli"
-wien2k_wizard = "wien2k_gen.wizard:run_wizard"
-wien2k_api = "wien2k_gen.api.server:main"
+forge = "forge.cli:main"
+forge_sbatch = "forge.cli_sbatch:run_sbatch_cli"
+forge_wizard = "forge.wizard:run_wizard"
+forge_api = "forge.api.server:main"
 
 # ==============================================================================
 # PyPI & Project URLs
@@ -121,7 +121,7 @@ zip-safe = false
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["wien2k_gen*"]
+include = ["forge*"]
 exclude = ["tests*", "docs*", "examples*", "build*", "dist*"]
 
 # ==============================================================================
@@ -135,7 +135,7 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--tb=short",
-    "--cov=wien2k_gen",
+    "--cov=forge",
     "--cov-report=term-missing",
     "--cov-report=xml:coverage.xml",
     "--numprocesses=auto"
@@ -186,7 +186,7 @@ show_error_codes = true
 # Coverage Reporting
 # ==============================================================================
 [tool.coverage.run]
-source = ["wien2k_gen"]
+source = ["forge"]
 branch = true
 parallel = true
 

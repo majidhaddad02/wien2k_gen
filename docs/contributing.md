@@ -3,8 +3,8 @@
 ## Development Setup
 
 ```bash
-git clone https://github.com/majidhaddad02/wien2k_gen.git
-cd wien2k_gen
+git clone https://github.com/majidhaddad02/forge.git
+cd forge
 pip install -e ".[dev]"
 pip install -r requirements-dev.txt
 ```
@@ -38,7 +38,7 @@ python -m pytest tests/ -v -m "slow or integration"
 ## Architecture
 
 ```
-src/wien2k_gen/
+src/forge/
 ├── backends/          # DFT code backends (wien2k, vasp, qe, cp2k)
 │   └── base.py        # Abstract base + ProblemSize, ResourceEstimate TypedDicts
 ├── core/              # Core detection and optimization
@@ -78,7 +78,7 @@ src/wien2k_gen/
 
 ## Adding a New Backend
 
-1. Create `src/wien2k_gen/backends/newcode.py`
+1. Create `src/forge/backends/newcode.py`
 2. Inherit from `Backend` (in `base.py`)
 3. Implement required methods:
    - `detect_problem_size() -> ProblemSize`

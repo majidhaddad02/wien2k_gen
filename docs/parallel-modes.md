@@ -1,6 +1,6 @@
 # Parallel Execution Modes
 
-wien2k_gen supports four parallel execution modes borrowed from WIEN2k's own parallelization scheme. The optimizer automatically selects the best mode based on problem parameters and hardware topology. This document explains when each mode is appropriate and the physics behind the selection.
+forge supports four parallel execution modes borrowed from WIEN2k's own parallelization scheme. The optimizer automatically selects the best mode based on problem parameters and hardware topology. This document explains when each mode is appropriate and the physics behind the selection.
 
 ---
 

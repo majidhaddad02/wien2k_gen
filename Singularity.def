@@ -11,7 +11,7 @@ From: ubuntu:22.04
 
 %environment
     # ── Core paths ──────────────────────────────────────────────
-    export WIEN2K_GEN_ROOT="/opt/wien2k_gen"
+    export WIEN2K_GEN_ROOT="/opt/forge"
     export PATH="${WIEN2K_GEN_ROOT}/bin:${WIEN2K_GEN_ROOT}/scripts:${PATH}"
     export PYTHONPATH="${WIEN2K_GEN_ROOT}/lib/python3.11/site-packages:${PYTHONPATH}"
 
@@ -33,7 +33,7 @@ From: ubuntu:22.04
     export ELPA_HOME="/opt/elpa"
     export SCALAPACK_HOME="/opt/scalapack"
 
-    # ── Lustre striping hints (respected by wien2k_gen) ─────────
+    # ── Lustre striping hints (respected by forge) ─────────
     export SCRATCH_STRIPING_FACTOR="${SCRATCH_STRIPING_FACTOR:-8}"
     export SCRATCH_STRIPING_UNIT="${SCRATCH_STRIPING_UNIT:-4194304}"
 
@@ -45,7 +45,7 @@ From: ubuntu:22.04
     pyproject.toml                          /src/pyproject.toml
     README.md                               /src/README.md
     src/                                    /src/src/
-    offline_packages/requirements-offline.txt /opt/wien2k_gen/requirements-offline.txt
+    offline_packages/requirements-offline.txt /opt/forge/requirements-offline.txt
 
 %post -c /bin/bash
     set -euo pipefail
@@ -77,22 +77,22 @@ From: ubuntu:22.04
     # ──────────────────────────────────────────────────────────────
     python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
     # Install from offline requirements if available, otherwise from pyproject
-    if [ -f /opt/wien2k_gen/requirements-offline.txt ]; then
-        python3 -m pip install --no-cache-dir -r /opt/wien2k_gen/requirements-offline.txt
+    if [ -f /opt/forge/requirements-offline.txt ]; then
+        python3 -m pip install --no-cache-dir -r /opt/forge/requirements-offline.txt
     fi
     python3 -m pip install --no-cache-dir -e /src/
 
     # ──────────────────────────────────────────────────────────────
     # 3. Directory layout
     # ──────────────────────────────────────────────────────────────
-    mkdir -p /opt/wien2k_gen/{bin,scripts,lib/modules,etc,examples,scratch,cache}
+    mkdir -p /opt/forge/{bin,scripts,lib/modules,etc,examples,scratch,cache}
     mkdir -p /opt/{openmpi,mpich,fftw,lapack,scalapack,elpa}/lib
     mkdir -p /opt/intel/oneapi/mpi/latest  # stub for Intel MPI module
 
     # Symlink CLI entry points
-    for tool in wien2k_gen wien2k_sbatch wien2k_wizard wien2k_api; do
+    for tool in forge forge_sbatch forge_wizard forge_api; do
         if which "${tool}" &>/dev/null; then
-            ln -sf "$(which "${tool}")" "/opt/wien2k_gen/bin/${tool}"
+            ln -sf "$(which "${tool}")" "/opt/forge/bin/${tool}"
         fi
     done
 
@@ -133,12 +133,12 @@ From: ubuntu:22.04
     # ──────────────────────────────────────────────────────────────
     # 6. Install Lmod-style environment modules for MPI switching
     # ──────────────────────────────────────────────────────────────
-    cat > /opt/wien2k_gen/etc/modules.sh << 'LMODEOF'
+    cat > /opt/forge/etc/modules.sh << 'LMODEOF'
 #!/bin/bash
-# Lmod-compatible environment modules for wien2k_gen HPC container
-# Usage: source /opt/wien2k_gen/etc/modules.sh ; module load mpi/openmpi
+# Lmod-compatible environment modules for forge HPC container
+# Usage: source /opt/forge/etc/modules.sh ; module load mpi/openmpi
 
-MODULEPATH="/opt/wien2k_gen/lib/modules"
+MODULEPATH="/opt/forge/lib/modules"
 
 module() {
     case "$1" in
@@ -152,7 +152,7 @@ module() {
 LMODEOF
 
     # OpenMPI module
-    cat > /opt/wien2k_gen/lib/modules/mpi-openmpi << 'MPIMOD'
+    cat > /opt/forge/lib/modules/mpi-openmpi << 'MPIMOD'
 export MPI_HOME="/opt/openmpi"
 export MPI_BIN="${MPI_HOME}/bin"
 export MPI_LIB="${MPI_HOME}/lib"
@@ -166,7 +166,7 @@ echo "Loaded OpenMPI 4.1"
 MPIMOD
 
     # MPICH module
-    cat > /opt/wien2k_gen/lib/modules/mpi-mpich << 'MPIMOD'
+    cat > /opt/forge/lib/modules/mpi-mpich << 'MPIMOD'
 export MPI_HOME="/opt/mpich"
 export MPI_BIN="${MPI_HOME}/bin"
 export MPI_LIB="${MPI_HOME}/lib"
@@ -178,7 +178,7 @@ echo "Loaded MPICH 4.1"
 MPIMOD
 
     # Intel MPI module (stub for sites with Intel license)
-    cat > /opt/wien2k_gen/lib/modules/mpi-intel << 'MPIMOD'
+    cat > /opt/forge/lib/modules/mpi-intel << 'MPIMOD'
 if [ -d /opt/intel/oneapi/mpi/latest ]; then
     export MPI_HOME="/opt/intel/oneapi/mpi/latest"
     export MPI_BIN="${MPI_HOME}/bin"
@@ -196,7 +196,7 @@ fi
 MPIMOD
 
     # ELPA module
-    cat > /opt/wien2k_gen/lib/modules/elpa << 'ELPAMOD'
+    cat > /opt/forge/lib/modules/elpa << 'ELPAMOD'
 if [ -d /opt/elpa ]; then
     export ELPA_HOME="/opt/elpa"
     export LD_LIBRARY_PATH="${ELPA_HOME}/lib:${LD_LIBRARY_PATH}"
@@ -208,7 +208,7 @@ fi
 ELPAMOD
 
     # CUDA module
-    cat > /opt/wien2k_gen/lib/modules/cuda << 'CUDAMOD'
+    cat > /opt/forge/lib/modules/cuda << 'CUDAMOD'
 if [ -d /usr/local/cuda ] || [ -d /opt/cuda ]; then
     export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
     export PATH="${CUDA_HOME}/bin:${PATH}"
@@ -220,18 +220,18 @@ fi
 CUDAMOD
 
     # Default: load OpenMPI
-    source /opt/wien2k_gen/etc/modules.sh
+    source /opt/forge/etc/modules.sh
     module load mpi/openmpi
 
     # ──────────────────────────────────────────────────────────────
-    # 7. Install wien2k_gen launcher scripts
+    # 7. Install forge launcher scripts
     # ──────────────────────────────────────────────────────────────
-    cat > /opt/wien2k_gen/scripts/wien2k_gen_wrapper << 'WRAPEOF'
+    cat > /opt/forge/scripts/forge_wrapper << 'WRAPEOF'
 #!/bin/bash
 # WIEN2k parallel launcher wrapper for Singularity/HPC
 set -euo pipefail
 
-source /opt/wien2k_gen/etc/modules.sh 2>/dev/null || true
+source /opt/forge/etc/modules.sh 2>/dev/null || true
 
 # Default MPI detection
 if [ -z "${_MODULE_MPI:-}" ]; then
@@ -244,14 +244,14 @@ if [ -n "${CUDA_VISIBLE_DEVICES:-}" ] && [ "${ELPA_USE_GPU:-0}" = "1" ]; then
     module load cuda 2>/dev/null || true
 fi
 
-exec python3 -m wien2k_gen.cli "$@"
+exec python3 -m forge.cli "$@"
 WRAPEOF
-    chmod +x /opt/wien2k_gen/scripts/wien2k_gen_wrapper
+    chmod +x /opt/forge/scripts/forge_wrapper
 
     # Bashrc auto-source for interactive use
     cat >> /etc/bash.bashrc << 'BASH'
-if [ -f /opt/wien2k_gen/etc/modules.sh ]; then
-    source /opt/wien2k_gen/etc/modules.sh 2>/dev/null
+if [ -f /opt/forge/etc/modules.sh ]; then
+    source /opt/forge/etc/modules.sh 2>/dev/null
 fi
 BASH
 
@@ -263,7 +263,7 @@ BASH
 
 %runscript
     #!/bin/bash
-    exec /opt/wien2k_gen/scripts/wien2k_gen_wrapper "$@"
+    exec /opt/forge/scripts/forge_wrapper "$@"
 
 %startscript
     #!/bin/bash
@@ -275,27 +275,27 @@ BASH
     echo "Python: $(python3 --version)"
     echo "ELPA:  ${ELPA_HOME:-not built}"
     echo ""
-    echo "Modules: source /opt/wien2k_gen/etc/modules.sh"
-    echo "Available: $(ls /opt/wien2k_gen/lib/modules/ 2>/dev/null | tr '\n' ' ')"
+    echo "Modules: source /opt/forge/etc/modules.sh"
+    echo "Available: $(ls /opt/forge/lib/modules/ 2>/dev/null | tr '\n' ' ')"
     echo "========================================"
 
 %test
     # ── Build-time validation ────────────────────────────────────
-    python3 -c "import wien2k_gen; print(f'wien2k_gen {wien2k_gen.__version__} OK')" || exit 1
-    python3 -c "from wien2k_gen.config import AppConfig; print('Config OK')" || exit 1
-    python3 -c "from wien2k_gen.core.topology import Topology; print('Topology OK')" || exit 1
-    python3 -c "from wien2k_gen.core.scheduler import detect; print('Scheduler OK')" || exit 1
+    python3 -c "import forge; print(f'forge {forge.__version__} OK')" || exit 1
+    python3 -c "from forge.config import AppConfig; print('Config OK')" || exit 1
+    python3 -c "from forge.core.topology import Topology; print('Topology OK')" || exit 1
+    python3 -c "from forge.core.scheduler import detect; print('Scheduler OK')" || exit 1
     echo "All import checks passed."
 
 %help
     WIEN2k Gen HPC Container — Production Environment
     =================================================
     Usage:
-      singularity run wien2k_gen.sif [args]         # Run wien2k_gen CLI
-      singularity exec wien2k_gen.sif bash           # Interactive shell
-      singularity exec wien2k_gen.sif wien2k_sbatch  # Submit via SLURM
+      singularity run forge.sif [args]         # Run forge CLI
+      singularity exec forge.sif bash           # Interactive shell
+      singularity exec forge.sif forge_sbatch  # Submit via SLURM
 
-    Environment modules (source /opt/wien2k_gen/etc/modules.sh):
+    Environment modules (source /opt/forge/etc/modules.sh):
       module load mpi/openmpi    # OpenMPI 4.1 (default)
       module load mpi/mpich      # MPICH 4.1
       module load mpi/intel      # Intel MPI (if installed)
@@ -303,7 +303,7 @@ BASH
       module load cuda           # CUDA toolkit
 
     MPI benchmarks:
-      mpirun --allow-run-as-root -np 4 /opt/wien2k_gen/scripts/wien2k_gen_wrapper benchmark
+      mpirun --allow-run-as-root -np 4 /opt/forge/scripts/forge_wrapper benchmark
 
     Lustre scratch hints:
       export SCRATCH_STRIPING_FACTOR=8

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wien2k_gen.backend_manager import BackendManager
-from wien2k_gen.exceptions import MissingInputError
-from wien2k_gen.types import BackendCode
+from forge.backend_manager import BackendManager
+from forge.exceptions import MissingInputError
+from forge.types import BackendCode
 
 
 class TestAutoDetectSignatures:

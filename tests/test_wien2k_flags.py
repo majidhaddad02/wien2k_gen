@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from wien2k_gen.types import CalculationType, Wien2kFlags
+from forge.types import CalculationType, Wien2kFlags
 
 
 def _touch(path: Path) -> Path:
@@ -99,7 +99,7 @@ def test_wien2k_version_string() -> None:
 
 def test_calculation_types_coverage() -> None:
     """Verify all 8 calculation types are defined."""
-    from wien2k_gen.types import CalculationType as CT
+    from forge.types import CalculationType as CT
     expected = {
         CT.SCF, CT.SPIN_POLARIZED, CT.SPIN_ORBIT, CT.SPIN_POLARIZED_SOC,
         CT.LDA_U, CT.HYBRID_FUNC, CT.FORCES, CT.EECE,

@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wien2k_gen.types import TopologyData
+from forge.types import TopologyData
 
 # =============================================================================
 # Core Data Fixtures
@@ -60,7 +60,7 @@ def clean_env():
 @pytest.fixture
 def temp_config_dir(tmp_path):
     """Provide a clean, isolated directory for config/cache testing."""
-    cfg_dir = tmp_path / ".config" / "wien2k_gen"
+    cfg_dir = tmp_path / ".config" / "forge"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     return cfg_dir
 
@@ -78,7 +78,7 @@ def mock_subprocess_run():
 @pytest.fixture
 def mock_atomic_write(tmp_path):
     """Bypass actual filesystem writes during tests."""
-    with patch("wien2k_gen.utils.atomic_write.atomic_write") as mock_write:
+    with patch("forge.utils.atomic_write.atomic_write") as mock_write:
         mock_write.side_effect = lambda path, content, **kw: True
         yield mock_write
 

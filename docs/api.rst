@@ -4,82 +4,82 @@ API Reference
 Core Engine
 -----------
 
-.. automodule:: wien2k_gen.core.topology
+.. automodule:: forge.core.topology
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.core.hardware
+.. automodule:: forge.core.hardware
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.core.scheduler
+.. automodule:: forge.core.scheduler
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.core.case_parser
+.. automodule:: forge.core.case_parser
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.core.pipeline
+.. automodule:: forge.core.pipeline
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.core.workflow_executor
+.. automodule:: forge.core.workflow_executor
    :members:
    :undoc-members:
 
 Optimization
 ------------
 
-.. automodule:: wien2k_gen.optimizer.advisor
+.. automodule:: forge.optimizer.advisor
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.optimizer.profiler
+.. automodule:: forge.optimizer.profiler
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.optimizer.bayesian
+.. automodule:: forge.optimizer.bayesian
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.optimizer.gpu_detector
+.. automodule:: forge.optimizer.gpu_detector
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.optimizer.monitor
+.. automodule:: forge.optimizer.monitor
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.optimizer.parallel
+.. automodule:: forge.optimizer.parallel
    :members:
    :undoc-members:
 
 Backends
 --------
 
-.. automodule:: wien2k_gen.backends.wien2k
+.. automodule:: forge.backends.wien2k
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.backends.vasp
+.. automodule:: forge.backends.vasp
    :members:
    :undoc-members:
 
-.. automodule:: wien2k_gen.backends.quantum_espresso.backend
+.. automodule:: forge.backends.quantum_espresso.backend
    :members:
    :undoc-members:
 
 Types
 -----
 
-.. automodule:: wien2k_gen.types
+.. automodule:: forge.types
    :members:
    :undoc-members:
 
 Machine Learning
 ----------------
 
-.. automodule:: wien2k_gen.ml.gnn_kpoint_predictor
+.. automodule:: forge.ml.gnn_kpoint_predictor
    :members:
    :undoc-members:

@@ -1,4 +1,4 @@
-# WIEN2k Generator (wien2k_gen) — Documentation v0.1.0
+# FORGE (forge) — Documentation v0.1.0
 
 Parallel configuration file generator, HPC job dispatcher, and SCF convergence optimizer for WIEN2k. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, Roofline performance modeling, multi-scheduler integration (SLURM, PBS, LSF, SGE), Bayesian hyperparameter optimization, GNN-based k-point prediction, and GPU offloading detection.
 
@@ -22,14 +22,14 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 ## Quick Overview
 
 ```bash
-pip install wien2k_gen
-wien2k_gen generate                    # auto-detect everything
-wien2k_gen generate --mode hybrid      # force hybrid mode
-wien2k_gen generate --reserve-os-cores 4  # leave 4 cores for OS
-wien2k_gen submit --partition compute --time 48:00:00
-wien2k_gen advise --case Fe            # performance bottleneck analysis
-wien2k_gen diagnose --log case.scf     # SCF convergence diagnostics
-wien2k_wizard                          # interactive wizard
+pip install forge
+forge generate                    # auto-detect everything
+forge generate --mode hybrid      # force hybrid mode
+forge generate --reserve-os-cores 4  # leave 4 cores for OS
+forge submit --partition compute --time 48:00:00
+forge advise --case Fe            # performance bottleneck analysis
+forge diagnose --log case.scf     # SCF convergence diagnostics
+forge_wizard                          # interactive wizard
 ```
 
 ---
@@ -93,7 +93,7 @@ wien2k_wizard                          # interactive wizard
 
 MIT License. See [LICENSE.md](../LICENSE.md).
 
-If you use wien2k_gen in your research:
+If you use forge in your research:
 
 - **WIEN2k:** Blaha, P. et al. (2020). *J. Chem. Phys.* 152, 074101.
 - **Amdahl's Law:** Amdahl, G. M. (1967). *AFIPS Conference Proceedings*, 30, 483-485.

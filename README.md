@@ -1,12 +1,12 @@
-# WIEN2k Generator (wien2k_gen) v0.1.0
+# FORGE — Flexible Orchestration for Robust Generation of Electronic-structure jobs (v0.1.0)
 
-Parallel configuration file generator, HPC job dispatcher, and SCF convergence optimizer for WIEN2k density functional theory code. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, Roofline performance modeling, multi-scheduler integration (SLURM, PBS, LSF), Bayesian hyperparameter optimization, and AI-assisted k-point prediction.
+**FORGE** (forge) is a production-grade, HPC job dispatcher, and SCF convergence optimizer for WIEN2k density functional theory code. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, Roofline performance modeling, multi-scheduler integration (SLURM, PBS, LSF), Bayesian hyperparameter optimization, and AI-assisted k-point prediction.
 
 > **Note:** WIEN2k is a copyrighted code developed by P. Blaha, K. Schwarz, and collaborators at TU Wien. A valid WIEN2k license is required to use the generated configuration files. Visit [wien2k.at](http://www.wien2k.at/) for licensing information.
 
 ## WIEN2k Version Compatibility
 
-| wien2k_gen | WIEN2k 19.x | WIEN2k 21.x | WIEN2k 23.x | WIEN2k 24.x |
+| forge | WIEN2k 19.x | WIEN2k 21.x | WIEN2k 23.x | WIEN2k 24.x |
 |------------|-------------|-------------|-------------|-------------|
 | 0.1.0      | Partial     | Partial     | Yes         | Yes         |
 
@@ -23,24 +23,24 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 ## Quick Start
 
 ```bash
-pip install wien2k_gen
-wien2k_gen generate
-wien2k_gen submit --partition compute --time 48:00:00
-wien2k_wizard                           # interactive configuration
+pip install forge
+forge generate
+forge submit --partition compute --time 48:00:00
+forge_wizard                           # interactive configuration
 ```
 
 ## CLI Tools
 
 | Command | Description |
 |---------|------------|
-| `wien2k_gen` | Full-featured CLI (generate, submit, benchmark, diagnostics, analyze, advise, diagnose, TUI) |
-| `wien2k_gen generate` | Auto-detect topology and generate `.machines` + `parallel_options` |
-| `wien2k_gen submit` | Schedule and submit WIEN2k job to queue |
-| `wien2k_gen advise` | Roofline + Amdahl + NUMA performance analysis with hardware-aware recommendations |
-| `wien2k_gen diagnose` | SCF convergence diagnosis — charge sloshing root cause, QTL-B analysis, divergence detection |
-| `wien2k_gen benchmark` | Run weak/strong scaling benchmarks with uncertainty quantification |
-| `wien2k_sbatch` | Dedicated SLURM batch job submission |
-| `wien2k_wizard` | Interactive configuration wizard with advanced physics options |
+| `forge` | Full-featured CLI (generate, submit, benchmark, diagnostics, analyze, advise, diagnose, TUI) |
+| `forge generate` | Auto-detect topology and generate `.machines` + `parallel_options` |
+| `forge submit` | Schedule and submit WIEN2k job to queue |
+| `forge advise` | Roofline + Amdahl + NUMA performance analysis with hardware-aware recommendations |
+| `forge diagnose` | SCF convergence diagnosis — charge sloshing root cause, QTL-B analysis, divergence detection |
+| `forge benchmark` | Run weak/strong scaling benchmarks with uncertainty quantification |
+| `forge_sbatch` | Dedicated SLURM batch job submission |
+| `forge_wizard` | Interactive configuration wizard with advanced physics options |
 
 ## Features
 
@@ -119,19 +119,19 @@ init_lapw -b -vxc 13 -ecut -6 -rkmax 7.0 -numk 1000
 run_lapw -p
 
 # 3. Get performance advice before generating config
-wien2k_gen advise --case Fe
+forge advise --case Fe
 
 # 4. Diagnose any SCF convergence issues
-wien2k_gen diagnose --log Fe.scf
+forge diagnose --log Fe.scf
 
 # 5. Auto-generate optimal .machines with all backend intelligence
-wien2k_gen generate --target time
+forge generate --target time
 
 # 6. Submit to SLURM with auto-detected resources
-wien2k_gen submit --partition compute --time 48:00:00
+forge submit --partition compute --time 48:00:00
 
 # Or use the interactive wizard with physics options
-wien2k_wizard
+forge_wizard
 ```
 
 ## Parallel Execution Modes

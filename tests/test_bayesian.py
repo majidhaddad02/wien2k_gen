@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from wien2k_gen.optimizer.bayesian import (
+from forge.optimizer.bayesian import (
     BayesianOptimizer,
     MultiFidelityBayesianOptimizer,
     _chemical_similarity,
@@ -23,7 +23,7 @@ from wien2k_gen.optimizer.bayesian import (
     rbf_kernel,
     rbf_kernel_ard,
 )
-from wien2k_gen.optimizer.history import ExecutionHistory, ExecutionRecord
+from forge.optimizer.history import ExecutionHistory, ExecutionRecord
 
 
 @pytest.fixture

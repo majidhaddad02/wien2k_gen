@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from wien2k_gen.config import AppConfig, ConfigManager, load_config, validate_config
+from forge.config import AppConfig, ConfigManager, load_config, validate_config
 
 
 class TestAppConfigValidation:
@@ -58,7 +58,7 @@ class TestConfigManagerLifecycle:
         assert len(errors) == 0
         assert all(r.backend == "wien2k" for r in results)
 
-    @patch("wien2k_gen.config.os.access", return_value=False)
+    @patch("forge.config.os.access", return_value=False)
     def test_scratch_permission_error(self, mock_access, temp_config_dir):
         readonly = temp_config_dir / "readonly"
         readonly.mkdir(parents=True, exist_ok=True)

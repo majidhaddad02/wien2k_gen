@@ -1,4 +1,4 @@
-WIEN2k Generator Documentation
+FORGE Documentation
 ================================
 
 .. toctree::
@@ -36,14 +36,14 @@ Installation
 
 .. code-block:: bash
 
-   pip install wien2k_gen
+   pip install forge
 
 Or from source:
 
 .. code-block:: bash
 
-   git clone https://github.com/majidhaddad02/wien2k_gen
-   cd wien2k_gen
+   git clone https://github.com/majidhaddad02/forge
+   cd forge
    make install
 
 Quick Start
@@ -53,22 +53,22 @@ Quick Start
 
    export WIENROOT=/opt/codes/WIEN2k/v24.1
    cd /path/to/wien2k_case
-   wien2k_gen generate
-   wien2k_gen tui
+   forge generate
+   forge tui
 
 Citation
 --------
 
-If you use WIEN2k Generator in your research, please cite:
+If you use FORGE in your research, please cite:
 
 .. code-block:: bibtex
 
-   @software{wien2k_gen,
+   @software{forge,
      author = {Haddad, Majid and Jalali Asadabadi, Saed},
-     title = {WIEN2k Generator: Production-Grade Parallel Configuration for HPC DFT},
+     title = {FORGE: Production-Grade Parallel Configuration for HPC DFT},
      year = {2025},
       version = {0.1.0},
-     url = {https://github.com/majidhaddad02/wien2k_gen}
+     url = {https://github.com/majidhaddad02/forge}
    }
 
 Indices and tables

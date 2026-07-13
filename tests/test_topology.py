@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wien2k_gen.core.topology import (
+from forge.core.topology import (
     GPUInfo,
     NodeSpec,
     NUMANode,
@@ -319,16 +319,16 @@ class TestNodeSpec:
 class TestGPUTopology:
     """Tests for GPUTopology and GPU detection."""
 
-    @patch("wien2k_gen.core.topology._detect_nvidia_gpus_topology")
+    @patch("forge.core.topology._detect_nvidia_gpus_topology")
     def test_detect_gpu_topology_nvidia(self, mock_nvidia, sample_gpu_info):
         mock_nvidia.return_value = [sample_gpu_info]
         topo = detect_gpu_topology()
         assert topo.gpu_per_node == 1
         assert topo.multi_gpu is False
 
-    @patch("wien2k_gen.core.topology._detect_nvidia_gpus_topology", return_value=[])
-    @patch("wien2k_gen.core.topology._detect_amd_gpus_topology", return_value=[])
-    @patch("wien2k_gen.core.topology._detect_sysfs_gpus_topology", return_value=[])
+    @patch("forge.core.topology._detect_nvidia_gpus_topology", return_value=[])
+    @patch("forge.core.topology._detect_amd_gpus_topology", return_value=[])
+    @patch("forge.core.topology._detect_sysfs_gpus_topology", return_value=[])
     def test_detect_no_gpus(self, mock_nv, mock_amd, mock_sys):
         topo = detect_gpu_topology()
         assert topo.gpu_per_node == 0

@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
-project = "WIEN2k Generator"
+project = "FORGE"
 copyright = "2025, HPC Workflow Team"
 author = "HPC Workflow Team"
 release = "0.1.0"
@@ -48,4 +48,4 @@ myst_enable_extensions = ["dollarmath", "amsmath"]
 # -- Options for HTML output -------------------------------------------------
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
-html_title = "WIEN2k Generator Documentation"
+html_title = "FORGE Documentation"

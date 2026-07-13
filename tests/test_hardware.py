@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from wien2k_gen.core.hardware import (
+from forge.core.hardware import (
     HardwareInfoProvider,
     SysFSHardwareInfo,
     get_logical_cores,
@@ -179,23 +179,23 @@ class TestParseMemoryString:
 # =============================================================================
 
 class TestPhysicalCores:
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_lscpu_json_method(self, mock_run, provider, mock_lscpu_json):
         mock_run.return_value = mock_lscpu_json
         assert provider.get_physical_cores() == 48
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_lscpu_csv_fallback(self, mock_run, provider, mock_lscpu_csv):
         mock_run.side_effect = [None, mock_lscpu_csv]
         assert provider.get_physical_cores() == 8
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
     def test_proc_cpuinfo_fallback(self, mock_run, provider, mock_cpuinfo):
         with patch("builtins.open", mock_open(read_data=mock_cpuinfo)):
             cores = provider.get_physical_cores()
             assert cores == 4
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
     def test_ultimate_fallback(self, mock_run, provider):
         with patch("builtins.open", side_effect=FileNotFoundError):
             cores = provider.get_physical_cores()
@@ -230,7 +230,7 @@ class TestELPAAvailability:
 
 
 class TestScratchFilesystem:
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_lustre_detection(self, mock_run, provider):
         mock_run.return_value = (
             "Filesystem     Type  1K-blocks      Used Available Use% Mounted on\n"
@@ -238,7 +238,7 @@ class TestScratchFilesystem:
         )
         assert provider.get_scratch_filesystem_type() == "lustre"
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_tmpfs_detection(self, mock_run, provider):
         mock_run.return_value = (
             "Filesystem     Type  1K-blocks      Used Available Use% Mounted on\n"
@@ -246,27 +246,27 @@ class TestScratchFilesystem:
         )
         assert provider.get_scratch_filesystem_type() == "tmpfs"
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe", return_value=None)
     def test_df_failure_fallback(self, mock_run, provider):
         assert provider.get_scratch_filesystem_type() == "unknown"
 
 
 class TestIsaDetection:
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_avx512_detection(self, mock_run, provider):
         mock_run.return_value = "Flags: fpu vme de pse avx512f avx512dq avx512bw"
         info = provider.get_vector_isa_and_width()
         assert info["isa"] == "avx512"
         assert info["width_bits"] == 512
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_avx2_detection(self, mock_run, provider):
         mock_run.return_value = "Flags: fpu avx2 sse4_1 sse4_2"
         info = provider.get_vector_isa_and_width()
         assert info["isa"] == "avx2"
         assert info["width_bits"] == 256
 
-    @patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+    @patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
     def test_scalar_fallback(self, mock_run, provider):
         mock_run.return_value = "Flags: fpu mmx"
         info = provider.get_vector_isa_and_width()

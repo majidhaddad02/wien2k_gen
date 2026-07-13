@@ -1,6 +1,6 @@
 # WIEN2k Production Examples
 
-Three realistic DFT calculations demonstrating `wien2k_gen` capabilities
+Three realistic DFT calculations demonstrating `forge` capabilities
 across different electronic-structure regimes.
 
 ## Examples
@@ -15,8 +15,8 @@ across different electronic-structure regimes.
 
 ```bash
 # Container (recommended for HPC)
-singularity build wien2k_gen.sif Singularity.def
-singularity exec wien2k_gen.sif bash
+singularity build forge.sif Singularity.def
+singularity exec forge.sif bash
 
 # From source
 pip install -e .
@@ -24,7 +24,7 @@ export WIENROOT=/opt/codes/WIEN2k
 
 # Run an example
 cd examples/01_si_semiconductor
-wien2k_gen run Si --ranks 64 --mode kpoint
+forge run Si --ranks 64 --mode kpoint
 ```
 
 ## File Layout
@@ -37,7 +37,7 @@ Each example directory contains:
   X.in1             SCF parameters (RKmax, energy params, k‑mesh)
   X.in2             Task specification (IFFT, convergence)
   X.inst (Fe only)  Initial spin moment for magnetic systems
-  wien2k_gen.yaml   Parallel & HPC configuration for wien2k_gen
+  forge.yaml   Parallel & HPC configuration for forge
 ```
 
 ## Scaling Benchmarks

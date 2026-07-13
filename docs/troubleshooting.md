@@ -5,8 +5,8 @@
 Run the built-in diagnostic first whenever you encounter an issue:
 
 ```bash
-wien2k_gen diagnostics
-wien2k_gen diagnostics --json > diag.json
+forge diagnostics
+forge diagnostics --json > diag.json
 ```
 
 The diagnostic covers: CPU, memory, NUMA, scheduler, MPI, WIEN2k installation, scratch filesystem, and network interconnect.
@@ -22,10 +22,10 @@ The diagnostic covers: CPU, memory, NUMA, scheduler, MPI, WIEN2k installation, s
 **Solution:**
 ```bash
 export WIENROOT=/path/to/WIEN2k
-wien2k_gen generate
+forge generate
 ```
 
-Or set permanently in `~/.config/wien2k_gen/config.json`:
+Or set permanently in `~/.config/forge/config.json`:
 ```json
 {"wienroot": "/opt/WIEN2k_24.1"}
 ```
@@ -40,10 +40,10 @@ Or set permanently in `~/.config/wien2k_gen/config.json`:
 ```bash
 which mpirun              # check if MPI is installed
 module load openmpi/4.1   # or Intel MPI, MPICH, MVAPICH
-wien2k_gen generate
+forge generate
 ```
 
-If using a module system, load the MPI module before running wien2k_gen.
+If using a module system, load the MPI module before running forge.
 
 ---
 
@@ -102,7 +102,7 @@ Warning: Estimated memory (48.2 GB) near system limit (64.0 GB). Risk of OOM.
 **Solution:**
 - Reduce `--omp` threads (fewer threads = less memory per rank)
 - Switch to pure MPI mode: `--mode mpi`
-- Request more memory: `wien2k_gen submit --mem 128G`
+- Request more memory: `forge submit --mem 128G`
 
 ---
 
@@ -136,7 +136,7 @@ Consider reducing cores or increasing k-point mesh.
 
 **Solution:**
 - Increase k-point mesh: re-run `init_lapw` with higher `-numk`
-- Or reduce core count: `wien2k_gen generate --cores 4`
+- Or reduce core count: `forge generate --cores 4`
 - Or accept the warning — the run will still work, just won't use extra cores
 
 ---
@@ -215,18 +215,18 @@ qsub -pe mpi 64 job.sh # request PE with slot count
 
 ### 12. Module/Package Not Found
 
-**Symptom:** `ModuleNotFoundError: No module named 'wien2k_gen'`
+**Symptom:** `ModuleNotFoundError: No module named 'forge'`
 
 **Solution:**
 ```bash
-pip install wien2k_gen
+pip install forge
 # or if installed from source:
 pip install -e .
 ```
 
 On HPC clusters, you may need:
 ```bash
-pip install --user wien2k_gen
+pip install --user forge
 export PATH=$HOME/.local/bin:$PATH
 ```
 
@@ -239,7 +239,7 @@ export PATH=$HOME/.local/bin:$PATH
 **Solution:**
 ```bash
 chmod u+w .machines           # if file exists
-wien2k_gen generate --overwrite
+forge generate --overwrite
 ```
 
 Check if the case directory is writable:
@@ -255,7 +255,7 @@ Enable detailed logging:
 
 ```bash
 export LOG_LEVEL=DEBUG
-wien2k_gen generate
+forge generate
 ```
 
 This outputs step-by-step information about:
@@ -272,7 +272,7 @@ This outputs step-by-step information about:
 
 If you cannot resolve an issue:
 
-1. Run `wien2k_gen diagnostics --json > diag.json`
+1. Run `forge diagnostics --json > diag.json`
 2. Include the case-specific information (number of atoms, k-points, NMAT)
-3. Paste the output of `wien2k_gen generate --dry-run`
-4. File an issue at: https://github.com/majidhaddad02/wien2k_gen/issues
+3. Paste the output of `forge generate --dry-run`
+4. File an issue at: https://github.com/majidhaddad02/forge/issues

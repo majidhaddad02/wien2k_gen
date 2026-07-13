@@ -24,14 +24,14 @@ init_lapw -b -vxc 13 -ecut -6 -rkmax 7.0 -numk 1000
 run_lapw -p
 
 # 3. Analyze performance bottleneck and SCF health
-wien2k_gen advise --case case_name
-wien2k_gen diagnose --log case_name.scf
+forge advise --case case_name
+forge diagnose --log case_name.scf
 
 # 4. Auto-generate optimal .machines
-wien2k_gen generate
+forge generate
 
 # 5. Submit to scheduler
-wien2k_gen submit --partition compute --time 48:00:00
+forge submit --partition compute --time 48:00:00
 ```
 
 ---
@@ -41,7 +41,7 @@ wien2k_gen submit --partition compute --time 48:00:00
 ### `generate` — Create `.machines` and `parallel_options`
 
 ```bash
-wien2k_gen generate [options]
+forge generate [options]
 ```
 
 | Option | Description | Example |
@@ -62,27 +62,27 @@ wien2k_gen generate [options]
 
 **Standard auto-detect (most common):**
 ```bash
-wien2k_gen generate
+forge generate
 ```
 
 **Force hybrid mode with 4 threads per rank:**
 ```bash
-wien2k_gen generate --mode hybrid --omp 4
+forge generate --mode hybrid --omp 4
 ```
 
 **Reserve 4 cores for OS on a 128-core workstation:**
 ```bash
-wien2k_gen generate --reserve-os-cores 4
+forge generate --reserve-os-cores 4
 ```
 
 **Dry-run to preview without writing:**
 ```bash
-wien2k_gen generate --dry-run
+forge generate --dry-run
 ```
 
 **With GPU-aware configuration:**
 ```bash
-wien2k_gen generate --gpu --target time
+forge generate --gpu --target time
 ```
 
 ---
@@ -90,7 +90,7 @@ wien2k_gen generate --gpu --target time
 ### `advise` — Performance Bottleneck Analysis
 
 ```bash
-wien2k_gen advise [options]
+forge advise [options]
 ```
 
 Provides Roofline model analysis + Amdahl's Law saturation + NUMA topology recommendations.
@@ -105,13 +105,13 @@ Provides Roofline model analysis + Amdahl's Law saturation + NUMA topology recom
 #### Examples
 ```bash
 # Full English analysis
-wien2k_gen advise --case Fe --cores 128
+forge advise --case Fe --cores 128
 
 # Persian-friendly simplified output
-wien2k_gen advise --case Si --plain
+forge advise --case Si --plain
 
 # Detailed debug mode
-wien2k_gen advise --case La2CuO4 --verbose
+forge advise --case La2CuO4 --verbose
 ```
 
 The advise command displays:
@@ -125,7 +125,7 @@ The advise command displays:
 ### `diagnose` — SCF Convergence Diagnostics
 
 ```bash
-wien2k_gen diagnose [options]
+forge diagnose [options]
 ```
 
 Deep analysis of SCF convergence issues with root cause identification.
@@ -151,13 +151,13 @@ Deep analysis of SCF convergence issues with root cause identification.
 #### Examples
 ```bash
 # Analyze SCF convergence
-wien2k_gen diagnose --log Fe.scf
+forge diagnose --log Fe.scf
 
 # Full case analysis with mixing history
-wien2k_gen diagnose --case Fe
+forge diagnose --case Fe
 
 # Persian output
-wien2k_gen diagnose --log Fe.scf --plain
+forge diagnose --log Fe.scf --plain
 ```
 
 Example output:
@@ -186,7 +186,7 @@ Example output:
 ### `benchmark` — Performance Scaling
 
 ```bash
-wien2k_gen benchmark --type real --max-cores 64 --output scaling.json
+forge benchmark --type real --max-cores 64 --output scaling.json
 ```
 
 Runs weak/strong scaling benchmarks with uncertainty quantification and bottleneck identification.
@@ -196,8 +196,8 @@ Runs weak/strong scaling benchmarks with uncertainty quantification and bottlene
 ### `diagnostics` — System Audit
 
 ```bash
-wien2k_gen diagnostics
-wien2k_gen diagnostics --json > hw_report.json
+forge diagnostics
+forge diagnostics --json > hw_report.json
 ```
 
 Includes GPU detection, ELPA availability, memory bandwidth, and WIEN2k compilation status.
@@ -207,7 +207,7 @@ Includes GPU detection, ELPA availability, memory bandwidth, and WIEN2k compilat
 ## Interactive Wizard
 
 ```bash
-wien2k_wizard
+forge_wizard
 ```
 
 ### Wizard Steps:
@@ -295,7 +295,7 @@ The mixing strategy is selected automatically by the internal `_adjust_mixing()`
 
 ## Configuration File
 
-Location: `~/.config/wien2k_gen/config.json`
+Location: `~/.config/forge/config.json`
 
 ```json
 {
@@ -374,7 +374,7 @@ Based on the setrmt algorithm (Blaha et al., JCP 2020):
 
 ## Supported Calculation Types
 
-wien2k_gen auto-detects the correct WIEN2k execution command from input files:
+forge auto-detects the correct WIEN2k execution command from input files:
 
 | Input Files | Detected Calculation | Command |
 |-------------|---------------------|---------|
@@ -402,7 +402,7 @@ wien2k_gen auto-detects the correct WIEN2k execution command from input files:
 #SBATCH --partition=compute
 
 # Generate .machines from inside the job allocation
-wien2k_gen generate
+forge generate
 
 # Enable checkpointing for large jobs
 export WIEN2KGEN_CHECKPOINT=1
@@ -419,7 +419,7 @@ run_lapw -p
 #PBS -l nodes=2:ppn=32
 #PBS -l walltime=48:00:00
 
-wien2k_gen generate
+forge generate
 run_lapw -p
 ```
 
@@ -427,7 +427,7 @@ run_lapw -p
 
 ## WIEN2k Version Compatibility
 
-| wien2k_gen | WIEN2k 19.x | WIEN2k 21.x | WIEN2k 23.x | WIEN2k 24.x |
+| forge | WIEN2k 19.x | WIEN2k 21.x | WIEN2k 23.x | WIEN2k 24.x |
 |------------|-------------|-------------|-------------|-------------|
 | 0.1.0      | Partial     | Partial     | Yes         | Yes         |
 

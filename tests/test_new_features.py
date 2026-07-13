@@ -5,8 +5,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-from wien2k_gen.core.scheduler import _detect_sge
-from wien2k_gen.core.topology import Topology
+from forge.core.scheduler import _detect_sge
+from forge.core.topology import Topology
 
 # ============================================================
 # SGE / GridEngine detection
@@ -75,28 +75,28 @@ def test_mpich_hints_vary_by_topology() -> None:
 # CPU generation detection
 # ============================================================
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_cpu_gen_xeon_sapphire_rapids(mock_run) -> None:
     mock_run.return_value = "Model name: Intel(R) Xeon(R) Platinum 8480+"
-    from wien2k_gen.core.hardware import SysFSHardwareInfo
+    from forge.core.hardware import SysFSHardwareInfo
     provider = SysFSHardwareInfo()
     result = provider.get_cpu_generation()
     assert "SapphireRapids" in result
 
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_cpu_gen_epyc_genoa(mock_run) -> None:
     mock_run.return_value = "Model name: AMD EPYC 9654 96-Core Processor"
-    from wien2k_gen.core.hardware import SysFSHardwareInfo
+    from forge.core.hardware import SysFSHardwareInfo
     provider = SysFSHardwareInfo()
     result = provider.get_cpu_generation()
     assert "Genoa" in result
 
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_cpu_gen_unknown(mock_run) -> None:
     mock_run.return_value = "Model name: Some Unknown CPU"
-    from wien2k_gen.core.hardware import SysFSHardwareInfo
+    from forge.core.hardware import SysFSHardwareInfo
     provider = SysFSHardwareInfo()
     result = provider.get_cpu_generation()
     assert result == "unknown"
@@ -106,38 +106,38 @@ def test_cpu_gen_unknown(mock_run) -> None:
 # System type detection
 # ============================================================
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo.get_physical_cores")
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo.get_physical_cores")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_system_type_cluster(mock_run, mock_cores) -> None:
     mock_cores.return_value = 128
     mock_run.return_value = ""
     env = {"SLURM_JOB_ID": "12345"}
     with patch.dict(os.environ, env, clear=True):
-        from wien2k_gen.core.hardware import SysFSHardwareInfo
+        from forge.core.hardware import SysFSHardwareInfo
         provider = SysFSHardwareInfo()
         result = provider.get_system_type()
         assert result == "cluster"
 
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo.get_physical_cores")
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo.get_physical_cores")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_system_type_workstation(mock_run, mock_cores) -> None:
     mock_cores.return_value = 16
     mock_run.return_value = ""
     with patch.dict(os.environ, {}, clear=True), patch.object(Path, "exists", return_value=False):
-        from wien2k_gen.core.hardware import SysFSHardwareInfo
+        from forge.core.hardware import SysFSHardwareInfo
         provider = SysFSHardwareInfo()
         result = provider.get_system_type()
         assert result == "workstation"
 
 
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo.get_physical_cores")
-@patch("wien2k_gen.core.hardware.SysFSHardwareInfo._run_cmd_safe")
+@patch("forge.core.hardware.SysFSHardwareInfo.get_physical_cores")
+@patch("forge.core.hardware.SysFSHardwareInfo._run_cmd_safe")
 def test_system_type_compute_node(mock_run, mock_cores) -> None:
     mock_cores.return_value = 64
     mock_run.return_value = ""
     with patch.dict(os.environ, {}, clear=True), patch.object(Path, "exists", return_value=False):
-        from wien2k_gen.core.hardware import SysFSHardwareInfo
+        from forge.core.hardware import SysFSHardwareInfo
         provider = SysFSHardwareInfo()
         result = provider.get_system_type()
         assert result == "compute_node"

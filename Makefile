@@ -1,12 +1,12 @@
 # ==============================================================================
-# Wien2kGen Production Makefile
+# FORGE Production Makefile
 # Modern, HPC-ready, and aligned with pyproject.toml & offline installation
 # ==============================================================================
 
 PYTHON ?= python3
 PIP ?= pip3
 VENV ?= .venv
-APP_NAME := wien2k_gen
+APP_NAME := forge
 SRC_DIR := src
 PKG_DIR := $(SRC_DIR)/$(APP_NAME)
 COMPLETIONS_DIR := completions
@@ -88,12 +88,12 @@ build: $(VENV)/bin/activate
 install-completions:
 	@mkdir -p ~/.local/share/bash-completion/completions
 	@mkdir -p ~/.local/share/zsh/site-functions
-	@cp $(COMPLETIONS_DIR)/wien2k_gen.bash ~/.local/share/bash-completion/completions/wien2k_gen 2>/dev/null || true
-	@cp $(COMPLETIONS_DIR)/wien2k_sbatch.bash ~/.local/share/bash-completion/completions/wien2k_sbatch 2>/dev/null || true
-	@cp $(COMPLETIONS_DIR)/wien2k_wizard.bash ~/.local/share/bash-completion/completions/wien2k_wizard 2>/dev/null || true
-	@cp $(COMPLETIONS_DIR)/wien2k_gen.zsh ~/.local/share/zsh/site-functions/_wien2k_gen 2>/dev/null || true
-	@cp $(COMPLETIONS_DIR)/wien2k_sbatch.zsh ~/.local/share/zsh/site-functions/_wien2k_sbatch 2>/dev/null || true
-	@cp $(COMPLETIONS_DIR)/wien2k_wizard.zsh ~/.local/share/zsh/site-functions/_wien2k_wizard 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge.bash ~/.local/share/bash-completion/completions/forge 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge_sbatch.bash ~/.local/share/bash-completion/completions/forge_sbatch 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge_wizard.bash ~/.local/share/bash-completion/completions/forge_wizard 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge.zsh ~/.local/share/zsh/site-functions/_forge 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge_sbatch.zsh ~/.local/share/zsh/site-functions/_forge_sbatch 2>/dev/null || true
+	@cp $(COMPLETIONS_DIR)/forge_wizard.zsh ~/.local/share/zsh/site-functions/_forge_wizard 2>/dev/null || true
 	@echo "🔗 Shell completions installed. Restart your shell or run: source ~/.bashrc"
 
 docker:
@@ -114,7 +114,7 @@ tui:
 	@$(VENV)/bin/$(APP_NAME) tui
 
 wizard:
-	@$(VENV)/bin/wien2k_wizard
+	@$(VENV)/bin/forge_wizard
 
 # ==============================================================================
 # Cleanup
@@ -128,7 +128,7 @@ clean:
 	@echo "🧹 Cleaned build artifacts, caches, and containers."
 
 help:
-	@echo "📖 Wien2kGen Makefile Targets:"
+	@echo "📖 FORGE Makefile Targets:"
 	@echo "  make install          → Create venv & install core deps"
 	@echo "  make dev              → Install dev deps + pre-commit hooks"
 	@echo "  make minimal          → Install only essential deps (no TUI)"

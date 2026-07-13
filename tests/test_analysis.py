@@ -5,7 +5,7 @@ Covers WIEN2k/VASP/QE parsers, strong/weak scaling metrics, and report generatio
 
 import pytest
 
-from wien2k_gen.ui.analysis import (
+from forge.ui.analysis import (
     AnalysisReport,
     calculate_scaling_metrics,
     calculate_weak_scaling_metrics,

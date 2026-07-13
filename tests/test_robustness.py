@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from wien2k_gen.core.case_parser import CaseData, CaseFileParser
-from wien2k_gen.core.topology import Topology
-from wien2k_gen.utils.validation import parse_machines_file
+from forge.core.case_parser import CaseData, CaseFileParser
+from forge.core.topology import Topology
+from forge.utils.validation import parse_machines_file
 
 
 class TestMissingFiles:
@@ -68,30 +68,30 @@ class TestEdgeCases:
         """Negative max_cores should be treated like None (unlimited)."""
         import os as _os
 
-        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
+        from forge.optimizer.advisor import suggest_optimal_resources
         mock_env = {"WIENROOT": "/tmp"}
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(_os, "environ", mock_env)
-            mp.setattr("wien2k_gen.core.hardware.get_physical_cores", lambda: 4)
-            mp.setattr("wien2k_gen.core.hardware.get_total_mem_kb", lambda: 256 * 1024 * 1024)
-            mp.setattr("wien2k_gen.core.hardware.get_memory_bandwidth_gb_s", lambda: 50.0)
-            mp.setattr("wien2k_gen.core.hardware.is_hyperthreading_active", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.check_elpa_available", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.check_mkl_available", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.get_cpu_architecture", lambda: "xeon")
-            mp.setattr("wien2k_gen.core.hardware.get_job_memory_limit_mb", lambda: None)
-            mp.setattr("wien2k_gen.core.hardware.get_numa_node_count", lambda: 1)
-            mp.setattr("wien2k_gen.core.hardware.get_scratch_filesystem_type", lambda: "tmpfs")
-            mp.setattr("wien2k_gen.core.hardware.get_fma_units_per_core", lambda: 2)
-            mp.setattr("wien2k_gen.optimizer.advisor.get_fma_units_per_core", lambda: 2)
-            mp.setattr("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", lambda: 100.0)
+            mp.setattr("forge.core.hardware.get_physical_cores", lambda: 4)
+            mp.setattr("forge.core.hardware.get_total_mem_kb", lambda: 256 * 1024 * 1024)
+            mp.setattr("forge.core.hardware.get_memory_bandwidth_gb_s", lambda: 50.0)
+            mp.setattr("forge.core.hardware.is_hyperthreading_active", lambda: False)
+            mp.setattr("forge.core.hardware.check_elpa_available", lambda: False)
+            mp.setattr("forge.core.hardware.check_mkl_available", lambda: False)
+            mp.setattr("forge.core.hardware.get_cpu_architecture", lambda: "xeon")
+            mp.setattr("forge.core.hardware.get_job_memory_limit_mb", lambda: None)
+            mp.setattr("forge.core.hardware.get_numa_node_count", lambda: 1)
+            mp.setattr("forge.core.hardware.get_scratch_filesystem_type", lambda: "tmpfs")
+            mp.setattr("forge.core.hardware.get_fma_units_per_core", lambda: 2)
+            mp.setattr("forge.optimizer.advisor.get_fma_units_per_core", lambda: 2)
+            mp.setattr("forge.optimizer.advisor.calculate_peak_fp64_gflops", lambda: 100.0)
             from unittest.mock import MagicMock
             mock_backend = MagicMock()
             mock_backend.detect_problem_size.return_value = {
                 "atoms": 10, "kpoints": 8, "nmat": 2000, "nbands": 100,
                 "rkmax": 7.0, "is_soc": False, "is_hybrid": False, "complexity": 1.0,
             }
-            mp.setattr("wien2k_gen.optimizer.advisor._get_current_backend", lambda: mock_backend)
+            mp.setattr("forge.optimizer.advisor._get_current_backend", lambda: mock_backend)
             topo = Topology(nodes=["n1"], cores_per_node=[16])
             max_cores = None  # negative means unlimited
             result = suggest_optimal_resources(topo, user_max_cores=max_cores)
@@ -102,36 +102,36 @@ class TestEdgeCases:
         topo = Topology(nodes=["n1"], cores_per_node=[1])
         import os as _os
 
-        from wien2k_gen.optimizer.advisor import suggest_optimal_resources
+        from forge.optimizer.advisor import suggest_optimal_resources
         mock_env = {"WIENROOT": "/tmp"}
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(_os, "environ", mock_env)
-            mp.setattr("wien2k_gen.core.hardware.get_physical_cores", lambda: 1)
-            mp.setattr("wien2k_gen.core.hardware.get_total_mem_kb", lambda: 64 * 1024 * 1024)
-            mp.setattr("wien2k_gen.core.hardware.get_memory_bandwidth_gb_s", lambda: 20.0)
-            mp.setattr("wien2k_gen.core.hardware.is_hyperthreading_active", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.check_elpa_available", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.check_mkl_available", lambda: False)
-            mp.setattr("wien2k_gen.core.hardware.get_cpu_architecture", lambda: "xeon")
-            mp.setattr("wien2k_gen.core.hardware.get_job_memory_limit_mb", lambda: None)
-            mp.setattr("wien2k_gen.core.hardware.get_numa_node_count", lambda: 1)
-            mp.setattr("wien2k_gen.core.hardware.get_scratch_filesystem_type", lambda: "tmpfs")
-            mp.setattr("wien2k_gen.core.hardware.get_fma_units_per_core", lambda: 2)
-            mp.setattr("wien2k_gen.optimizer.advisor.get_fma_units_per_core", lambda: 2)
-            mp.setattr("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", lambda: 10.0)
+            mp.setattr("forge.core.hardware.get_physical_cores", lambda: 1)
+            mp.setattr("forge.core.hardware.get_total_mem_kb", lambda: 64 * 1024 * 1024)
+            mp.setattr("forge.core.hardware.get_memory_bandwidth_gb_s", lambda: 20.0)
+            mp.setattr("forge.core.hardware.is_hyperthreading_active", lambda: False)
+            mp.setattr("forge.core.hardware.check_elpa_available", lambda: False)
+            mp.setattr("forge.core.hardware.check_mkl_available", lambda: False)
+            mp.setattr("forge.core.hardware.get_cpu_architecture", lambda: "xeon")
+            mp.setattr("forge.core.hardware.get_job_memory_limit_mb", lambda: None)
+            mp.setattr("forge.core.hardware.get_numa_node_count", lambda: 1)
+            mp.setattr("forge.core.hardware.get_scratch_filesystem_type", lambda: "tmpfs")
+            mp.setattr("forge.core.hardware.get_fma_units_per_core", lambda: 2)
+            mp.setattr("forge.optimizer.advisor.get_fma_units_per_core", lambda: 2)
+            mp.setattr("forge.optimizer.advisor.calculate_peak_fp64_gflops", lambda: 10.0)
             from unittest.mock import MagicMock
             mock_backend = MagicMock()
             mock_backend.detect_problem_size.return_value = {
                 "atoms": 10, "kpoints": 8, "nmat": 500, "nbands": 50,
                 "rkmax": 7.0, "is_soc": False, "is_hybrid": False, "complexity": 1.0,
             }
-            mp.setattr("wien2k_gen.optimizer.advisor._get_current_backend", lambda: mock_backend)
+            mp.setattr("forge.optimizer.advisor._get_current_backend", lambda: mock_backend)
             result = suggest_optimal_resources(topo)
             assert result.recommended_total_cores == 1
             assert result.omp_threads_per_rank == 1
 
     def test_zero_kpoints(self):
-        from wien2k_gen.optimizer.advisor import estimate_amdahl_saturation
+        from forge.optimizer.advisor import estimate_amdahl_saturation
         result = estimate_amdahl_saturation(
             kpoints=0, nmat=1000, atoms=10,
             total_cores_available=32, num_nodes=1,
@@ -139,7 +139,7 @@ class TestEdgeCases:
         assert result["max_efficient_cores"] >= 1
 
     def test_huge_nmat(self):
-        from wien2k_gen.optimizer.advisor import estimate_memory_footprint_gb
+        from forge.optimizer.advisor import estimate_memory_footprint_gb
         gb = estimate_memory_footprint_gb(nmat=100000)
         assert gb > 0
         assert gb < 10000  # sanity: not absurd

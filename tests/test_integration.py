@@ -3,8 +3,8 @@
 import tempfile
 from pathlib import Path
 
-from wien2k_gen.backends.wien2k import Wien2kBackend
-from wien2k_gen.core.case_parser import CaseFileParser
+from forge.backends.wien2k import Wien2kBackend
+from forge.core.case_parser import CaseFileParser
 
 
 def _create_case(base: Path, name: str, nmat=2567, nbands=256, atoms=8,
@@ -157,7 +157,7 @@ class TestCompletePipeline:
                 os.chdir(casedir)
                 backend = Wien2kBackend()
 
-                from wien2k_gen.core.topology import Topology
+                from forge.core.topology import Topology
                 topo = Topology(
                     nodes=["node01", "node02"],
                     cores_per_node=[32, 32],

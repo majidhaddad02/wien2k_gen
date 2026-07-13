@@ -1,11 +1,11 @@
-"""Tests for wien2k_gen.core.case_parser — WIEN2k input file parsing."""
+"""Tests for forge.core.case_parser — WIEN2k input file parsing."""
 
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from wien2k_gen.core.case_parser import (
+from forge.core.case_parser import (
     CaseFileParser,
     LDAUData,
     Vector,

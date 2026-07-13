@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: WIEN2k Generator
+title: FORGE
 message: >-
   If you use this software in your research, please cite it using the
   following metadata.
@@ -14,8 +14,8 @@ authors:
     affiliation: University of Isfahan
 version: 0.1.0
 date-released: '2025-07-03'
-url: 'https://github.com/majidhaddad02/wien2k_gen'
-repository-code: 'https://github.com/majidhaddad02/wien2k_gen'
+url: 'https://github.com/majidhaddad02/forge'
+repository-code: 'https://github.com/majidhaddad02/forge'
 license: MIT
 keywords:
   - wien2k

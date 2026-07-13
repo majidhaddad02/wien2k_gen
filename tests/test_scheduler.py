@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import pytest
 
-from wien2k_gen.core.scheduler import detect
-from wien2k_gen.core.topology import Topology
-from wien2k_gen.types import TopologyData
+from forge.core.scheduler import detect
+from forge.core.topology import Topology
+from forge.types import TopologyData
 
 # =============================================================================
 # Fixtures: Mock Outputs for System Commands
@@ -66,7 +66,7 @@ def env_slurm():
 class TestSchedulerDetection:
     """Tests for main detect() function and helper parsers."""
 
-    @patch("wien2k_gen.core.scheduler.get_interconnect_info")
+    @patch("forge.core.scheduler.get_interconnect_info")
     def test_detect_successful_topology(self, mock_interconnect, env_slurm):
         """Happy path: Full topology detection in SLURM env."""
         mock_interconnect.return_value = {}
@@ -81,7 +81,7 @@ class TestSchedulerDetection:
         assert topo.scheduler_hints.get("scheduler") == "slurm"
 
     @pytest.mark.parametrize("malformed_json", ["", "{invalid", "[]", "null"])
-    @patch("wien2k_gen.core.scheduler.get_physical_cores")
+    @patch("forge.core.scheduler.get_physical_cores")
     def test_detect_local_fallback(self, mock_phys_cores, malformed_json):
         """Robustness: Falls back to local when no scheduler environment detected."""
         mock_phys_cores.return_value = 16
@@ -90,7 +90,7 @@ class TestSchedulerDetection:
         assert topo.total_cores == 16
         assert topo.env_type == "local"
 
-    @patch("wien2k_gen.core.scheduler.get_physical_cores")
+    @patch("forge.core.scheduler.get_physical_cores")
     def test_detect_fallback_when_commands_missing(self, mock_phys_cores):
         """Fallback: Graceful degradation when lscpu/numactl/sinfo are missing."""
         mock_phys_cores.return_value = 8
@@ -105,7 +105,7 @@ class TestSchedulerDetection:
         with pytest.raises(dataclasses.FrozenInstanceError):
             topo.total_cores = 64
 
-    @patch("wien2k_gen.core.scheduler.get_physical_cores", return_value=12)
+    @patch("forge.core.scheduler.get_physical_cores", return_value=12)
     def test_detect_pbs_environment(self, mock_phys_cores):
         """Detect PBS/Torque via environment variables."""
         pbs_env = {"PBS_JOBID": "12345", "PBS_NODEFILE": "/tmp/nodefile", "PBS_NCPUS": "24"}
@@ -130,10 +130,10 @@ class TestSchedulerDetection:
 class TestTopologyThreadSafety:
     """Ensure detect() can be called concurrently without race conditions."""
 
-    @patch("wien2k_gen.core.scheduler.FileLock")
-    @patch("wien2k_gen.core.scheduler.get_physical_cores", return_value=16)
+    @patch("forge.core.scheduler.FileLock")
+    @patch("forge.core.scheduler.get_physical_cores", return_value=16)
     def test_concurrent_detect_calls(self, mock_phys_cores, mock_filelock):
-        Path("/tmp/wien2k_gen_topology_cache.json").unlink(missing_ok=True)
+        Path("/tmp/forge_topology_cache.json").unlink(missing_ok=True)
         mock_filelock.return_value.__enter__.return_value = mock_filelock.return_value
         mock_filelock.return_value.__exit__.return_value = False
         results = []

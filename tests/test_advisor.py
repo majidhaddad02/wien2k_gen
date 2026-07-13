@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wien2k_gen.core.topology import Topology
-from wien2k_gen.optimizer.advisor import (
+from forge.core.topology import Topology
+from forge.optimizer.advisor import (
     estimate_amdahl_saturation,
     estimate_memory_footprint_gb,
     suggest_optimal_resources,
@@ -59,43 +59,43 @@ def _setup_mock_backend(nmat=1200, nkpt=8, atoms=10, nbands=100, is_soc=False, i
 
 
 class TestSuggestOptimalResources:
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=64)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=64)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=False)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=False)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=False)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=2)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_returns_valid_suggestion(self, mock_backend_fn, *args, **kwargs):
         mock_backend_fn.return_value = _setup_mock_backend()
         result = suggest_optimal_resources(Topology(nodes=["n1"], cores_per_node=[16]))
 
-        from wien2k_gen.optimizer.advisor import ResourceSuggestion
+        from forge.optimizer.advisor import ResourceSuggestion
         assert isinstance(result, ResourceSuggestion)
         assert result.mode in ("kpoint", "hybrid", "mpi")
         assert result.recommended_total_cores > 0
         assert isinstance(result.warnings, list)
         assert 0.0 <= result.confidence_score <= 1.0
 
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=64)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=64)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=False)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=False)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=False)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=2)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_kpoint_mode_detected(self, mock_backend_fn, *args, **kwargs):
         backend = _setup_mock_backend(nmat=500, nkpt=64)
         mock_backend_fn.return_value = backend
@@ -105,19 +105,19 @@ class TestSuggestOptimalResources:
         assert result.mode in ("kpoint", "hybrid", "mpi")
         assert result.recommended_total_cores > 0
 
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=64)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=4)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=64)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=False)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=True)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=False)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=4)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_large_matrix_hybrid(self, mock_backend_fn, *args, **kwargs):
         backend = _setup_mock_backend(nmat=8000, nkpt=16, atoms=50, nbands=800)
         mock_backend_fn.return_value = backend
@@ -288,19 +288,19 @@ class TestAmdahlSaturation:
 class TestHyperthreadingAwareness:
     """Tests for SMT/HT-aware core allocation (Phase 5 fix)."""
 
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=32)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=32)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=True)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=True)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=True)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=2)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_ht_active_caps_cores_to_physical(self, mock_backend_fn, *args, **kwargs):
         backend = _setup_mock_backend(nmat=5000, nkpt=64, atoms=50, nbands=500)
         mock_backend_fn.return_value = backend
@@ -308,19 +308,19 @@ class TestHyperthreadingAwareness:
         result = suggest_optimal_resources(topo)
         assert result.recommended_total_cores <= 32 * 4
 
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=32)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=32)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=True)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=False)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=False)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=2)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_ht_active_generates_warning(self, mock_backend_fn, *args, **kwargs):
         backend = _setup_mock_backend(nmat=5000, nkpt=64, atoms=50, nbands=500)
         mock_backend_fn.return_value = backend
@@ -329,19 +329,19 @@ class TestHyperthreadingAwareness:
         assert any("Hyper-Threading" in w for w in result.warnings)
         assert any("nomultithread" in w.lower() for w in result.warnings)
 
-    @patch("wien2k_gen.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
-    @patch("wien2k_gen.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
-    @patch("wien2k_gen.optimizer.advisor.get_fma_units_per_core", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_cpu_architecture", return_value="xeon")
-    @patch("wien2k_gen.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
-    @patch("wien2k_gen.optimizer.advisor.get_physical_cores", return_value=32)
-    @patch("wien2k_gen.optimizer.advisor.is_hyperthreading_active", return_value=True)
-    @patch("wien2k_gen.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
-    @patch("wien2k_gen.optimizer.advisor.check_elpa_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.check_mkl_available", return_value=False)
-    @patch("wien2k_gen.optimizer.advisor.get_numa_node_count", return_value=2)
-    @patch("wien2k_gen.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
-    @patch("wien2k_gen.optimizer.advisor._get_current_backend")
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    @patch("forge.optimizer.advisor.get_fma_units_per_core", return_value=2)
+    @patch("forge.optimizer.advisor.get_cpu_architecture", return_value="xeon")
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=32)
+    @patch("forge.optimizer.advisor.is_hyperthreading_active", return_value=True)
+    @patch("forge.optimizer.advisor.get_job_memory_limit_mb", return_value=None)
+    @patch("forge.optimizer.advisor.check_elpa_available", return_value=False)
+    @patch("forge.optimizer.advisor.check_mkl_available", return_value=False)
+    @patch("forge.optimizer.advisor.get_numa_node_count", return_value=2)
+    @patch("forge.optimizer.advisor.get_scratch_filesystem_type", return_value="tmpfs")
+    @patch("forge.optimizer.advisor._get_current_backend")
     def test_ht_active_reduces_confidence(self, mock_backend_fn, *args, **kwargs):
         backend = _setup_mock_backend(nmat=5000, nkpt=64, atoms=50, nbands=500)
         mock_backend_fn.return_value = backend

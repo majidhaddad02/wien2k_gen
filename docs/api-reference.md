@@ -3,31 +3,31 @@
 ## Table of Contents
 
 1. [Core Modules](#core-modules)
-   - [hardware](#wien2k_gencorehardware)
-   - [topology](#wien2k_gencoretopology)
-   - [scheduler](#wien2k_gencorescheduler)
-   - [case_parser](#wien2k_gencorecase_parser)
-   - [workflow_executor](#wien2k_gencoreworkflow_executor)
+   - [hardware](#forgecorehardware)
+   - [topology](#forgecoretopology)
+   - [scheduler](#forgecorescheduler)
+   - [case_parser](#forgecorecase_parser)
+   - [workflow_executor](#forgecoreworkflow_executor)
 2. [Optimization Modules](#optimization-modules)
-   - [advisor](#wien2k_genoptimizeradvisor)
-   - [bayesian](#wien2k_genoptimizerbayesian)
-   - [parallel](#wien2k_genoptimizerparallel)
-   - [monitor](#wien2k_genoptimizermonitor)
-   - [gpu_detector](#wien2k_genoptimizergpu_detector)
+   - [advisor](#forgeoptimizeradvisor)
+   - [bayesian](#forgeoptimizerbayesian)
+   - [parallel](#forgeoptimizerparallel)
+   - [monitor](#forgeoptimizermonitor)
+   - [gpu_detector](#forgeoptimizergpu_detector)
 3. [ML Modules](#ml-modules)
-   - [gnn_kpoint_predictor](#wien2k_genmlgnn_kpoint_predictor)
+   - [gnn_kpoint_predictor](#forgemlgnn_kpoint_predictor)
 4. [Backend Modules](#backend-modules)
-   - [wien2k](#wien2k_genbackendswien2k)
+   - [wien2k](#forgebackendswien2k)
 5. [Type Definitions](#type-definitions)
 
 ---
 
 ## Core Modules
 
-### `wien2k_gen.core.hardware`
+### `forge.core.hardware`
 
 ```python
-from wien2k_gen.core.hardware import (
+from forge.core.hardware import (
     get_physical_cores,
     get_logical_cores,
     is_hyperthreading_active,
@@ -83,10 +83,10 @@ Aggregate hardware summary with all fields above.
 
 ---
 
-### `wien2k_gen.core.topology`
+### `forge.core.topology`
 
 ```python
-from wien2k_gen.core.topology import (
+from forge.core.topology import (
     Topology, NUMANode, NodeSpec, GPUInfo,
     factorize_blacs_grid, blacs_grid_quality,
 )
@@ -116,10 +116,10 @@ Quality score for BLACS grid (0-1). Penalizes 1D grids (Marek et al. 2014).
 
 ---
 
-### `wien2k_gen.core.scheduler`
+### `forge.core.scheduler`
 
 ```python
-from wien2k_gen.core.scheduler import detect, SchedulerHints, auto_detect_memory
+from forge.core.scheduler import detect, SchedulerHints, auto_detect_memory
 ```
 
 #### `detect(max_cores=None, force_refresh=False) -> Topology`
@@ -130,10 +130,10 @@ Returns memory string for the current scheduler (e.g., `"128G"` for SLURM).
 
 ---
 
-### `wien2k_gen.core.case_parser`
+### `forge.core.case_parser`
 
 ```python
-from wien2k_gen.core.case_parser import (
+from forge.core.case_parser import (
     CaseFileParser, CaseData, LDAUData,
     parse_case_directory, check_struct_quality,
     parse_crystal_structure, calculate_nn_distances,
@@ -224,10 +224,10 @@ Human-readable RMT optimization report with per-atom table and warnings.
 
 ---
 
-### `wien2k_gen.core.workflow_executor`
+### `forge.core.workflow_executor`
 
 ```python
-from wien2k_gen.core.workflow_executor import (
+from forge.core.workflow_executor import (
     WorkflowExecutor,
     detect_system_type,
     calculate_optimal_q0,
@@ -269,10 +269,10 @@ Builds overlap matrix S_ij = ⟨R_i|R_j⟩ with Tikhonov regularization.
 
 ## Optimization Modules
 
-### `wien2k_gen.optimizer.advisor`
+### `forge.optimizer.advisor`
 
 ```python
-from wien2k_gen.optimizer.advisor import (
+from forge.optimizer.advisor import (
     suggest_optimal_resources,
     recommend,
     OptimizationTarget,
@@ -309,10 +309,10 @@ Roofline model analysis with compute/memory-bound identification and crossover p
 
 ---
 
-### `wien2k_gen.optimizer.bayesian`
+### `forge.optimizer.bayesian`
 
 ```python
-from wien2k_gen.optimizer.bayesian import (
+from forge.optimizer.bayesian import (
     matern_kernel,
     rbf_kernel_ard,
     compute_expected_improvement,
@@ -358,10 +358,10 @@ Saves BO results to JSON for future warm starts.
 
 ---
 
-### `wien2k_gen.optimizer.parallel`
+### `forge.optimizer.parallel`
 
 ```python
-from wien2k_gen.optimizer.parallel import (
+from forge.optimizer.parallel import (
     recommend_elpa_solver,
     should_use_elpa,
     recommend_rkmax,
@@ -431,10 +431,10 @@ Generates `.machines` format with per-rank k-point listing.
 
 ---
 
-### `wien2k_gen.optimizer.monitor`
+### `forge.optimizer.monitor`
 
 ```python
-from wien2k_gen.optimizer.monitor import (
+from forge.optimizer.monitor import (
     diagnose_charge_sloshing_root_cause,
     create_scf_checkpoint,
     restore_from_checkpoint,
@@ -487,10 +487,10 @@ Restores checkpoint files and returns cycle tracking info.
 
 ---
 
-### `wien2k_gen.optimizer.gpu_detector`
+### `forge.optimizer.gpu_detector`
 
 ```python
-from wien2k_gen.optimizer.gpu_detector import (
+from forge.optimizer.gpu_detector import (
     detect_gpu_hardware,
     check_wien2k_gpu_support,
     analyze_offload_potential,
@@ -535,10 +535,10 @@ Runs CPU vs GPU lapw1 timing comparison. Returns speedup and saves to `.gpu_benc
 
 ## ML Modules
 
-### `wien2k_gen.ml.gnn_kpoint_predictor`
+### `forge.ml.gnn_kpoint_predictor`
 
 ```python
-from wien2k_gen.ml.gnn_kpoint_predictor import (
+from forge.ml.gnn_kpoint_predictor import (
     build_crystal_graph,
     predict_kpoints,
     CGCNNModel,
@@ -578,10 +578,10 @@ Single graph convolution: `h_i' = σ(W_s·h_i + Σ W_n·h_j ⊙ EdgeMLP(e_ij))` 
 
 ## Backend Modules
 
-### `wien2k_gen.backends.wien2k`
+### `forge.backends.wien2k`
 
 ```python
-from wien2k_gen.backends.wien2k import Wien2kBackend, check_elpa_available
+from forge.backends.wien2k import Wien2kBackend, check_elpa_available
 ```
 
 #### `Wien2kBackend`
@@ -597,10 +597,10 @@ from wien2k_gen.backends.wien2k import Wien2kBackend, check_elpa_available
 
 ## Type Definitions
 
-### `wien2k_gen.types`
+### `forge.types`
 
 ```python
-from wien2k_gen.types import (
+from forge.types import (
     BackendCode,         # WIEN2K, QUANTUM_ESPRESSO, VASP, CP2K
     CalculationType,     # SCF, SPIN_POLARIZED, SPIN_ORBIT, SPIN_POLARIZED_SOC, LDA_U, HYBRID_FUNC, FORCES, EECE
     ExecutionMode,       # KPOINT, HYBRID, MPI, SERIAL, FINE_GRAIN

@@ -21,12 +21,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir .
 
 # Non-root user for security
-RUN useradd -m -u 1000 wien2k && chown -R wien2k:wien2k /app
-USER wien2k
+RUN useradd -m -u 1000 forge && chown -R forge:forge /app
+USER forge
 
 ENV OMP_NUM_THREADS=1 \
     MKL_NUM_THREADS=1 \
     KMP_AFFINITY=granularity=fine,compact,1,0 \
-    PATH="/home/wien2k/.local/bin:${PATH}"
+    PATH="/home/forge/.local/bin:${PATH}"
 
-CMD ["wien2k_gen", "--help"]
+CMD ["forge", "--help"]

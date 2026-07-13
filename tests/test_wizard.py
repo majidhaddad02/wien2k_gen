@@ -5,7 +5,7 @@ Tests for wizard.py — WIENROOT detection, validation, and scratch health.
 import os
 from unittest.mock import patch
 
-from wien2k_gen.wizard import check_scratch_health, detect_wienroot_candidates, validate_wienroot
+from forge.wizard import check_scratch_health, detect_wienroot_candidates, validate_wienroot
 
 
 class TestDetectWienrootCandidates:

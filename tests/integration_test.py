@@ -1,5 +1,5 @@
 """
-Integration Tests for Wien2kGen.
+Integration Tests for FORGE.
 Verifies end-to-end connectivity between core modules, CLI, configuration,
 optimization engine, and type system without requiring hardware or cluster access.
 """
@@ -10,13 +10,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from wien2k_gen.cli import create_parser
-from wien2k_gen.config import ConfigManager, load_config
-from wien2k_gen.core.scheduler import apply_max_cores, detect
-from wien2k_gen.optimizer.advisor import suggest_optimal_resources
+from forge.cli import create_parser
+from forge.config import ConfigManager, load_config
+from forge.core.scheduler import apply_max_cores, detect
+from forge.optimizer.advisor import suggest_optimal_resources
 
 # Project imports
-from wien2k_gen.types import ExecutionMode, PipelineResult, ResourceSuggestion, TopologyData
+from forge.types import ExecutionMode, PipelineResult, ResourceSuggestion, TopologyData
 
 # =============================================================================
 # Fixtures for Integration
@@ -96,7 +96,7 @@ class TestTypeSystemSerialization:
 class TestCoreToOptimizerFlow:
     """Verify data flows correctly from Scheduler to Advisor."""
 
-    @patch("wien2k_gen.optimizer.advisor.get_hardware_profile")
+    @patch("forge.optimizer.advisor.get_hardware_profile")
     def test_suggestion_generation(self, mock_hw, sample_topology, sample_hardware_profile):
         mock_hw.return_value = sample_hardware_profile
         
@@ -177,8 +177,8 @@ class TestCLIArgumentRouting:
 class TestEndToEndPipelineSimulation:
     """Simulate the full lifecycle: Detect -> Suggest -> Config -> Result."""
 
-    @patch("wien2k_gen.core.scheduler.subprocess.run")
-    @patch("wien2k_gen.core.scheduler.shutil.which", return_value="/usr/bin/lscpu")
+    @patch("forge.core.scheduler.subprocess.run")
+    @patch("forge.core.scheduler.shutil.which", return_value="/usr/bin/lscpu")
     def test_mocked_pipeline(self, mock_which, mock_run, sample_hardware_profile):
         # Mock lscpu output for detection
         mock_run.return_value = MagicMock(
@@ -192,7 +192,7 @@ class TestEndToEndPipelineSimulation:
             returncode=0
         )
         
-        with patch("wien2k_gen.optimizer.advisor.get_hardware_profile", return_value=sample_hardware_profile):
+        with patch("forge.optimizer.advisor.get_hardware_profile", return_value=sample_hardware_profile):
             # 1. Detect
             topo = detect()
             assert topo.total_cores == 32

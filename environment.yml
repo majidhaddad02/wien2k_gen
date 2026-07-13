@@ -1,9 +1,9 @@
-# environment.yml — Conda environment for wien2k_gen with optional ML support
+# environment.yml — Conda environment for forge with optional ML support
 # Usage:  conda env create -f environment.yml
 # Or:     mamba env create -f environment.yml   (faster)
-# Minimal: conda create -n wien2k_gen python=3.11 pip && pip install wien2k_gen
+# Minimal: conda create -n forge python=3.11 pip && pip install forge
 
-name: wien2k_gen
+name: forge
 channels:
   - conda-forge
   - defaults
@@ -21,10 +21,10 @@ dependencies:
   - textual>=0.40
   # Offline install from PyPI when conda package lags
   - pip:
-    - wien2k_gen>=0.1.0
+    - forge>=0.1.0
 
 # For Bayesian optimization (optional, large install ~2GB):
 #   conda install pytorch cpuonly -c pytorch
 #   pip install botorch gpytorch
 #
-# The built-in pure-NumPy Bayesian optimizer in wien2k_gen works without these.
+# The built-in pure-NumPy Bayesian optimizer in forge works without these.
