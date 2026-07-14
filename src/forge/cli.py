@@ -499,7 +499,7 @@ def _handle_hardware(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]
         if args.case:
             try:
                 from .core.case_parser import CaseFileParser
-                parser = CaseFileParser(args.case)
+                parser = CaseFileParser(Path(args.case) if Path(args.case).exists() else None)
                 data = parser.parse_all()
                 nmat = data.nmat or 2000
                 atoms = data.atoms or 10

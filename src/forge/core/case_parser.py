@@ -97,8 +97,14 @@ class CaseFileParser:
     def __init__(self, case_dir: Path | None = None) -> None:
         if case_dir is None:
             case_dir = Path.cwd()
-        self.case_dir = Path(case_dir)
+        case_dir = Path(case_dir)
         self._case_name: str | None = None
+        if case_dir.is_file():
+            if case_dir.suffix == ".struct":
+                self._case_name = case_dir.stem
+            self.case_dir = case_dir.parent
+        else:
+            self.case_dir = case_dir
 
     @property
     def case_name(self) -> str:

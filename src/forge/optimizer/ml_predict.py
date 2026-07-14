@@ -372,7 +372,8 @@ def predict_convergence(
     ef = ElectronicFeatures()
     try:
         from ..core.case_parser import CaseFileParser
-        parser = CaseFileParser(case_name)
+        parser_arg = struct_file if struct_file.exists() else Path(case_name)
+        parser = CaseFileParser(parser_arg)
         data = parser.parse_all()
         ef = ElectronicFeatures(
             nmat=data.nmat or 100,
