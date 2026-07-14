@@ -56,7 +56,7 @@ class AppConfig:
     Fields are validated, type-coerced, and thread-safe.
     """
     version: str = CONFIG_VERSION
-    wienroot: str = os.environ.get("WIENROOT", "/opt/codes/WIEN2k")
+    wienroot: str = os.environ.get("WIENROOT", "")
     scratch_dir: str = DEFAULT_SCRATCH_ENV
     config_dir: str = str(DEFAULT_CONFIG_DIR)
     cache_dir: str = str(DEFAULT_CACHE_DIR)
@@ -226,12 +226,17 @@ class ConfigManager:
 
     def _validate_config(self, cfg: AppConfig) -> list[str]:  # noqa: C901
         errors = []
-        # Path checks
-        wien = Path(cfg.wienroot)
-        if cfg.wienroot != "/opt/codes/WIEN2k" and not wien.exists():
-            errors.append(f"WIENROOT directory not found: {cfg.wienroot}")
-        elif cfg.wienroot != "/opt/codes/WIEN2k" and not os.access(wien, os.R_OK | os.X_OK):
-            errors.append(f"Insufficient permissions for WIENROOT: {cfg.wienroot}")
+        from .core.locator import find_wienroot
+
+        wienroot = cfg.wienroot or find_wienroot() or ""
+        cfg.wienroot = wienroot
+        wien = Path(wienroot) if wienroot else Path()
+        if not wienroot:
+            errors.append("WIENROOT not set and not auto-detected. Set WIENROOT or add run_lapw to PATH.")
+        elif not wien.exists():
+            errors.append(f"WIENROOT directory not found: {wienroot}")
+        elif not os.access(wien, os.R_OK | os.X_OK):
+            errors.append(f"Insufficient permissions for WIENROOT: {wienroot}")
             
         scratch = Path(cfg.scratch_dir)
         if not scratch.exists():

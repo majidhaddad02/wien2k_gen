@@ -1084,8 +1084,13 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         return any(indicators)
 
     def check_elpa_available(self) -> bool:
-        wienroot = os.environ.get("WIENROOT", "/opt/codes/WIEN2k")
-        paths = [Path(wienroot, "lib", "libelpa.a"), Path(wienroot, "lib", "libelpa.so")]
+        from .locator import find_elpa_dir, find_wienroot
+        wienroot = find_wienroot() or ""
+        elpa_dir = find_elpa_dir() or ""
+        paths = [
+            Path(wienroot, "lib", "libelpa.a"), Path(wienroot, "lib", "libelpa.so"),
+            Path(elpa_dir, "lib", "libelpa.a"), Path(elpa_dir, "lib", "libelpa.so"),
+        ]
         return any(p.exists() for p in paths)
 
     def check_mkl_available(self) -> bool:

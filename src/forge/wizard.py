@@ -50,18 +50,19 @@ PROFILES_DIR = Path.home() / ".config" / "forge" / "profiles"
 # =============================================================================
 
 def detect_wienroot_candidates() -> list[str]:
-    """Suggest likely WIENROOT locations based on system paths."""
+    """Suggest likely WIENROOT locations based on env and PATH scan."""
+    from .core.locator import find_wienroot
+
     candidates = []
     env = os.environ.get("WIENROOT")
     if env:
         candidates.append(env)
-    
-    common_paths = ["/opt/codes/WIEN2k", "/usr/local/WIEN2k", str(Path.home() / "WIEN2k")]
-    for p in common_paths:
-        if Path(p).exists():
-            candidates.append(p)
-            
-    return list(dict.fromkeys(candidates))
+
+    auto = find_wienroot()
+    if auto and auto not in candidates:
+        candidates.append(auto)
+
+    return candidates
 
 
 def validate_wienroot(path: str) -> bool:

@@ -161,8 +161,11 @@ def check_wien2k_gpu_support(wienroot: str | None = None) -> dict[str, Any]:  # 
     """
     if wienroot is None:
         wienroot = os.environ.get("WIENROOT", "")
+    if not wienroot:
+        from ..core.locator import find_wienroot
+        wienroot = find_wienroot() or ""
 
-    root = Path(wienroot) if wienroot else Path("/opt/wien2k")
+    root = Path(wienroot) if wienroot else Path()
     result: dict[str, Any] = {
         "gpu_enabled": False,
         "vendor": "none",

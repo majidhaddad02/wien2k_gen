@@ -267,27 +267,30 @@ def get_recommended_wien2k_compile_flags(
 
 
 def _resolve_elpa_dir() -> str:
-    """Resolve ELPA installation directory from environment or defaults."""
+    """Resolve ELPA installation directory from environment or auto-detect."""
     import os
-    elpa_dir = os.environ.get(
-        "ELPA_DIR",
-        os.environ.get("ELPA_HOME", "/opt/elpa"),
-    )
-    return elpa_dir
+
+    from ..core.locator import find_elpa_dir
+    elpa_dir = os.environ.get("ELPA_DIR", os.environ.get("ELPA_HOME", ""))
+    if elpa_dir:
+        return elpa_dir
+    return find_elpa_dir() or ""
 
 
 def _check_elpa_runtime() -> bool:
     """Check if ELPA library is loadable at runtime (import or dlopen)."""
-    import os
     from pathlib import Path
-    wienroot = os.environ.get("WIENROOT", "/opt/codes/WIEN2k")
+
+    from ..core.locator import find_elpa_dir, find_wienroot
+
+    wienroot = find_wienroot() or ""
+    elpa_dir = find_elpa_dir() or ""
     paths = [
         Path(wienroot, "lib", "libelpa.a"),
         Path(wienroot, "lib", "libelpa.so"),
+        Path(elpa_dir, "lib", "libelpa.so"),
+        Path(elpa_dir, "lib", "libelpa.a"),
     ]
-    elpa_dir = _resolve_elpa_dir()
-    paths.append(Path(elpa_dir, "lib", "libelpa.so"))
-    paths.append(Path(elpa_dir, "lib", "libelpa.a"))
     return any(p.exists() for p in paths)
 
 

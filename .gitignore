@@ -39,4 +39,7 @@ case.error
 .mixing_params
 .pulay_history
 .mixing_strategy
+.gpu_benchmark.json
+.bo_history.json
+.wien2k_profile_cache.json
 forge.sif

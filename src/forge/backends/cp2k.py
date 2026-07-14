@@ -709,7 +709,7 @@ export OMP_NUM_THREADS={omp}
 export MKL_NUM_THREADS={omp}
 export OPENBLAS_NUM_THREADS={omp}
 export OMP_STACKSIZE=256M
-export CP2K_DATA_DIR="${{CP2K_DATA_DIR:-/opt/cp2k/data}}"
+export CP2K_DATA_DIR="${{CP2K_DATA_DIR:-}}"
 
 # Scratch Directory Setup
 SCRATCH_DIR=$(mktemp -d -p /dev/shm 2>/dev/null || mktemp -d -p ${{SCRATCH:-/scratch}} 2>/dev/null || mktemp -d)

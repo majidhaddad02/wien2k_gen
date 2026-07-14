@@ -1342,10 +1342,11 @@ class Wien2kBackend(Backend):
                 logger.warning(f"Could not backup {script_path}: {e}")
 
         # Determine WIENROOT
-        wienroot = os.environ.get("WIENROOT")
+        from ..core.locator import find_wienroot
+        wienroot = find_wienroot()
         if not wienroot:
-            exe = shutil.which("run_lapw")
-            wienroot = str(Path(exe).parent.parent) if exe else "/opt/codes/WIEN2k/v24.1"
+            logger.error("WIENROOT not set and run_lapw not found on PATH. Cannot generate script.")
+            return str(script_path)
 
         # Disable SSH for single-node jobs (performance optimization)
         disable_ssh = (len(topo.nodes) == 1)

@@ -227,9 +227,14 @@ def _check_libraries() -> dict[str, bool]:
     libs["lapack"] = "liblapack" in ldconf or "libopenblas" in ldconf
 
     # ELPA check (often in WIENROOT or custom path)
-    wienroot = os.environ.get("WIENROOT", "/opt/codes/WIEN2k")
-    elpa_path = os.path.join(wienroot, "lib", "libelpa.a")
-    libs["elpa"] = Path(elpa_path).exists() or "libelpa" in ldconf
+    from ..core.locator import find_elpa_dir, find_wienroot
+    wienroot = find_wienroot() or ""
+    elpa_dir = find_elpa_dir() or ""
+    elpa_paths = [
+        os.path.join(wienroot, "lib", "libelpa.a"),
+        os.path.join(elpa_dir, "lib", "libelpa.a"),
+    ]
+    libs["elpa"] = any(Path(p).exists() for p in elpa_paths) or "libelpa" in ldconf
 
     return libs
 
@@ -408,7 +413,7 @@ def run_diagnostics(config: Optional[DiagnosticConfig] = None) -> DiagnosticRepo
         "os_info": _detect_os_and_python(),
         "python_env": {
             "exec_path": sys.executable,
-            "site_packages": str(Path(__file__).parent.parent.parent),
+            "package_root": str(Path(__file__).parent.parent.parent),
         },
         "hardware": _detect_hardware(),
         "mpi_omp": _detect_mpi_omp(),
