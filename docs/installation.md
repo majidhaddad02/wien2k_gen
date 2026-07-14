@@ -7,18 +7,42 @@
 - **macOS** — basic features only (no NUMA, no scheduler detection)
 - **WIEN2k** installation with valid license
 
-## Standard Installation
+## Standard Installation (Recommended)
+
+Using the bundled installer script:
 
 ```bash
-pip install forge
+chmod +x install.sh
+./install.sh
 ```
+
+This creates a virtual environment in `~/.local/opt/forge/`, installs the
+package and its dependencies, and adds symlinks for `forge`, `forge_sbatch`,
+and `forge_wizard` into `~/.local/bin/`.
 
 Verify:
 ```bash
 forge --version
 ```
 
-## From Source
+### Installer Options
+
+| Flag | Description |
+|------|-------------|
+| `--prefix=/custom/path` | Custom install location |
+| `--dry-run` | Preview without installing |
+| `--force` | Overwrite existing installation |
+| `--uninstall` | Remove all traces |
+
+### Root (System-Wide) Installation
+
+```bash
+sudo ./install.sh
+```
+
+Installs to `/opt/forge/` with symlinks in `/usr/local/bin/`.
+
+## From Source (Developers)
 
 ```bash
 git clone https://github.com/majidhaddad02/forge.git
@@ -26,18 +50,29 @@ cd forge
 pip install -e ".[dev]"
 ```
 
+Or use the Makefile:
+```bash
+make dev        # full dev install with lint/test tools
+make install    # core only
+make minimal    # essential deps only (no TUI)
+```
+
 ## Air-Gapped HPC Installation
 
-For clusters without internet access:
+For clusters without internet access — use the installer's offline mode:
 
 ```bash
 # On a machine with internet:
-pip download forge -d ./offline_packages
-rsync -av offline_packages/ cluster:/path/to/packages/
+pip download -r requirements/core.txt -d ./offline_packages
+rsync -av . cluster:/path/to/forge/
 
 # On the cluster:
-pip install --no-index --find-links /path/to/packages/ forge
+cd /path/to/forge
+./install.sh
 ```
+
+The installer auto-detects the `offline_packages/` directory and installs
+from local wheels when no network is available.
 
 ## Container Deployment
 
