@@ -80,8 +80,8 @@ def select_eigensolver(
             False,
         )
 
-    if effective_nmat >= 10000:
-        elpa_kernel = "ELPA2" if effective_nmat >= 10000 else "ELPA1"
+    if effective_nmat >= 8000:
+        elpa_kernel = "ELPA2" if effective_nmat >= 8000 else "ELPA1"
         elpa_block = 64 if elpa_kernel == "ELPA2" else 32
 
         if gpu_available:
@@ -104,7 +104,7 @@ def select_eigensolver(
                 2.8 if elpa_kernel == "ELPA2" else 1.8,
                 f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
                 f"{elpa_kernel} provides optimal strong scaling for matrices "
-                f"above 10000. Two-stage tridiagonalization reduces "
+                f"above 8000. Two-stage tridiagonalization reduces "
                 f"communication volume by ~40% vs ScaLAPACK.",
                 False,
             )
@@ -120,7 +120,7 @@ def select_eigensolver(
                 False,
             )
 
-    if 2000 <= nmat < 10000:
+    if 2000 <= nmat < 8000:
         block_size = min(256, max(32, nmat // 8))
 
         if is_soc:

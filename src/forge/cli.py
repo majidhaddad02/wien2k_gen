@@ -994,7 +994,7 @@ def _handle_advise(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         parser = CaseFileParser(case_path if case_path.exists() else None)
         case_data = parser.parse_all()
     except Exception:
-        pass
+        logger.debug("Case file parsing failed, using defaults", exc_info=True)
 
     atoms = getattr(case_data, "atoms", 10) if case_data else 10
     nmat = args.nmat or (getattr(case_data, "nmat", 0) if case_data else 5000)

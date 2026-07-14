@@ -309,7 +309,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 cores_per_socket = int(next((v for k, v in fields.items() if "core(s) per socket" in k), 1))
                 return sockets * cores_per_socket
             except (json.JSONDecodeError, ValueError, StopIteration):
-                pass
+                logger.debug("lscpu JSON parsing failed, trying fallback")
 
         raw = self._run_cmd_safe(["lscpu", "--parse=CPU,SOCKET,CORE"], force_c_locale=True)
         if raw:
@@ -322,8 +322,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                         unique_physical.add((parts[1], parts[2]))
                 if unique_physical:
                     return len(unique_physical)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"lscpu parse-based core detection failed: {e}")
 
         try:
             with open("/proc/cpuinfo") as f:
@@ -393,8 +393,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 fields = {x["field"].lower().strip(': '): x["data"] for x in data.get("lscpu", [])}
                 sockets = int(next((v for k, v in fields.items() if "socket(s)" in k and "per" not in k), 1))
                 cores_per_socket = int(next((v for k, v in fields.items() if "core(s) per socket" in k), 1))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"lscpu JSON parsing failed in peak GFLOPS: {e}")
 
         freq_info = self.get_cpu_frequency_info()
         base_freq = freq_info.get("base", 2000.0)
@@ -419,12 +419,14 @@ class SysFSHardwareInfo(HardwareInfoProvider):
         # AVX-512 heavy workloads can downclock 10-25% on Intel Skylake-SP/Ice Lake
         # AVX2 downclock is ~5-10% on Intel, minimal on AMD Zen
         # Values: fraction of base frequency sustained under all-core AVX load
+        # Ref: Intel 64 and IA-32 Architectures Optimization Reference Manual
+        #      (Table "Intel AVX-512 Frequency Licenses"), AMD PPR §2.1.2
+        # TODO: parameterize per-generation — SapphireRapids has lower AVX-512
+        #       throttle (~0.80 per-core) vs Ice Lake (~0.85)
         if isa == "avx512":
             if "xeon" in cpu_arch:
-                # Intel server: AVX-512 all-core downclock ~15% (Skylake-SP/Ice Lake)
                 throttle_factor = 0.85
             elif "epyc" in cpu_arch:
-                # AMD EPYC: AVX-512 via 2x256, minimal throttle ~5%
                 throttle_factor = 0.95
             else:
                 throttle_factor = 0.90
@@ -468,7 +470,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     if "cpu MHz" in line:
                         info["base"] = float(line.split(':')[1].strip())
                         break
-        except Exception:
+        except Exception as e:
+            logger.debug(f"cpuinfo frequency fallback: {e}")
             info["base"] = info["max"] if info["max"] > 0 else 2000.0
 
         return info
@@ -491,8 +494,6 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                         mb_val *= cpus
                     return mb_val
         return None
-
-    # --- NUMA Topology & Cache Hierarchy ---
 
     def get_numa_topology_detailed(self) -> list[HardwareNUMANode]:
         nodes = self._get_numa_from_sysfs()
@@ -528,9 +529,6 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                     node_data["cpus"] = cpu_range
                     cpu_ids = parse_cpu_list(cpu_range)
                     node_data["cpu_ids"] = cpu_ids
-                    # Count physical cores, not logical CPUs (SMT-aware).
-                    # On SMT-enabled systems, cpulist includes HT siblings.
-                    # Default to 1 thread/core when topology info is unavailable.
                     tpc = _get_threads_per_core(node_path)
                     node_data["cores"] = max(1, len(cpu_ids) // max(1, tpc))
 
@@ -590,8 +588,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             snc_detected = any(len(v) > 1 for v in socket_to_node.values())
             if snc_detected and len(nodes) == 0:
                 logger.info("Sub-NUMA Clustering (SNC) detected via lscpu")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"lscpu-based NUMA augmentation failed: {e}")
         return nodes
 
     @staticmethod
@@ -616,8 +614,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 nid = node["node_id"]
                 if nid in node_size_map and node["mem_kb"] == 0:
                     node["mem_kb"] = node_size_map[nid]
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"numactl augmentation failed: {e}")
         return nodes
 
     def get_cache_topology(self) -> list[CacheLevel]:
@@ -655,8 +653,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
             for line in Path("/proc/meminfo").read_text().splitlines():
                 if line.startswith("MemTotal:"):
                     return int(line.split()[1])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"MemTotal detection failed: {e}")
         return 4 * 1024 * 1024
 
     def get_scratch_filesystem_type(self) -> str:
@@ -667,8 +665,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 fstype = out.splitlines()[-1].split()[1].lower()
                 if any(fs in fstype for fs in ["lustre", "gpfs", "beegfs", "nfs", "xfs", "ext4", "tmpfs"]):
                     return fstype
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Scratch FS detection failed: {e}")
         return "unknown"
 
     def get_interconnect_info(self) -> InterconnectInfo:  # noqa: C901
@@ -797,8 +795,19 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
             if arch in ("xeon", "intel_consumer"):
                 if "platinum" in model_lower:
-                    if "85" in model_line or "84" in model_line:
+                    model_digits = "".join(c for c in model_line if c.isdigit())
+                    if model_digits.startswith("86"):
+                        return "Xeon_SierraForest"
+                    if model_digits.startswith("85"):
+                        return "Xeon_EmeraldRapids"
+                    if model_digits.startswith("84"):
                         return "Xeon_SapphireRapids"
+                    if model_digits.startswith("83"):
+                        return "Xeon_IceLake"
+                    if model_digits.startswith("82"):
+                        return "Xeon_CascadeLake"
+                    if model_digits.startswith("81"):
+                        return "Xeon_Skylake"
                     return "Xeon_SapphireRapids"
                 if "gold 6" in model_lower or "gold 5" in model_lower:
                     if "63" in model_line and "v" not in model_lower:
@@ -898,7 +907,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 return "ARMv8"
 
             return "unknown"
-        except Exception:
+        except Exception as e:
+            logger.debug(f"CPU microarch detection failed: {e}")
             return "unknown"
 
     def get_system_type(self) -> str:  # noqa: C901
@@ -926,7 +936,7 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                         if tp == "Battery":
                             return "laptop"
                     except Exception:
-                        pass
+                        logger.debug(f"Cannot read power supply type from {entry}")
 
             chassis_path = Path("/sys/class/dmi/id/chassis_type")
             if chassis_path.exists():
@@ -940,8 +950,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 vl = chassis_vendor.lower()
                 if any(kw in vl for kw in ("notebook", "laptop", "lenovo thinkpad", "dell latitude")):
                     return "laptop"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"System type detection failed: {e}")
 
         phys = self.get_physical_cores()
         return "compute_node" if phys >= 32 else "workstation"
@@ -1014,8 +1024,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
 
             if bw_sum_mb > 0:
                 return bw_sum_mb / 1000.0
-        except (OSError, PermissionError):
-            pass
+        except (OSError, PermissionError) as e:
+            logger.debug(f"Sysfs bandwidth measurement failed: {e}")
         return None
 
     def _estimate_bandwidth_from_arch(self) -> float:
@@ -1094,8 +1104,8 @@ class SysFSHardwareInfo(HardwareInfoProvider):
                 fields = {x["field"].lower().strip(': '): x["data"] for x in data.get("lscpu", [])}
                 sockets_raw = int(next((v for k, v in fields.items() if "socket(s)" in k and "per" not in k), 1))
                 cores_per_socket_raw = int(next((v for k, v in fields.items() if "core(s) per socket" in k), 1))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"lscpu JSON parsing failed: {e}")
 
         threads_per_core = self.get_logical_cores() // (sockets_raw * cores_per_socket_raw) if (sockets_raw * cores_per_socket_raw) > 0 else 1
 
