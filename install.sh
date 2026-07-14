@@ -24,6 +24,7 @@ UNINSTALL=false
 DRY_RUN=false
 FORCE=false
 PREFIX_OVERRIDE=""
+BIN_DIR_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -31,6 +32,25 @@ while [[ $# -gt 0 ]]; do
     --dry-run)   DRY_RUN=true; shift ;;
     --force)     FORCE=true; shift ;;
     --prefix=*)  PREFIX_OVERRIDE="${1#*=}"; shift ;;
+    --prefix)    PREFIX_OVERRIDE="$2"; shift 2 ;;
+    --bin-dir=*) BIN_DIR_OVERRIDE="${1#*=}"; shift ;;
+    --bin-dir)   BIN_DIR_OVERRIDE="$2"; shift 2 ;;
+    --help|-h)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --prefix=PATH     Install root (default: ~/.local/opt/forge or /opt/forge for root)"
+      echo "  --bin-dir=PATH    Symlink directory for CLI binaries (default: ~/.local/bin or /usr/local/bin)"
+      echo "  --dry-run         Preview without installing"
+      echo "  --force           Skip confirmation on overwrite"
+      echo "  --uninstall       Remove installation"
+      echo "  --help, -h        Show this message"
+      echo ""
+      echo "Environment variables (overridden by CLI flags):"
+      echo "  FORGE_INSTALL_PREFIX   Same as --prefix"
+      echo "  FORGE_BIN_DIR          Same as --bin-dir"
+      exit 0
+      ;;
     *)           shift ;;
   esac
 done
@@ -38,17 +58,35 @@ done
 # ==============================================================================
 # 1. Determine Installation Prefix
 # ==============================================================================
+# Environment variables as defaults (CLI flags override)
+: "${FORGE_INSTALL_PREFIX:=}"
+: "${FORGE_BIN_DIR:=}"
+
 if [[ -n "$PREFIX_OVERRIDE" ]]; then
   INSTALL_PREFIX="$PREFIX_OVERRIDE"
-  BIN_LINK_DIR="${INSTALL_PREFIX}/bin"
-  PROFILE_FILE="${HOME}/.bashrc"
+elif [[ -n "${FORGE_INSTALL_PREFIX}" ]]; then
+  INSTALL_PREFIX="${FORGE_INSTALL_PREFIX}"
 elif [[ "$(id -u)" -eq 0 ]]; then
   INSTALL_PREFIX="/opt/${APP_NAME}"
-  BIN_LINK_DIR="/usr/local/bin"
-  PROFILE_FILE="/etc/profile.d/${APP_NAME}.sh"
 else
   INSTALL_PREFIX="${HOME}/.local/opt/${APP_NAME}"
+fi
+
+if [[ -n "$BIN_DIR_OVERRIDE" ]]; then
+  BIN_LINK_DIR="$BIN_DIR_OVERRIDE"
+elif [[ -n "${FORGE_BIN_DIR}" ]]; then
+  BIN_LINK_DIR="${FORGE_BIN_DIR}"
+elif [[ -n "$PREFIX_OVERRIDE" || -n "${FORGE_INSTALL_PREFIX}" ]]; then
+  BIN_LINK_DIR="${INSTALL_PREFIX}/bin"
+elif [[ "$(id -u)" -eq 0 ]]; then
+  BIN_LINK_DIR="/usr/local/bin"
+else
   BIN_LINK_DIR="${HOME}/.local/bin"
+fi
+
+if [[ "$(id -u)" -eq 0 ]]; then
+  PROFILE_FILE="/etc/profile.d/${APP_NAME}.sh"
+else
   [[ -n "${ZSH_VERSION:-}" ]] && PROFILE_FILE="${HOME}/.zshrc" || PROFILE_FILE="${HOME}/.bashrc"
 fi
 
