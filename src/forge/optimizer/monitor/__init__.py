@@ -1,10 +1,8 @@
 """
-SCF monitoring — backward-compatible re-export shim.
-
-All implementation lives in the forge.optimizer.monitor package.
+SCF monitoring: real-time convergence tracking, charge sloshing detection, and checkpoint management.
 """
 
-from forge.optimizer.monitor.checkpoint import (
+from .checkpoint import (
     calculate_checkpoint_interval,
     cleanup_old_checkpoints,
     create_scf_checkpoint,
@@ -12,7 +10,7 @@ from forge.optimizer.monitor.checkpoint import (
     restore_from_checkpoint,
     resume_from_checkpoint,
 )
-from forge.optimizer.monitor.convergence import (
+from .convergence import (
     analyze_anderson_mixing,
     analyze_broyden_mixing,
     analyze_convergence_history,
@@ -21,7 +19,7 @@ from forge.optimizer.monitor.convergence import (
     detect_charge_sloshing_fft,
     diagnose_charge_sloshing_root_cause,
 )
-from forge.optimizer.monitor.engine import (
+from .engine import (
     estimate_remaining_walltime,
     get_monitor_status,
     pause_monitoring,
@@ -29,12 +27,7 @@ from forge.optimizer.monitor.engine import (
     start_monitoring,
     stop_monitoring,
 )
-from forge.optimizer.monitor.types import (
-    ConvergenceAnalysis,
-    MonitorEvent,
-    MonitorState,
-    ProblemVector,
-)
+from .types import ConvergenceAnalysis, MonitorEvent, MonitorState, ProblemVector
 
 __all__ = [
     "ConvergenceAnalysis",

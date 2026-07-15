@@ -1,42 +1,39 @@
-"""
-Bayesian optimization for WIEN2k SCF parameters.
+"""Bayesian optimization for WIEN2k SCF parameters."""
 
-This module is a backward-compatible re-export shim.
-All implementation lives in the forge.optimizer.bayesian package.
-"""
-
-from .bayesian.acquisition import (
+from .acquisition import (
+    _DEFAULT_EI_THRESHOLD,
     compute_expected_improvement,
     compute_q_expected_improvement,
 )
-from .bayesian.constraints import (
+from .constraints import (
+    _estimate_memory_gb_for_config,
+    _estimate_walltime_min_for_config,
     _sigmoid_feasibility,
 )
-from .bayesian.core import (
+from .core import (
+    _FIDELITY_CORRELATION,
+    _FIDELITY_COST,
     BayesianOptimizer,
     MultiFidelityBayesianOptimizer,
+    _params_dict,
     add_physics_priors,
     bayesian_optimize_scf_params,
     define_search_space,
     load_warm_start_history,
     save_bo_history,
 )
-from .bayesian.elements import _chemical_similarity
-from .bayesian.gp import _GaussianProcess, _GaussianProcessARD
-from .bayesian.kernels import (
-    matern_kernel,
-    rbf_kernel,
-    rbf_kernel_ard,
-)
-from .bayesian.sampling import (
-    _CATEGORICAL_MODES,
-    _decode_config,
-    _encode_config,
-    latin_hypercube_sampling,
-)
+from .elements import _chemical_similarity
+from .gp import _GaussianProcess, _GaussianProcessARD
+from .kernels import _EPS, _NUGGET, matern_kernel, rbf_kernel, rbf_kernel_ard
+from .sampling import _CATEGORICAL_MODES, _decode_config, _encode_config, latin_hypercube_sampling
 
 __all__ = [
     "_CATEGORICAL_MODES",
+    "_DEFAULT_EI_THRESHOLD",
+    "_EPS",
+    "_FIDELITY_CORRELATION",
+    "_FIDELITY_COST",
+    "_NUGGET",
     "BayesianOptimizer",
     "MultiFidelityBayesianOptimizer",
     "_GaussianProcess",
@@ -44,6 +41,9 @@ __all__ = [
     "_chemical_similarity",
     "_decode_config",
     "_encode_config",
+    "_estimate_memory_gb_for_config",
+    "_estimate_walltime_min_for_config",
+    "_params_dict",
     "_sigmoid_feasibility",
     "add_physics_priors",
     "bayesian_optimize_scf_params",

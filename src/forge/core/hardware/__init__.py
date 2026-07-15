@@ -1,9 +1,12 @@
-"""
-Hardware Detection — backward-compatible shim.
-All logic lives in core/hardware/ subpackage.
-"""
+"""Hardware detection package — CPU, memory, NUMA, IO, interconnect detection."""
 
-from forge.core.hardware.wrapper import (
+from .detection import SysFSHardwareInfo
+from .types import (
+    HardwareInfoProvider,
+    parse_cpu_list,
+    parse_memory_string,
+)
+from .wrapper import (
     calculate_peak_fp64_gflops,
     check_elpa_available,
     check_mkl_available,
@@ -12,6 +15,7 @@ from forge.core.hardware.wrapper import (
     get_cpu_frequency_info,
     get_cpu_generation,
     get_cpu_governor,
+    get_fma_units_per_core,
     get_hardware_profile,
     get_interconnect_info,
     get_job_memory_limit_mb,
@@ -24,12 +28,15 @@ from forge.core.hardware.wrapper import (
     get_scratch_filesystem_type,
     get_system_type,
     get_total_mem_kb,
+    get_vector_isa_and_width,
     is_containerized,
     is_hyperthreading_active,
     set_provider,
 )
 
 __all__ = [
+    "HardwareInfoProvider",
+    "SysFSHardwareInfo",
     "calculate_peak_fp64_gflops",
     "check_elpa_available",
     "check_mkl_available",
@@ -38,6 +45,7 @@ __all__ = [
     "get_cpu_frequency_info",
     "get_cpu_generation",
     "get_cpu_governor",
+    "get_fma_units_per_core",
     "get_hardware_profile",
     "get_interconnect_info",
     "get_job_memory_limit_mb",
@@ -50,7 +58,10 @@ __all__ = [
     "get_scratch_filesystem_type",
     "get_system_type",
     "get_total_mem_kb",
+    "get_vector_isa_and_width",
     "is_containerized",
     "is_hyperthreading_active",
+    "parse_cpu_list",
+    "parse_memory_string",
     "set_provider",
 ]

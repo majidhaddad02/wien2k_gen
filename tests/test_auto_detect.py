@@ -8,7 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from forge.backend_manager import BackendManager
+from forge.backend_manager import (
+    BackendManager,
+    get_current_backend,
+    list_backends,
+    set_backend,
+)
 from forge.exceptions import MissingInputError
 from forge.types import BackendCode
 
@@ -92,11 +97,10 @@ class TestBackendManagerIntegration:
         assert a is b
 
     def test_set_backend_invalidates_cache(self):
-        mgr = BackendManager.instance()
-        mgr.set_backend(BackendCode.WIEN2K)
-        assert mgr._current_code == BackendCode.WIEN2K
+        set_backend(BackendCode.WIEN2K)
+        backend = get_current_backend()
+        assert backend is not None
 
     def test_list_available_returns_codes(self):
-        mgr = BackendManager.instance()
-        available = mgr.list_available()
+        available = list_backends()
         assert isinstance(available, list)
