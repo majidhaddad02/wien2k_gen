@@ -63,6 +63,22 @@ class ExecutionRecord:
     node_list: list[str] = field(default_factory=list)
     success: bool = False
     tags: list[str] = field(default_factory=list)
+    # --- Structural features (extracted from WIEN2k input) ---
+    nbands: int = 0
+    spacegroup: int = 1
+    max_z: int = 26
+    avg_z: float = 26.0
+    volume_bohr3: float = 100.0
+    is_soc: bool = False
+    is_hybrid: bool = False
+    # --- Hardware context at run time ---
+    cpu_arch: str = ""
+    cpu_generation: str = ""
+    peak_gflops: float = 0.0
+    mem_bandwidth_gbs: float = 0.0
+    numa_nodes: int = 1
+    interconnect_type: str = ""
+    scratch_fs: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dictionary with JSON-safe types."""
@@ -101,7 +117,23 @@ CREATE TABLE IF NOT EXISTS execution_history (
     memory_gb_used      REAL NOT NULL DEFAULT 0.0,
     node_list           TEXT NOT NULL DEFAULT '[]',
     success             INTEGER NOT NULL DEFAULT 0,
-    tags                TEXT NOT NULL DEFAULT '[]'
+    tags                TEXT NOT NULL DEFAULT '[]',
+    -- Structural features
+    nbands              INTEGER NOT NULL DEFAULT 0,
+    spacegroup          INTEGER NOT NULL DEFAULT 1,
+    max_z               INTEGER NOT NULL DEFAULT 26,
+    avg_z               REAL NOT NULL DEFAULT 26.0,
+    volume_bohr3        REAL NOT NULL DEFAULT 100.0,
+    is_soc              INTEGER NOT NULL DEFAULT 0,
+    is_hybrid           INTEGER NOT NULL DEFAULT 0,
+    -- Hardware context at run time
+    cpu_arch            TEXT NOT NULL DEFAULT '',
+    cpu_generation      TEXT NOT NULL DEFAULT '',
+    peak_gflops         REAL NOT NULL DEFAULT 0.0,
+    mem_bandwidth_gbs   REAL NOT NULL DEFAULT 0.0,
+    numa_nodes          INTEGER NOT NULL DEFAULT 1,
+    interconnect_type   TEXT NOT NULL DEFAULT '',
+    scratch_fs          TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_history_backend ON execution_history(backend);
@@ -113,18 +145,43 @@ CREATE INDEX IF NOT EXISTS idx_history_success ON execution_history(success);
 CREATE INDEX IF NOT EXISTS idx_history_walltime ON execution_history(walltime_sec);
 CREATE INDEX IF NOT EXISTS idx_history_cores ON execution_history(total_cores);
 CREATE INDEX IF NOT EXISTS idx_history_problem ON execution_history(nmat, nkpt, backend);
+CREATE INDEX IF NOT EXISTS idx_history_cpu_arch ON execution_history(cpu_arch);
+CREATE INDEX IF NOT EXISTS idx_history_spacegroup ON execution_history(spacegroup);
 """
+
+_NEW_COLUMNS_MIGRATION = [
+    ("nbands",              "INTEGER NOT NULL DEFAULT 0"),
+    ("spacegroup",          "INTEGER NOT NULL DEFAULT 1"),
+    ("max_z",               "INTEGER NOT NULL DEFAULT 26"),
+    ("avg_z",               "REAL NOT NULL DEFAULT 26.0"),
+    ("volume_bohr3",        "REAL NOT NULL DEFAULT 100.0"),
+    ("is_soc",              "INTEGER NOT NULL DEFAULT 0"),
+    ("is_hybrid",           "INTEGER NOT NULL DEFAULT 0"),
+    ("cpu_arch",            "TEXT NOT NULL DEFAULT ''"),
+    ("cpu_generation",      "TEXT NOT NULL DEFAULT ''"),
+    ("peak_gflops",         "REAL NOT NULL DEFAULT 0.0"),
+    ("mem_bandwidth_gbs",   "REAL NOT NULL DEFAULT 0.0"),
+    ("numa_nodes",          "INTEGER NOT NULL DEFAULT 1"),
+    ("interconnect_type",   "TEXT NOT NULL DEFAULT ''"),
+    ("scratch_fs",          "TEXT NOT NULL DEFAULT ''"),
+]
 
 _COLUMN_LIST = [
     "run_id", "timestamp", "backend", "mode", "nmat", "nkpt", "atoms",
     "rkmax", "total_cores", "omp_threads", "nodes_used", "walltime_sec",
     "efficiency_pct", "convergence_cycles", "memory_gb_used",
     "node_list", "success", "tags",
+    "nbands", "spacegroup", "max_z", "avg_z", "volume_bohr3",
+    "is_soc", "is_hybrid",
+    "cpu_arch", "cpu_generation", "peak_gflops", "mem_bandwidth_gbs",
+    "numa_nodes", "interconnect_type", "scratch_fs",
 ]
 
 
 def _row_to_record(row: tuple) -> ExecutionRecord:
     """Convert a database row tuple to an ExecutionRecord instance."""
+    def _safe_bool(val): return bool(val) if val is not None else False
+    def _safe_json(val): return json.loads(val) if isinstance(val, str) and val else val if val else []
     return ExecutionRecord(
         run_id=row[0],
         timestamp=row[1],
@@ -141,9 +198,23 @@ def _row_to_record(row: tuple) -> ExecutionRecord:
         efficiency_pct=row[12],
         convergence_cycles=row[13],
         memory_gb_used=row[14],
-        node_list=json.loads(row[15]) if isinstance(row[15], str) else row[15],
-        success=bool(row[16]),
-        tags=json.loads(row[17]) if isinstance(row[17], str) else row[17],
+        node_list=_safe_json(row[15]),
+        success=_safe_bool(row[16]),
+        tags=_safe_json(row[17]),
+        nbands=row[18] if len(row) > 18 and row[18] else 0,
+        spacegroup=row[19] if len(row) > 19 and row[19] else 1,
+        max_z=row[20] if len(row) > 20 and row[20] else 26,
+        avg_z=row[21] if len(row) > 21 and row[21] else 26.0,
+        volume_bohr3=row[22] if len(row) > 22 and row[22] else 100.0,
+        is_soc=_safe_bool(row[23] if len(row) > 23 else False),
+        is_hybrid=_safe_bool(row[24] if len(row) > 24 else False),
+        cpu_arch=row[25] if len(row) > 25 and row[25] else "",
+        cpu_generation=row[26] if len(row) > 26 and row[26] else "",
+        peak_gflops=row[27] if len(row) > 27 and row[27] else 0.0,
+        mem_bandwidth_gbs=row[28] if len(row) > 28 and row[28] else 0.0,
+        numa_nodes=row[29] if len(row) > 29 and row[29] else 1,
+        interconnect_type=row[30] if len(row) > 30 and row[30] else "",
+        scratch_fs=row[31] if len(row) > 31 and row[31] else "",
     )
 
 
@@ -186,10 +257,23 @@ class ExecutionHistory:
             conn = self._get_connection()
             with conn:
                 conn.executescript(_SCHEMA_SQL)
+                self._migrate_schema(conn)
             logger.debug(f"Database schema initialized at {self.db_path}")
         finally:
             if conn:
                 self._return_connection(conn)
+
+    @staticmethod
+    def _migrate_schema(conn: sqlite3.Connection) -> None:
+        """Add new columns to existing databases (idempotent)."""
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(execution_history)")}
+        for col_name, col_def in _NEW_COLUMNS_MIGRATION:
+            if col_name not in existing:
+                try:
+                    conn.execute(f"ALTER TABLE execution_history ADD COLUMN {col_name} {col_def}")
+                    logger.debug(f"Migrated: added column {col_name} to execution_history")
+                except sqlite3.OperationalError as e:
+                    logger.debug(f"Migration skip for {col_name}: {e}")
 
     def _get_connection(self) -> sqlite3.Connection:
         """Obtain a connection from the pool or create a new one."""
@@ -292,6 +376,20 @@ class ExecutionHistory:
             json.dumps(record.node_list),
             int(record.success),
             json.dumps(record.tags),
+            record.nbands,
+            record.spacegroup,
+            record.max_z,
+            record.avg_z,
+            record.volume_bohr3,
+            int(record.is_soc),
+            int(record.is_hybrid),
+            record.cpu_arch,
+            record.cpu_generation,
+            record.peak_gflops,
+            record.mem_bandwidth_gbs,
+            record.numa_nodes,
+            record.interconnect_type,
+            record.scratch_fs,
         )
         with self._conn() as conn:
             conn.execute(sql, values)
