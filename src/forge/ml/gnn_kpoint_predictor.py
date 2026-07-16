@@ -563,6 +563,7 @@ def generate_synthetic_dataset(n_samples: int = 200) -> list[dict[str, Any]]:
 
 _DEFAULT_MODEL_DIR = Path.home() / ".forge" / "models"
 _DEFAULT_MODEL_PATH = _DEFAULT_MODEL_DIR / "gnn_kpoint_v1.npz"
+_PACKAGE_MODEL_PATH = Path(__file__).parent / "gnn_kpoint_v1.npz"
 
 
 def get_trained_model(force_retrain: bool = False) -> CGCNNModel:
@@ -659,7 +660,7 @@ def predict_kpoints(
     }
 
 
-def _get_or_create_model(model_path: str | None = None, default_dir: str | None = None) -> CGCNNModel:
+def _get_or_create_model(model_path: str | None = None, default_dir: str | None = None) -> CGCNNModel:  # noqa: C901
     """Load pre-trained model or create a heuristically-initialized one."""
     if model_path and Path(model_path).exists():
         try:
@@ -677,11 +678,17 @@ def _get_or_create_model(model_path: str | None = None, default_dir: str | None 
                 except Exception as e:
                     logger.warning(f"Failed to load model from {model_files[-1]}: {e}")
 
+    if _PACKAGE_MODEL_PATH.exists() and not os.environ.get("FORGE_GNN_RETRAIN"):
+        try:
+            return CGCNNModel.load(str(_PACKAGE_MODEL_PATH))
+        except Exception:
+            pass
+
     if _DEFAULT_MODEL_PATH.exists() and not os.environ.get("FORGE_GNN_RETRAIN"):
         try:
             return CGCNNModel.load(str(_DEFAULT_MODEL_PATH))
         except Exception:
-            logger.debug("Suppressed exception in _get_or_create_model()", exc_info=True)
+            pass
 
     return get_trained_model()
 

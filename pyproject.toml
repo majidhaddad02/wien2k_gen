@@ -123,6 +123,9 @@ where = ["src"]
 include = ["forge*"]
 exclude = ["tests*", "docs*", "examples*", "build*", "dist*"]
 
+[tool.setuptools.package-data]
+forge = ["ml/gnn_kpoint_v*.npz"]
+
 # ==============================================================================
 # Testing & Coverage (Pytest)
 # ==============================================================================
