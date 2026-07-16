@@ -99,16 +99,12 @@ Provides Roofline model analysis + Amdahl's Law saturation + NUMA topology recom
 |--------|-------------|
 | `--case` | Case name (reads `.scf` for NMAT, `.struct` for atoms) |
 | `--cores` | Total cores to analyze |
-| `--plain` | Simplify output (Persian/non-expert friendly) |
 | `--verbose` | Show full backend trace and detailed calculations |
 
 #### Examples
 ```bash
-# Full English analysis
+# Full analysis
 forge advise --case Fe --cores 128
-
-# Persian-friendly simplified output
-forge advise --case Si --plain
 
 # Detailed debug mode
 forge advise --case La2CuO4 --verbose
@@ -134,7 +130,6 @@ Deep analysis of SCF convergence issues with root cause identification.
 |--------|-------------|
 | `--log` | Path to `.scf` or dayfile for analysis |
 | `--case` | Case name (auto-locates `.scf` and `.inc`) |
-| `--plain` | Simplify output (Persian/non-expert friendly) |
 
 #### Diagnostics Performed
 
@@ -155,9 +150,6 @@ forge diagnose --log Fe.scf
 
 # Full case analysis with mixing history
 forge diagnose --case Fe
-
-# Persian output
-forge diagnose --log Fe.scf --plain
 ```
 
 Example output:

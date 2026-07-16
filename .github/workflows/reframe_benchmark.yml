@@ -46,26 +46,26 @@ jobs:
         run: |
           reframe \
             -C tests/reframe/reframe_config.py \
-            -c tests/reframe/forge_test.py \
+            -c tests/reframe/wien2k_gen_test.py \
             --tag smoke \
             -r \
             --performance-report \
             || reframe \
               -C tests/reframe/reframe_config.py \
-              -c tests/reframe/forge_test.py \
+              -c tests/reframe/wien2k_gen_test.py \
               -r
 
       - name: Run benchmark tests
         run: |
           reframe \
             -C tests/reframe/reframe_config.py \
-            -c tests/reframe/forge_test.py \
+            -c tests/reframe/wien2k_gen_test.py \
             --tag benchmark \
             -r \
             --performance-report \
             || reframe \
               -C tests/reframe/reframe_config.py \
-              -c tests/reframe/forge_test.py \
+              -c tests/reframe/wien2k_gen_test.py \
               -r
 
       - name: Upload ReFrame logs

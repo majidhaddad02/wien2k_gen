@@ -100,7 +100,6 @@ energy = [
 forge = "forge.cli:main"
 forge_sbatch = "forge.cli_sbatch:run_sbatch_cli"
 forge_wizard = "forge.wizard:run_wizard"
-forge_api = "forge.api.server:main"
 
 # ==============================================================================
 # PyPI & Project URLs

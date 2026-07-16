@@ -9,9 +9,8 @@ Package Structure:
 • backends/: WIEN2k, VASP, QE, CP2K configuration generators
 • submit/: SLURM script generation, job validation, submission tracking
 • utils/: Atomic I/O, file locking, scratch staging, diagnostics, validation
-• ui/: Textual TUI, Rich CLI fallback, async workers, analysis engine
-• benchmark/: Synthetic simulation, real-cluster execution, calibration
-• api/: REST API server and web dashboard for monitoring and job management
+  • ui/: Textual TUI, Rich CLI fallback, async workers, analysis engine
+  • benchmark/: Synthetic simulation, real-cluster execution, calibration
 """
 
 __version__ = "0.1.0"
@@ -27,7 +26,7 @@ from typing import Any
 def __getattr__(name: str) -> Any:  # noqa: C901
     """
     Lazy attribute resolution for fast startup & circular-import prevention.
-    Enables `from forge import launch_tui, get_config, Topology, etc.` 
+    Enables `from forge import get_config, Topology, etc.` 
     without upfront import cost or dependency resolution at package load time.
     """
     # Core Scheduler & Topology
@@ -194,7 +193,6 @@ __all__ = [
     # Config
     "get_config",
     "get_current_backend",
-    "launch_tui",
     "list_backends",
     "load_cached_suggestion",
     "load_config",

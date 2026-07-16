@@ -81,7 +81,6 @@ forge_wizard                           # interactive configuration
 - Latin Hypercube Sampling for uniform search space coverage
 - Physics-informed priors (element-aware RKMAX/mixing/kpt constraints)
 - GNN-based k-point grid prediction (CGCNN architecture, pure NumPy inference)
-- Multi-fidelity Bayesian optimization with transfer learning
 - History-driven warm-start from SQLite execution database
 
 ### Structure & Input Validation
@@ -93,7 +92,6 @@ forge_wizard                           # interactive configuration
 
 ### UI & Output
 - Rich-text interactive TUI with Textual framework
-- Dual-language output (English + Persian `--plain` mode for non-expert users)
 - Roofline + Amdahl bottleneck visualization with color-coded warnings
 - Formatted RMT optimization reports with per-atom overlap tables
 
