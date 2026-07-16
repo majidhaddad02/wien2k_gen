@@ -403,7 +403,7 @@ class CP2KBackend(Backend):
                         if mult > 1:
                             result["nspin"] = 2
                     except (ValueError, TypeError):
-                        pass
+                        logger.debug("Suppressed exception in _parse_inp_file()", exc_info=True)
 
             for key in dft:
                 if key.upper() in ("UKS", "LSD", "SPIN_POLARIZED"):
@@ -514,7 +514,7 @@ class CP2KBackend(Backend):
                             float(parts[2])
                             atom_count += 1
                         except ValueError:
-                            pass
+                            logger.debug("Suppressed exception in _count_coord_atoms()", exc_info=True)
 
             if atom_count > 0:
                 return atom_count

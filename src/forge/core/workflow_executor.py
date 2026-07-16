@@ -375,7 +375,7 @@ class WorkflowExecutor:
             if any(phrase in content for phrase in ("charge convergence", "energy convergence", "scf cycle converged")):
                 return True
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _check_convergence()", exc_info=True)
 
         try:
             dayfile = scf_path.with_suffix(".dayfile")
@@ -384,7 +384,7 @@ class WorkflowExecutor:
                 if ".dayfile" in str(dayfile) and "converged" in content and "not converged" not in content:
                     return True
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _check_convergence()", exc_info=True)
 
         return False
 
@@ -722,4 +722,4 @@ def restarted_pulay_mixing(  # noqa: C901
                 f.write(f"Pulay weights (cycle {history_entries[-1]['cycle']}): "
                         f"{[round(w, 4) for w in weights]}\n")
         except Exception:
-            pass
+            logger.debug("Suppressed exception", exc_info=True)

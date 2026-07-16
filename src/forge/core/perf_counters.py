@@ -88,7 +88,7 @@ def _check_counter_access() -> bool:
             )
             return result.returncode == 0 and bool(result.stdout.strip())
     except (PermissionError, subprocess.SubprocessError, FileNotFoundError, OSError):
-        pass
+        logger.debug("Suppressed exception in _check_counter_access()", exc_info=True)
     return False
 
 
@@ -137,14 +137,14 @@ def _hardware_fingerprint() -> str:
         if cpu_model:
             components.append(cpu_model)
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _hardware_fingerprint()", exc_info=True)
     try:
         for node_dir in sorted(Path("/sys/devices/system/node").glob("node*")):
             meminfo = node_dir / "meminfo"
             if meminfo.exists():
                 components.append(meminfo.read_text())
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _hardware_fingerprint()", exc_info=True)
 
     fingerprint = hashlib.sha256(
         "|".join(components).encode("utf-8", errors="replace")
@@ -299,14 +299,14 @@ def _get_cpu_freq_mhz() -> float:
         if path.exists():
             return float(path.read_text().strip()) / 1000.0
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _get_cpu_freq_mhz()", exc_info=True)
     try:
         with open("/proc/cpuinfo") as f:
             for line in f:
                 if "cpu MHz" in line:
                     return float(line.split(":")[1].strip())
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _get_cpu_freq_mhz()", exc_info=True)
     return 2000.0
 
 
@@ -445,7 +445,7 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> float:
                             total_mem += int(parts[-2])
                 snap[nid] = total_mem
             except (OSError, ValueError):
-                pass
+                logger.debug("Suppressed exception in _read_snapshot()", exc_info=True)
         return snap
 
     snapshot_before = _read_snapshot()

@@ -681,7 +681,7 @@ def _get_or_create_model(model_path: str | None = None, default_dir: str | None 
         try:
             return CGCNNModel.load(str(_DEFAULT_MODEL_PATH))
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _get_or_create_model()", exc_info=True)
 
     return get_trained_model()
 

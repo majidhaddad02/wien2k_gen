@@ -252,7 +252,7 @@ def execute_qe_calculation(  # noqa: C901
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 proc.wait()
             except Exception:
-                pass
+                logger.debug("Suppressed exception in _signal_handler()", exc_info=True)
         return {
             "success": False,
             "exit_code": 1,
@@ -269,7 +269,7 @@ def execute_qe_calculation(  # noqa: C901
             signal.signal(signal.SIGTERM, original_sigterm)
             signal.signal(signal.SIGUSR1, original_sigusr1)
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _signal_handler()", exc_info=True)
 
         # Cleanup scratch
         if scratch_dir and scratch_dir.exists():

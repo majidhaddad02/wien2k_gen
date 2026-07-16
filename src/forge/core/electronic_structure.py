@@ -17,6 +17,9 @@ import numpy as np
 
 from ..core.constants import HBAR2_OVER_ME_EV_ANG2, RYDBERG_TO_EV
 from ..exceptions import MissingInputError
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _read_file_lines(filepath: Path) -> list[str]:
@@ -152,7 +155,7 @@ def parse_band_structure(case_name: str, path: str) -> dict[str, Any]:  # noqa: 
                 val = float(tok)
                 current_band.append(val)
             except ValueError:
-                pass
+                logger.debug("Suppressed exception in parse_band_structure()", exc_info=True)
 
     if current_band:
         eigenvalues_raw.append(current_band)

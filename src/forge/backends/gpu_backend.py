@@ -247,7 +247,7 @@ def detect_nvlink_active() -> bool:
                 logger.info(f"NVLink detected: {nvlink_count} active links")
                 return True
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_nvlink_active()", exc_info=True)
 
     try:
         result = subprocess.run(
@@ -263,7 +263,7 @@ def detect_nvlink_active() -> bool:
                 logger.info("NVLink detected via topology matrix")
                 return True
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_nvlink_active()", exc_info=True)
 
     return False
 
@@ -293,7 +293,7 @@ def detect_infinity_fabric_active() -> bool:
                 logger.info("Infinity Fabric (xGMI) detected via rocm-smi")
                 return True
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_infinity_fabric_active()", exc_info=True)
 
     try:
         result = subprocess.run(
@@ -309,7 +309,7 @@ def detect_infinity_fabric_active() -> bool:
                 logger.info("Infinity Fabric links detected via rocm-smi")
                 return True
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_infinity_fabric_active()", exc_info=True)
 
     return False
 

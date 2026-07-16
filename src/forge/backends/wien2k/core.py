@@ -250,7 +250,7 @@ class Wien2kBackend(Backend):
             max_efficient = saturation.get("max_efficient_cores", total_cores)
             saturation_warnings = saturation.get("saturation_warnings", [])
         except ImportError:
-            pass
+            logger.debug("Suppressed exception in _smart_allocate_cores()", exc_info=True)
 
         # Step 1: lapw0 allocation
         lapw0_cores = self._get_optimal_lapw0_cores(total_cores, atoms)

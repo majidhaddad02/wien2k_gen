@@ -224,7 +224,7 @@ def detect_problem_size() -> dict[str, Any]:  # noqa: C901
 
         return result
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_problem_size()", exc_info=True)
 
     # Fallback to legacy parsing for robustness
     result: dict[str, Any] = {
@@ -368,7 +368,7 @@ def detect_problem_size() -> dict[str, Any]:  # noqa: C901
                     hybrid_detected = True
                     break
             except Exception:
-                pass
+                logger.debug("Suppressed exception in detect_problem_size()", exc_info=True)
         if hybrid_detected:
             break
     result["is_hybrid"] = hybrid_detected
@@ -425,7 +425,7 @@ def detect_wien2k_flags() -> Wien2kFlags:  # noqa: C901
             content = inst_files[0].read_text(encoding="utf-8", errors="replace")
             flags.is_spin_polarized = "SPIN" in content.upper()
         except Exception:
-            pass
+            logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
 
     if list(Path(".").glob("*.inso")):
         flags.is_soc = True
@@ -441,7 +441,7 @@ def detect_wien2k_flags() -> Wien2kFlags:  # noqa: C901
                     flags.is_hybrid = True
                     break
             except Exception:
-                pass
+                logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
 
     if list(Path(".").glob("*.ineece")):
         flags.is_eece = True
@@ -455,7 +455,7 @@ def detect_wien2k_flags() -> Wien2kFlags:  # noqa: C901
                 major_minor = ".".join(ver_str.split(".")[:2]) if "." in ver_str else ver_str
                 flags.wien2k_version = major_minor
             except Exception:
-                pass
+                logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
 
     return flags
 

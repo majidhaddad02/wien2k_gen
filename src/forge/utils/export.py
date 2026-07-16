@@ -301,7 +301,7 @@ def _write_hdf5_structure(  # noqa: C901
                             )
                             continue
                     except Exception:
-                        pass
+                        logger.debug("Suppressed exception", exc_info=True)
                 sub = group.create_group(safe_key)
                 _write_hdf5_structure(sub, value, compression, compression_opts)
             elif isinstance(value, (int, float, str, bool)):
@@ -328,7 +328,7 @@ def _write_hdf5_structure(  # noqa: C901
                     )
                     return
             except Exception:
-                pass
+                logger.debug("Suppressed exception", exc_info=True)
         for i, item in enumerate(data):
             safe_key = f"item_{i}"
             if isinstance(item, dict):
@@ -362,7 +362,7 @@ def _list_to_ndarray(data: list):
         import numpy as np
         return np.array(data)
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _list_to_ndarray()", exc_info=True)
     return None
 
 

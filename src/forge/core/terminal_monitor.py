@@ -96,7 +96,7 @@ def detect_active_jobs(scheduler: Optional[str] = None) -> list[JobInfo]:  # noq
                         nodes=int(parts[5]), cores=int(parts[6]),
                     ))
         except Exception:
-            pass
+            logger.debug("Suppressed exception in detect_active_jobs()", exc_info=True)
     elif scheduler == "pbs":
         import subprocess
         try:
@@ -114,7 +114,7 @@ def detect_active_jobs(scheduler: Optional[str] = None) -> list[JobInfo]:  # noq
                         elapsed=parts[3], time_limit=parts[5] if len(parts) > 5 else "01:00:00",
                     ))
         except Exception:
-            pass
+            logger.debug("Suppressed exception in detect_active_jobs()", exc_info=True)
 
     return jobs
 
@@ -185,7 +185,7 @@ def _parse_scf_events(filepath: Path) -> list[str]:
             elif "ERROR" in line.upper() or "FAIL" in line.upper():
                 events.append(f"[red]{line}[/red]")
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _parse_scf_events()", exc_info=True)
 
     return events
 
@@ -296,7 +296,7 @@ def watch_job(
                     )
                     # Parse TRES for CPU/memory usage (simplified)
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
 
             live.update(_build_monitor_panel(state))
 

@@ -295,7 +295,7 @@ class RealBenchmarkRunner:
                     if "job_state" in line.lower() and any(s in line.upper() for s in ("F", "C", "E")):
                         break
             except Exception:
-                pass
+                logger.debug("Suppressed exception in _execute_pbs()", exc_info=True)
             time.sleep(10.0)
 
         wall_time = time.monotonic() - start
@@ -345,7 +345,7 @@ class RealBenchmarkRunner:
                 if not status or status in ("DONE", "EXIT"):
                     break
             except Exception:
-                pass
+                logger.debug("Suppressed exception in _execute_lsf()", exc_info=True)
             time.sleep(10.0)
 
         wall_time = time.monotonic() - start

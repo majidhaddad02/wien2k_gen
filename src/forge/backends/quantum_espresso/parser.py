@@ -99,7 +99,7 @@ def _extract_energy_block(content: str) -> tuple[Optional[float], Optional[float
             # Convert eV to Ry (1 Ry ≈ RYDBERG_TO_EV eV)
             fermi_energy = fermi_energy_ev / RYDBERG_TO_EV
         except ValueError:
-            pass
+            logger.debug("Suppressed exception in _extract_energy_block()", exc_info=True)
 
     return total_energy, fermi_energy
 

@@ -128,7 +128,7 @@ class FileLock:
                 logger.debug(f"Lock acquired via atomic dir: {self.lock_path}.d (attempt {attempt})")
                 return
             except LockAcquisitionError:
-                pass
+                logger.debug("Suppressed exception in acquire()", exc_info=True)
                 
             # Check stale locks if fallback failed
             if self.cleanup_stale and self._is_fallback_stale():

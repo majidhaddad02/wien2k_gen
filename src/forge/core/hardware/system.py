@@ -246,7 +246,7 @@ class SystemDetectionMixin:
                         interconnect["speed_gbps"] = rate_gbps
                         interconnect["active_rate_gbps"] = rate_gbps
                     except (ValueError, IndexError):
-                        pass
+                        logger.debug("Suppressed exception in get_interconnect_info()", exc_info=True)
                 elif 'rate' in line_lower:
                     # e.g. "rate: 56 Gb/sec"
                     rate_str = line.split(':')[-1].strip().split()[0]
@@ -255,7 +255,7 @@ class SystemDetectionMixin:
                         interconnect["speed_gbps"] = rate_gbps
                         interconnect["active_rate_gbps"] = rate_gbps
                     except (ValueError, IndexError):
-                        pass
+                        logger.debug("Suppressed exception in get_interconnect_info()", exc_info=True)
             return interconnect
 
         # OmniPath detection: try psm2 first, then verbs fallback
@@ -398,7 +398,7 @@ class SystemDetectionMixin:
                                 v2 = int(parts[1])
                                 bw_sum_mb += (v2 - v1) / 3.0
                             except (ValueError, ZeroDivisionError):
-                                pass
+                                logger.debug("Suppressed exception in _measure_bandwidth_sysfs()", exc_info=True)
 
             if bw_sum_mb > 0:
                 return bw_sum_mb / 1000.0
@@ -445,7 +445,7 @@ class SystemDetectionMixin:
                     if mc_dir.is_dir():
                         return "DDR4"
             except PermissionError:
-                pass
+                logger.debug("Suppressed exception in _detect_ddr_generation()", exc_info=True)
         return "DDR4"
 
     def is_containerized(self) -> bool:

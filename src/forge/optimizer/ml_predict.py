@@ -609,5 +609,5 @@ def _extract_structure_features(struct_path: Path) -> StructureFeatures:
             atom_volume = 15.0
             sf.packing_fraction = min(1.0, (atoms * atom_volume) / sf.volume_bohr3)
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _extract_structure_features()", exc_info=True)
     return sf

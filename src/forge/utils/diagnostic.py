@@ -147,7 +147,7 @@ def _detect_hardware() -> dict[str, Any]:
             hw["cores_physical"] = hw["sockets"] * hw["cores_per_socket"]
             hw["cores_logical"] = hw["cores_physical"] * hw["threads_per_core"]
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _detect_hardware()", exc_info=True)
             
     # NUMA nodes
     numa = _run_cmd("numactl --hardware")

@@ -283,7 +283,7 @@ def run_wizard(topo=None) -> None:  # noqa: C901
             console.print(f"[bold cyan]Backend from profile:[/bold cyan] [green]{profile_backend}[/green]")
             current_name = profile_backend
         except ValueError:
-            pass
+            logger.debug("Suppressed exception in run_wizard()", exc_info=True)
     
     if not profile_backend:
         backends = list_backends()

@@ -104,7 +104,7 @@ class MaterialsProjectClient:
                 try:
                     return json.loads(cache_file.read_text(encoding="utf-8"))
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception in _request()", exc_info=True)
 
         self._rate_limit()
 
@@ -125,7 +125,7 @@ class MaterialsProjectClient:
                 try:
                     return json.loads(cache_file.read_text(encoding="utf-8"))
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception in _request()", exc_info=True)
             return {"data": []}
 
     def search_by_formula(

@@ -87,7 +87,6 @@ def _get_dayfile_path() -> Optional[Path]:
                 return path
         except Exception:
             logger.debug("Failed to find current dayfile via backend log", exc_info=True)
-            pass
             
     patterns = ["*.scf", "*.dayfile", "*.output", "case*.scf"]
     for pattern in patterns:
@@ -499,7 +498,6 @@ def estimate_remaining_walltime(job_id: str, scheduler: str = "slurm") -> dict[s
                     result["elapsed_sec"] = float(h * 3600 + m * 60 + s)
     except Exception:
         logger.debug("Job time parsing failed from .time file", exc_info=True)
-        pass
 
     result["remaining_sec"] = max(0.0, result["walltime_limit_sec"] - result["elapsed_sec"])
     if result["walltime_limit_sec"] > 0:

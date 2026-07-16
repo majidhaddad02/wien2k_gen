@@ -335,7 +335,7 @@ class AutoProfiler:
                     if line.startswith("VmRSS:"):
                         return int(line.split()[1]) // 1024
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _get_current_rss_mb()", exc_info=True)
         return 0
 
     async def _run_short_calculation(  # noqa: C901

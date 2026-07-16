@@ -192,7 +192,6 @@ def diagnose_charge_sloshing_root_cause(  # noqa: C901
                     indicators["metallic"] = max(indicators["metallic"], 0.5)
         except Exception:
             logger.debug("SCF text analysis failed", exc_info=True)
-            pass
 
     # 2. Check for symmetry breaking
     if ("symmetry" in dayfile_content.lower() or "symm" in dayfile_content.lower()) and ("broken" in dayfile_content.lower() or "fail" in dayfile_content.lower()):
@@ -225,7 +224,6 @@ def diagnose_charge_sloshing_root_cause(  # noqa: C901
                         indicators["mixing_too_aggressive"] = 0.4
         except Exception:
             logger.debug("Mixing parameter extraction failed", exc_info=True)
-            pass
 
     # 5. Default: if nothing specific, assume aggressive mixing
     if not indicators:

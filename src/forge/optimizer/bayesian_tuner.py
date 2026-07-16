@@ -339,7 +339,6 @@ class BayesianParameterTuner:
                         return max(z_list)
         except Exception:
             logger.debug("Failed to extract max atomic number from case data", exc_info=True)
-            pass
         return 0
 
     def tune(self, use_simulated: bool = True, max_cores: int = 1) -> TunerResult:  # noqa: C901

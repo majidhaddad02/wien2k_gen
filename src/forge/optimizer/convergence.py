@@ -63,14 +63,14 @@ def _detect_progress_bar() -> Any:
 
         return ("rich", Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn)
     except ImportError:
-        pass
+        logger.debug("Suppressed exception in _detect_progress_bar()", exc_info=True)
 
     try:
         from tqdm import tqdm
 
         return ("tqdm", tqdm)
     except ImportError:
-        pass
+        logger.debug("Suppressed exception in _detect_progress_bar()", exc_info=True)
     return ("none",)
 
 

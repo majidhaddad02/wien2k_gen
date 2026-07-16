@@ -114,7 +114,7 @@ def _detect_filesystem_type(path: Path) -> str:
                     return "xfs"
                 return fstype
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _detect_filesystem_type()", exc_info=True)
     return "unknown"
 
 
@@ -146,7 +146,7 @@ def _detect_lustre(path: Path) -> bool:
         if proc.returncode == 0 and proc.stdout.strip().lower() == "lustre":
             return True
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _detect_lustre()", exc_info=True)
     return False
 
 
@@ -446,7 +446,7 @@ def setup_scratch(  # noqa: C901
                     shutil.rmtree(scratch_dir, ignore_errors=True)
                     logger.debug(f"Cleaned up scratch: {scratch_dir}")
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception in _cleanup()", exc_info=True)
         try:
             signal.signal(signal.SIGTERM, _cleanup)
             signal.signal(signal.SIGINT, _cleanup)

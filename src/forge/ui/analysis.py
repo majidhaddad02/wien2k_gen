@@ -120,7 +120,7 @@ def _parse_wien2k_scf(content: str) -> SCFParseResult:
             result["charge_convergence"] = float(cycle_matches[-1])
             result["converged"] = result["charge_convergence"] < 0.0001  # Default WIEN2k threshold
         except ValueError:
-            pass
+            logger.debug("Suppressed exception in _parse_wien2k_scf()", exc_info=True)
 
     # Stage Timings (lapw0, lapw1, lapw2, mixer, etc.)
     stage_pattern = r'(\w+)\s+:\s+cpu\s+time\s+:\s+([\d\.]+)'

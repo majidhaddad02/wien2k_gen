@@ -93,7 +93,7 @@ def detect_gpu_hardware() -> list[GPUInfo]:  # noqa: C901
                 logger.info(f"Detected {len(gpus)} NVIDIA GPU(s): {[g.model for g in gpus]}")
                 return gpus
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+        logger.debug("Suppressed exception in detect_gpu_hardware()", exc_info=True)
 
     # AMD
     try:
@@ -119,7 +119,7 @@ def detect_gpu_hardware() -> list[GPUInfo]:  # noqa: C901
                 logger.info(f"Detected AMD GPU: {model} ({mem}MB)")
                 return gpus
     except FileNotFoundError:
-        pass
+        logger.debug("Suppressed exception in detect_gpu_hardware()", exc_info=True)
 
     # Intel
     try:
@@ -134,7 +134,7 @@ def detect_gpu_hardware() -> list[GPUInfo]:  # noqa: C901
                 logger.info(f"Detected {len(gpus)} Intel GPU(s)")
                 return gpus
     except FileNotFoundError:
-        pass
+        logger.debug("Suppressed exception in detect_gpu_hardware()", exc_info=True)
 
     # Check /dev/dri for generic GPU detection
     if not gpus:
@@ -201,7 +201,7 @@ def check_wien2k_gpu_support(wienroot: str | None = None) -> dict[str, Any]:  # 
                 result["compile_flags"].append("SYCL")
                 result["gpu_enabled"] = True
         except Exception:
-            pass
+            logger.debug("Suppressed exception in check_wien2k_gpu_support()", exc_info=True)
 
     # Check parallel_options for GPU settings
     if not result["gpu_enabled"]:

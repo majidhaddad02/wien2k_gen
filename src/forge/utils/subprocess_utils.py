@@ -115,7 +115,7 @@ def force_kill_process_group(pid: Optional[int] = None) -> None:
         os.killpg(pid, signal.SIGKILL)
         logger.warning(f"Sent SIGKILL to process group {pid}")
     except (ProcessLookupError, PermissionError):
-        pass
+        logger.debug("Suppressed exception in force_kill_process_group()", exc_info=True)
     except Exception as e:
         logger.warning(f"Error sending SIGKILL to PGID {pid}: {e}")
 

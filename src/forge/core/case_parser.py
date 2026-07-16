@@ -29,6 +29,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..logging_config import get_logger
+
+logger = get_logger(__name__)
+
 __all__ = [
     "CaseData",
     "CaseFileParser",
@@ -180,7 +184,7 @@ class CaseFileParser:
                         rkmax_lmax_found = True
                         break
                 except (ValueError, IndexError):
-                    pass
+                    logger.debug("Suppressed exception in parse_in1()", exc_info=True)
             if rkmax_lmax_found:
                 break
 
@@ -197,7 +201,7 @@ class CaseFileParser:
                     if (val >= 4.0 and qn_block_ended) or (val >= 4.0 and not in_qn_block):
                         gmax_candidates.append(val)
                 except ValueError:
-                    pass
+                    logger.debug("Suppressed exception in parse_in1()", exc_info=True)
             elif len(parts) == 2 and parts[0] != "K-VECTORS":
                 try:
                     int(parts[0])
@@ -224,7 +228,7 @@ class CaseFileParser:
                         result["nbands"] = int(parts[0])
                         break
                     except ValueError:
-                        pass
+                        logger.debug("Suppressed exception in parse_in1()", exc_info=True)
 
         return result
 
@@ -261,7 +265,7 @@ class CaseFileParser:
                         result["gmax"] = val
                         break
                 except ValueError:
-                    pass
+                    logger.debug("Suppressed exception in parse_in2()", exc_info=True)
 
         # FFT grid: line after GMAX (or line 3), three ints (may be followed by float)
         for line in lines:
@@ -277,7 +281,7 @@ class CaseFileParser:
                         result["fft_nz"] = nz
                         break
                 except ValueError:
-                    pass
+                    logger.debug("Suppressed exception in parse_in2()", exc_info=True)
 
         if result["fft_nx"] > 0:
             fft_total = result["fft_nx"] * result["fft_ny"] * result["fft_nz"]
@@ -501,7 +505,7 @@ class CaseFileParser:
                 result["volume_bohr3"] = vol
                 result["lattice_vectors"] = [(a, 0.0, 0.0)]
         except Exception:
-            pass
+            logger.debug("Suppressed exception in parse_struct()", exc_info=True)
 
         return result
 
@@ -724,7 +728,7 @@ def detect_wien2k_version() -> str:  # noqa: C901
         if m:
             return m.group(1)
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
 
     try:
         lv = Path(wienroot) / "SRC_lapw1" / "lapw1.F"
@@ -735,7 +739,7 @@ def detect_wien2k_version() -> str:  # noqa: C901
                 if m:
                     return m.group(1)
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
 
     return "unknown"
 

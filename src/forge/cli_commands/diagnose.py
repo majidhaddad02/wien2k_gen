@@ -8,8 +8,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..config import AppConfig
+from ..logging_config import get_logger
 from ._utils import get_console
 from .base import register_command
+
+logger = get_logger(__name__)
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -94,7 +97,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
                 body += f"  {i}. [cyan]{act['action']}[/] \u2014 {act['reason']}\n"
             console.print(Panel(body.strip(), title=panel_title, border_style="red"))
     except Exception:
-        pass
+        logger.debug("Suppressed exception in handle()", exc_info=True)
 
     has_qtlb = any(p in content.lower() for p in ("qtl-b",))
     has_crash = any(p in content.lower() for p in ("lapw crashed", "segmentation fault"))
@@ -135,7 +138,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
                 title="[red bold]SCF Divergence Analysis", border_style="red"
             ))
     except Exception:
-        pass
+        logger.debug("Suppressed exception in handle()", exc_info=True)
 
     if has_not_conv and not converged:
         console.print(Panel(

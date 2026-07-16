@@ -452,7 +452,7 @@ def _register_checkpoint_signals(checkpoint_fn: Optional[Callable] = None) -> No
         logger.debug("Signal handlers registered for preemption resilience")
     except ValueError:
         # Cannot set signal handler in non-main thread
-        pass
+        logger.debug("Suppressed exception in _handler()", exc_info=True)
 
 # =============================================================================
 # Main Detection Orchestrator

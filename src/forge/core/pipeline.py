@@ -112,7 +112,7 @@ def detect_wien2k_version() -> str:
             try:
                 return version_file.read_text().strip().split()[0]
             except Exception:
-                pass
+                logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
     return "2024.x"  # Default fallback
 
 def get_total_ram_gb() -> float:

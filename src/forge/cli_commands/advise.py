@@ -8,8 +8,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..config import AppConfig
+from ..logging_config import get_logger
 from ._utils import get_console
 from .base import register_command
+
+logger = get_logger(__name__)
 
 
 def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
@@ -196,7 +199,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         parser = CaseFileParser(case_path if case_path.exists() else None)
         case_data = parser.parse_all()
     except Exception:
-        pass
+        logger.debug("Suppressed exception in handle()", exc_info=True)
 
     atoms = getattr(case_data, "atoms", 10) if case_data else 10
     nmat = args.nmat or (getattr(case_data, "nmat", 0) if case_data else 5000)

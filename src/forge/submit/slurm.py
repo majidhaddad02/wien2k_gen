@@ -494,7 +494,7 @@ def submit_slurm_job(  # noqa: C901
                             squeue.stdout.strip(), "%Y-%m-%dT%H:%M:%S"
                         )
                 except Exception:
-                    pass
+                    logger.debug("Suppressed exception", exc_info=True)
         else:
             result["errors"].append(f"sbatch failed: {proc.stderr.strip()}")
             logger.error(f"Job submission failed: {proc.stderr.strip()}")

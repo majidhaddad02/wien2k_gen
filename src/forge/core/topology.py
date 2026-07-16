@@ -1016,7 +1016,7 @@ def _detect_nvidia_gpus_topology() -> list[GPUInfo]:
                         if numa_node.exists():
                             numa_affinity = int(numa_node.read_text().strip())
             except Exception:
-                pass
+                logger.debug("Suppressed exception in _detect_nvidia_gpus_topology()", exc_info=True)
 
             gpus.append(GPUInfo(
                 name=name,
@@ -1071,7 +1071,7 @@ def _detect_amd_gpus_topology() -> list[GPUInfo]:
                 if numa_path.exists():
                     numa_affinity = int(numa_path.read_text().strip())
             except Exception:
-                pass
+                logger.debug("Suppressed exception in _detect_amd_gpus_topology()", exc_info=True)
 
             gpus.append(GPUInfo(
                 name=name,
@@ -1120,7 +1120,7 @@ def _detect_sysfs_gpus_topology() -> list[GPUInfo]:
             if numa_path.exists():
                 numa_affinity = int(numa_path.read_text().strip())
         except Exception:
-            pass
+            logger.debug("Suppressed exception in _detect_sysfs_gpus_topology()", exc_info=True)
 
         idx = len(gpus)
         gpus.append(GPUInfo(
@@ -1150,5 +1150,5 @@ def _detect_nvlink() -> bool:
             output = result.stdout.lower()
             return "active" in output or "enabled" in output
     except Exception:
-        pass
+        logger.debug("Suppressed exception in _detect_nvlink()", exc_info=True)
     return False

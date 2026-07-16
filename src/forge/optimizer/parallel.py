@@ -534,7 +534,7 @@ def detect_numa_topology() -> dict[str, Any]:  # noqa: C901
                 result["detected"] = True
                 return result
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_numa_topology()", exc_info=True)
 
     # Fallback: check /sys/devices/system/node
     try:
@@ -561,7 +561,7 @@ def detect_numa_topology() -> dict[str, Any]:  # noqa: C901
                 result["detected"] = True
                 return result
     except Exception:
-        pass
+        logger.debug("Suppressed exception in detect_numa_topology()", exc_info=True)
 
     # Final fallback: assume single NUMA node
     import os
