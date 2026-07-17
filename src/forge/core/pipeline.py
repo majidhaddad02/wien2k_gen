@@ -14,6 +14,9 @@ Key Improvements Applied:
 """
 
 import os
+import re
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -96,24 +99,64 @@ logger = get_logger(__name__)
 # =============================================================================
 # Helper Wrappers for Hardware & Version Detection
 # =============================================================================
-def detect_wien2k_version() -> str:
+def detect_wien2k_version() -> str:  # noqa: C901
     """
-    Detect WIEN2k version via environment or common installation paths.
-    Returns a version string for compatibility checks.
+    Detect WIEN2k version via environment, siteconfig, or binary.
+
+    Resolution order:
+      1. ``WIEN_VERSION`` environment variable
+      2. Parse ``siteconfig_lapw`` for WIEN2K_VERSION
+      3. Parse ``WIEN2K_VERSION`` file in WIENROOT
+      4. Run ``run_lapw -v`` for version string
+      5. Default fallback to ``2024.x``
+
+    Returns:
+        Detected version string (e.g. '24', '23', '21', '2024.x').
     """
     ver = os.getenv("WIEN_VERSION")
     if ver:
         return ver
-        
+
     wienroot = os.getenv("WIENROOT")
     if wienroot:
-        version_file = Path(wienroot, "VERSION")
+        root_path = Path(wienroot)
+
+        siteconfig = root_path / "siteconfig_lapw"
+        if siteconfig.exists():
+            try:
+                text = siteconfig.read_text(encoding="utf-8", errors="replace")
+                m = re.search(
+                    r"WIEN2K[_ ]*VERSION\s*[:=]\s*[\"\']?(\d+)", text, re.IGNORECASE
+                )
+                if m:
+                    return m.group(1)
+            except Exception:
+                pass
+
+        version_file = root_path / "WIEN2K_VERSION"
         if version_file.exists():
             try:
-                return version_file.read_text().strip().split()[0]
+                text = version_file.read_text(encoding="utf-8", errors="replace").strip()
+                if text.isdigit():
+                    return text
             except Exception:
-                logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
-    return "2024.x"  # Default fallback
+                pass
+
+    for binary in ("run_lapw", "siteconfig_lapw"):
+        exe = shutil.which(binary)
+        if exe:
+            try:
+                result = subprocess.run(
+                    [exe, "-v"], capture_output=True, text=True, timeout=10,
+                )
+                for line in (result.stdout + result.stderr).splitlines():
+                    m = re.search(r"version\s+(\d+)", line, re.IGNORECASE)
+                    if m:
+                        return m.group(1)
+            except Exception:
+                pass
+
+    return "2024.x"
 
 def get_total_ram_gb() -> float:
     """Wrapper to retrieve total system RAM in Gigabytes."""

@@ -19,19 +19,14 @@ All documentation and inline comments are in English per project standards.
 
 import contextlib
 import json
+import logging
 import os
 import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
-
-# Lazy import for logger to avoid circular dependency
-def get_logger(name: str):
-    from .logging_config import get_logger as _get_logger
-    return _get_logger(name)
-
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Constants & Default Paths
