@@ -12,14 +12,18 @@ from .base import register_command
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser("history", help="Query execution history database")
+    p = subparsers.add_parser("history", help="Query and export execution history database")
     p.add_argument("--list", action="store_true", help="List recent history")
     p.add_argument("--show", help="Show details for a specific run_id")
     p.add_argument("--similar-to", help="Find similar runs to a given case")
     p.add_argument("--limit", type=int, default=10, help="Maximum records to return")
+    p.add_argument("--export", help="Export history to CSV/JSON for ML training (provide output filename)")
+    p.add_argument("--format", choices=["csv", "json"], default="csv",
+                   help="Export format (default: csv)")
+    p.add_argument("--backend", help="Filter export to specific backend (wien2k, qe, vasp, ...)")
 
 
-def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
+def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
     console = get_console()
     try:
         from ..optimizer.history import ExecutionHistory
@@ -27,6 +31,16 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         return {"error": f"History module dependencies not available: {e}"}
 
     with ExecutionHistory() as history:
+        if args.export:
+            output = None if args.export.lower() == "auto" else Path(args.export)
+            out_path = history.export(
+                output_path=output,
+                fmt=args.format,
+                backend=args.backend,
+            )
+            console.print(f"[green]Exported {args.format.upper()} → {out_path}[/green]")
+            return {"exported": str(out_path)}
+
         if args.show:
             records = history.query({"run_id": args.show})
             if not records:

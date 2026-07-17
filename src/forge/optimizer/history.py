@@ -628,6 +628,83 @@ class ExecutionHistory:
             conn.commit()
             return cursor.rowcount
 
+    def export(
+        self,
+        output_path: Optional[Union[str, Path]] = None,
+        fmt: str = "csv",
+        backend: Optional[str] = None,
+    ) -> Path:
+        """
+        Export execution history to CSV or JSON for external ML training.
+
+        Exports all 32 columns including structural, electronic, hardware,
+        and I/O features. Backend is clearly identified in every row.
+
+        Args:
+            output_path: Output file path. Defaults to
+                         ~/.forge/exports/history_<backend>_<ts>.<ext>.
+            fmt: Output format — 'csv' (default) or 'json'.
+            backend: Filter to specific backend ('wien2k', 'qe', etc.).
+                     None = export all backends.
+
+        Returns:
+            Path to the exported file.
+        """
+        import csv
+
+        columns = [
+            "run_id", "timestamp", "backend", "mode",
+            "nmat", "nkpt", "atoms", "rkmax",
+            "nbands", "spacegroup", "max_z", "avg_z", "volume_bohr3",
+            "is_soc", "is_hybrid",
+            "total_cores", "omp_threads", "nodes_used",
+            "walltime_sec", "efficiency_pct", "convergence_cycles",
+            "memory_gb_used", "success",
+            "cpu_arch", "cpu_generation", "peak_gflops", "mem_bandwidth_gbs",
+            "numa_nodes", "interconnect_type", "scratch_fs",
+        ]
+
+        where = ""
+        params: tuple = ()
+        if backend:
+            where = "WHERE backend = ?"
+            params = (backend,)
+
+        with self._conn() as conn:
+            rows = conn.execute(
+                f"SELECT {','.join(columns)} FROM execution_history {where} "
+                "ORDER BY timestamp ASC",
+                params,
+            ).fetchall()
+
+        if output_path is None:
+            import datetime
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            lbl = backend or "all"
+            ext = "csv" if fmt == "csv" else "json"
+            output_path = Path.home() / ".forge" / "exports" / f"history_{lbl}_{ts}.{ext}"
+        else:
+            output_path = Path(output_path)
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if fmt == "json":
+            import json as _json
+            data = [dict(zip(columns, row)) for row in rows]
+            output_path.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        else:
+            with open(output_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(columns)
+                writer.writerows(rows)
+
+        logger.info(
+            f"Exported {len(rows)} records"
+            f"{' (filtered by backend=' + backend + ')' if backend else ''}"
+            f" to {output_path}"
+        )
+        return output_path
+
 
 # =============================================================================
 # Helper Functions
