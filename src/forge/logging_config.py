@@ -75,8 +75,9 @@ class StructuredFormatter(logging.Formatter):
         # Check for structured error metadata
         if record.exc_info and record.exc_info[0] is not None:
             exc = record.exc_info[1]
-            if isinstance(exc, Exception) and is_wien2k_error(exc) and getattr(exc, "hint", None):
-                msg += f"\n   HINT: {exc.hint}"  # type: ignore[attr-defined]
+            hint = getattr(exc, "hint", None)
+            if isinstance(exc, Exception) and is_wien2k_error(exc) and hint:
+                msg += f"\n   HINT: {hint}"
         
         return msg
 

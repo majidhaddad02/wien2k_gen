@@ -11,7 +11,7 @@ try:
     _HAS_FILELOCK = True
 except ImportError:
     _HAS_FILELOCK = False
-    FileLock = None  # type: ignore
+    FileLock: Any = None
 
 
 class MonitorEvent(Enum):

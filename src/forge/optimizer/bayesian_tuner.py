@@ -46,7 +46,7 @@ class TunerResult:
     iterations: int = 0
     uncertainty_rkmax: float = 0.0
     uncertainty_mixing: float = 0.0
-    observations: list[dict[str, Any]] = None  # type: ignore
+    observations: Optional[list[dict[str, Any]]] = None
 
     def __post_init__(self):
         if self.observations is None:

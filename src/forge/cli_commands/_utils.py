@@ -60,6 +60,6 @@ def get_exec_command() -> str:
 
         backend = get_current_backend()
         params = backend.detect_problem_size()
-        return params.get("exec_command", "run_lapw -p")  # type: ignore[return-value]
+        return str(params.get("exec_command", "run_lapw -p"))
     except Exception:
         return "run_lapw -p"

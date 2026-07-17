@@ -79,7 +79,7 @@ class ConvergencePrediction:
     estimated_cycles: int = 20
     recommended_mixing: float = 0.15
     convergence_difficulty: str = "easy"
-    feature_importance: dict[str, float] = None  # type: ignore
+    feature_importance: Optional[dict[str, float]] = None
 
     def __post_init__(self):
         if self.feature_importance is None:

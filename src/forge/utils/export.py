@@ -53,7 +53,7 @@ try:
     import numpy as np
     _HAS_NUMPY = True
 except ImportError:
-    np = None  # type: ignore
+    np: Any = None
     _HAS_NUMPY = False
 
 from ..logging_config import get_logger

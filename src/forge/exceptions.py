@@ -22,7 +22,7 @@ import traceback
 from enum import Enum
 
 # Avoid circular import: use TYPE_CHECKING and lazy import for get_logger
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 if TYPE_CHECKING:
     pass
@@ -341,7 +341,7 @@ def log_exception_structured(exc: Exception, level: int = logging.ERROR) -> None
     logger = get_logger(__name__)
     
     if is_wien2k_error(exc):
-        logger.log(level, "Structured error: %s", exc.to_dict())  # type: ignore[attr-defined]
+        logger.log(level, "Structured error: %s", cast(FORGEError, exc).to_dict())
     else:
         logger.log(level, "Unhandled exception: %s", traceback.format_exc())
 

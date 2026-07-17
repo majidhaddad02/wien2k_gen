@@ -401,10 +401,12 @@ class RealBenchmarkRunner:
                 exit_code, wall_time, job_id = self._execute_slurm(work_dir, topo)
                 result["job_id"] = job_id
             elif scheduler == "pbs" and os.getenv(env_var):
-                exit_code, wall_time, job_id = self._execute_pbs(work_dir, topo)  # type: ignore[assignment]
+                pbs_res: tuple = self._execute_pbs(work_dir, topo)
+                exit_code, wall_time, job_id = pbs_res
                 result["job_id"] = job_id
             elif scheduler == "lsf" and os.getenv(env_var):
-                exit_code, wall_time, job_id = self._execute_lsf(work_dir, topo)  # type: ignore[assignment]
+                lsf_res: tuple = self._execute_lsf(work_dir, topo)
+                exit_code, wall_time, job_id = lsf_res
                 result["job_id"] = job_id
             else:
                 exit_code, wall_time = self._execute_local(work_dir)
