@@ -534,11 +534,12 @@ def estimate_kpoint_density(rkmax: float | None = None) -> dict[str, Any]:  # no
                 if not clean:
                     continue
                 parts = clean.split()
-                if len(parts) == 3 or len(parts) == 4:
+                if len(parts) == 3 or len(parts) == 4 or len(parts) == 6:
                     try:
                         nums = [float(p) for p in parts[:3]]
                         has_enough = sum(1 for n in nums if n != 0.0) >= 1
-                        if has_enough and all(-200 <= n <= 200 for n in nums):
+                        is_rotation = all(n in (-1.0, 0.0, 1.0) for n in nums)
+                        if has_enough and all(-200 <= n <= 200 for n in nums) and not is_rotation:
                             lat_param_lines.append(nums)
                     except (ValueError, TypeError):
                         continue

@@ -10,8 +10,9 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from ...types import Wien2kFlags
 
+import forge.core.hardware as _hw
+
 from ...core.hardware import (
-    check_elpa_available,
     get_interconnect_info,
     get_job_memory_limit_mb,
     get_numa_node_count,
@@ -163,7 +164,7 @@ class Wien2kBackend(Backend):
             )
 
         # WIEN2k version/library compatibility
-        if nmat > 20000 and not check_elpa_available():
+        if nmat > 20000 and not _hw.check_elpa_available():
             errors.append(
                 "Large matrix (nmat > 20000) without ELPA: "
                 "consider recompiling WIEN2k with ELPA support or switch to hybrid mode"
@@ -542,7 +543,7 @@ class Wien2kBackend(Backend):
         for w in suggestion.get("warnings", []):
             lines.append(f"# WARNING: {w}")
 
-        if not check_elpa_available() and mode == "mpi" and nmat > 5000:
+        if not _hw.check_elpa_available() and mode == "mpi" and nmat > 5000:
             lines.append("# WARNING: ELPA not detected. MPI fine-grain diagonalization may be slow.")
             lines.append("# Consider recompiling WIEN2k with ELPA for large matrices.")
 
@@ -593,7 +594,7 @@ class Wien2kBackend(Backend):
           3. Large systems (nmat > 5000) with many cores → core parallel
           4. Default → k-point parallel with granularity for I/O
         """
-        elpa_ok = check_elpa_available()
+        elpa_ok = _hw.check_elpa_available()
 
         if is_hybrid and nmat > 5000:
             bands_per_group = min(4, max(1, nmat // 2000))
