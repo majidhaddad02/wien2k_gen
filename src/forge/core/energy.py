@@ -302,7 +302,7 @@ class _EnergySection:
                 diff = end_val - start_val
                 # Handle counter wraparound (RAPL counters are ~32-bit in uJ)
                 if diff < 0:
-                    diff += (1 << 32) * 1e-6
+                    diff += float(1 << 32)
                 delta_uj += max(0, diff)
             self.result.energy_joules = delta_uj / 1e6
             self.result.source = "rapl_pkg"
@@ -348,7 +348,7 @@ class _EnergySection:
             for zone, start_val in self._start_energy_uj.items():
                 diff = end_uj.get(zone, start_val) - start_val
                 if diff < 0:
-                    diff += (1 << 32) * 1e-6
+                    diff += float(1 << 32)
                 delta += max(0, diff)
             current_joules = delta / 1e6
         return EnergyMeasurement(
@@ -404,19 +404,19 @@ def measure_energy_section(start: bool, label: str = "unnamed") -> Optional[_Ene
 _EMPIRICAL_ENERGY_TABLE: dict[str, dict[str, float]] = {
     "xeon": {
         "base_joules_per_element": 1.2e-8,
-        "exponent": 2.8,
+        "exponent": 3.0,
     },
     "epyc": {
         "base_joules_per_element": 9.0e-9,
-        "exponent": 2.8,
+        "exponent": 3.0,
     },
     "arm_neoverse": {
         "base_joules_per_element": 5.0e-9,
-        "exponent": 2.8,
+        "exponent": 3.0,
     },
     "default": {
         "base_joules_per_element": 1.1e-8,
-        "exponent": 2.8,
+        "exponent": 3.0,
     },
 }
 

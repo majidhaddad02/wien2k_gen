@@ -455,8 +455,11 @@ class BayesianOptimizer:
         with self._lock:
             self._add_observation_no_lock(record)
             self._refit_gp()
+        with self._lock:
+            best_y_val = self._best_y
+            n_x = len(self._X)
         logger.debug(
-            f"BayesianOptimizer updated: best_y={self._best_y:.2f}s, n_obs={len(self._X)}"
+            f"BayesianOptimizer updated: best_y={best_y_val:.2f}s, n_obs={n_x}"
         )
 
     def transfer_from_system(
@@ -964,44 +967,44 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
                 corr = _FIDELITY_CORRELATION[fid_level]
                 cost = _FIDELITY_COST[fid_level]
 
-            for _ in range(self._n_random_restarts):
-                cores = rng.randint(self.min_cores, max_cores + 1)
-                mode, omp = BayesianOptimizer._random_valid_mode_omp(cores, rng)
+                for _ in range(self._n_random_restarts):
+                    cores = rng.randint(self.min_cores, max_cores + 1)
+                    mode, omp = BayesianOptimizer._random_valid_mode_omp(cores, rng)
 
-                candidate = _encode_config(mode, cores, omp)
+                    candidate = _encode_config(mode, cores, omp)
 
-                try:
-                    mu, sigma2 = self._gp.predict(candidate.reshape(1, -1))
-                    mu_val = float(mu[0])
-                    sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
+                    try:
+                        mu, sigma2 = self._gp.predict(candidate.reshape(1, -1))
+                        mu_val = float(mu[0])
+                        sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
 
-                    if self._transfer_mean is not None and self._transfer_weight > 0:
-                        mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
+                        if self._transfer_mean is not None and self._transfer_weight > 0:
+                            mu_val = (1.0 - self._transfer_weight) * mu_val + \
+                                     self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
 
-                    ei = compute_expected_improvement(
-                        mu_val, sigma_val, current_best, xi=self._exploration_xi
-                    )
-                    mf_ei = ei * corr / max(cost, _EPS)
+                        ei = compute_expected_improvement(
+                            mu_val, sigma_val, current_best, xi=self._exploration_xi
+                        )
+                        mf_ei = ei * corr / max(cost, _EPS)
 
-                    if mf_ei > best_mf_ei:
-                        best_mf_ei = mf_ei
-                        config = _decode_config(candidate, self.min_cores, max_cores)
-                        best_config = {
-                            "mode": config["mode"],
-                            "total_cores": config["total_cores"],
-                            "omp_threads": config["omp_threads"],
-                            "expected_improvement": round(ei, 6),
-                            "mf_ei": round(mf_ei, 6),
-                            "predicted_mean": round(mu_val, 3),
-                            "predicted_std": round(sigma_val, 3),
-                            "fidelity": fid_level,
-                            "source": "model_mf",
-                            "transfer_weight": round(self._transfer_weight, 4),
-                        }
-                        best_fid = fid_level
-                except Exception:
-                    continue
+                        if mf_ei > best_mf_ei:
+                            best_mf_ei = mf_ei
+                            config = _decode_config(candidate, self.min_cores, max_cores)
+                            best_config = {
+                                "mode": config["mode"],
+                                "total_cores": config["total_cores"],
+                                "omp_threads": config["omp_threads"],
+                                "expected_improvement": round(ei, 6),
+                                "mf_ei": round(mf_ei, 6),
+                                "predicted_mean": round(mu_val, 3),
+                                "predicted_std": round(sigma_val, 3),
+                                "fidelity": fid_level,
+                                "source": "model_mf",
+                                "transfer_weight": round(self._transfer_weight, 4),
+                            }
+                            best_fid = fid_level
+                    except Exception:
+                        continue
 
             if best_config is not None:
                 ei_val = best_config.get("expected_improvement", 0.0)

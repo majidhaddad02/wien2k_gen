@@ -12,7 +12,9 @@ timing data, and generates formatted convergence reports.
 All documentation and inline comments are in English per project standards.
 """
 
+import contextlib
 import dataclasses
+import json
 import logging
 import os
 import re
@@ -54,6 +56,19 @@ class ConvergenceResult:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ConvergenceResult":
         return cls(**data)
+
+
+def _save_checkpoint(checkpoint_file: str, results: list, current_idx: int, param_name: str, grids: list) -> None:
+    data = {
+        "results": [r.to_dict() if hasattr(r, 'to_dict') else r for r in results],
+        "current_idx": current_idx,
+        "parameter": param_name,
+        "grids": grids,
+    }
+    tmp = checkpoint_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f)
+    os.replace(tmp, checkpoint_file)
 
 
 def _detect_progress_bar() -> Any:
@@ -258,6 +273,8 @@ def run_kpoint_convergence(  # noqa: C901
     base_path: Optional[str] = None,
     rkmax: float = 7.0,
     timeout_per_run: int = 3600,
+    monitor_forces: bool = False,
+    checkpoint_file: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Run k-point convergence study by testing multiple k-point grids.
@@ -279,6 +296,8 @@ def run_kpoint_convergence(  # noqa: C901
         RKmax value to use for all runs.
     timeout_per_run : int
         Maximum wall time per SCF run in seconds.
+    checkpoint_file : str, optional
+        Path to checkpoint file for resuming interrupted studies.
 
     Returns
     -------
@@ -289,6 +308,23 @@ def run_kpoint_convergence(  # noqa: C901
     cmds = _find_wien2k_commands(wien2k_cmd)
     base_dir = Path(base_path) if base_path else Path.cwd()
     results: list[ConvergenceResult] = []
+
+    if monitor_forces:
+        logger.warning("Force monitoring is not yet implemented; ignoring monitor_forces=True")
+
+    start_idx = 0
+    prev_energy = None
+
+    if checkpoint_file and os.path.exists(checkpoint_file):
+        with open(checkpoint_file) as f:
+            ckpt = json.load(f)
+        results = [ConvergenceResult.from_dict(r) for r in ckpt["results"]]
+        start_idx = ckpt["current_idx"]
+        prev_energy = results[-1].total_energy_ev if results else None
+    else:
+        start_idx = 0
+
+    remaining_grids = kpoint_grids[start_idx:]
 
     progress_lib = _detect_progress_bar()
     bar_type = progress_lib[0]
@@ -301,18 +337,17 @@ def run_kpoint_convergence(  # noqa: C901
             BarColumn(),
             TaskProgressColumn(),
         )
-        task = progress.add_task("K-point convergence", total=len(kpoint_grids))
+        task = progress.add_task("K-point convergence", total=len(remaining_grids))
         progress.start()
     elif bar_type == "tqdm":
         _, tqdm = progress_lib
-        pbar = tqdm(total=len(kpoint_grids), desc="K-point convergence")
+        pbar = tqdm(total=len(remaining_grids), desc="K-point convergence")
     else:
         pbar = None
 
-    prev_energy = None
-
     try:
-        for _idx, (nx, ny, nz) in enumerate(kpoint_grids):
+        for _loop_idx, (nx, ny, nz) in enumerate(remaining_grids):
+            idx = start_idx + _loop_idx
             # Create temporary work directory
             work_dir = Path(tempfile.mkdtemp(prefix=f"kpt_{nx}x{ny}x{nz}_"))
 
@@ -385,6 +420,10 @@ def run_kpoint_convergence(  # noqa: C901
 
             prev_energy = energy_ev
 
+            if checkpoint_file:
+                _save_checkpoint(checkpoint_file, results, idx + 1, "kpoints",
+                                 [(g[0], g[1], g[2]) for g in kpoint_grids])
+
             if bar_type == "rich":
                 progress.update(task, advance=1, description=f"K-point grid {nx}x{ny}x{nz}")
             elif bar_type == "tqdm":
@@ -418,6 +457,8 @@ def run_rkmax_convergence(  # noqa: C901
     base_path: Optional[str] = None,
     kpoints: tuple[int, int, int] = (4, 4, 4),
     timeout_per_run: int = 3600,
+    monitor_forces: bool = False,
+    checkpoint_file: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Run RKmax convergence study.
@@ -438,6 +479,8 @@ def run_rkmax_convergence(  # noqa: C901
         Fixed k-point grid (nx, ny, nz).
     timeout_per_run : int
         Maximum wall time per run in seconds.
+    checkpoint_file : str, optional
+        Path to checkpoint file for resuming interrupted studies.
 
     Returns
     -------
@@ -448,6 +491,23 @@ def run_rkmax_convergence(  # noqa: C901
     cmds = _find_wien2k_commands(wien2k_cmd)
     base_dir = Path(base_path) if base_path else Path.cwd()
     results: list[ConvergenceResult] = []
+
+    if monitor_forces:
+        logger.warning("Force monitoring is not yet implemented; ignoring monitor_forces=True")
+
+    start_idx = 0
+    prev_energy = None
+
+    if checkpoint_file and os.path.exists(checkpoint_file):
+        with open(checkpoint_file) as f:
+            ckpt = json.load(f)
+        results = [ConvergenceResult.from_dict(r) for r in ckpt["results"]]
+        start_idx = ckpt["current_idx"]
+        prev_energy = results[-1].total_energy_ev if results else None
+    else:
+        start_idx = 0
+
+    remaining_values = rkmax_values[start_idx:]
 
     progress_lib = _detect_progress_bar()
     bar_type = progress_lib[0]
@@ -460,18 +520,17 @@ def run_rkmax_convergence(  # noqa: C901
             BarColumn(),
             TaskProgressColumn(),
         )
-        task = progress.add_task("RKmax convergence", total=len(rkmax_values))
+        task = progress.add_task("RKmax convergence", total=len(remaining_values))
         progress.start()
     elif bar_type == "tqdm":
         _, tqdm = progress_lib
-        pbar = tqdm(total=len(rkmax_values), desc="RKmax convergence")
+        pbar = tqdm(total=len(remaining_values), desc="RKmax convergence")
     else:
         pbar = None
 
-    prev_energy = None
-
     try:
-        for rkmax in rkmax_values:
+        for _loop_idx, rkmax in enumerate(remaining_values):
+            idx = start_idx + _loop_idx
             work_dir = Path(tempfile.mkdtemp(prefix=f"rkmax_{rkmax:.2f}_"))
 
             for item in base_dir.iterdir():
@@ -536,6 +595,9 @@ def run_rkmax_convergence(  # noqa: C901
             )
 
             prev_energy = energy_ev
+
+            if checkpoint_file:
+                _save_checkpoint(checkpoint_file, results, idx + 1, "rkmax", rkmax_values)
 
             if bar_type == "rich":
                 progress.update(task, advance=1, description=f"RKmax {rkmax:.2f}")
@@ -679,7 +741,7 @@ def generate_convergence_report(results: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]] = None) -> dict:  # noqa: C901
+def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]] = None, callback=None) -> dict:  # noqa: C901
     """Detect SCF divergence and recommend automatic recovery actions.
 
     Divergence signatures:
@@ -688,6 +750,13 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
       - Exploding energy > 1e5 → catastrophic divergence
       - Gap oscillation for metallic systems → need smearing
       - Stuck energy (flat for 20+ cycles) → stalled convergence
+
+    Args:
+        scf_content: Raw SCF output text to parse.
+        energy_values: Optional pre-parsed list of energy values (Ry).
+        callback: Optional callable invoked on divergence with the result
+                  dict, enabling recovery actions (e.g., restarting SCF
+                  with modified mixing parameters).
 
     Returns dict with:
         divergent: bool
@@ -729,6 +798,9 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
         )
         result["auto_mixing_params"]["beta"] = 0.02
         result["auto_mixing_params"]["pratt_cycles"] = 10
+        if callback:
+            with contextlib.suppress(Exception):
+                callback(result)
         return result
 
     # 2. Monotonic drift (energy increasing steadily for 10+ cycles)
@@ -748,6 +820,9 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
             result["auto_mixing_params"]["beta"] = 0.03
             result["auto_mixing_params"]["pratt_cycles"] = 5
             result["auto_mixing_params"]["msr1a"] = True
+            if callback:
+                with contextlib.suppress(Exception):
+                    callback(result)
             return result
 
     # 3. High-amplitude oscillation (charge sloshing)
@@ -755,6 +830,8 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
         sign_changes = sum(1 for i in range(1, len(deltas)) if deltas[i] * deltas[i - 1] < 0)
         if sign_changes >= len(deltas) // 2:
             max_amp = max(abs(d) for d in deltas)
+            if max_amp < 0.001 and len(energy_values) > 10:
+                return result
             result["divergent"] = True
             result["divergence_type"] = "charge_sloshing"
             result["severity"] = min(1.0, max_amp / 0.01)
@@ -769,12 +846,15 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
                 beta = current_beta / 2.0 if current_beta > 0 else 0.05
             result["auto_mixing_params"]["beta"] = max(0.01, beta)
             result["auto_mixing_params"]["pratt_cycles"] = 3
+            if callback:
+                with contextlib.suppress(Exception):
+                    callback(result)
             return result
 
     # 4. Stalled convergence (flat for many cycles)
     if len(deltas) >= 20:
         recent = deltas[-20:]
-        if all(abs(d) < 1e-8 for d in recent):
+        if all(abs(d) < 1e-6 for d in recent):
             result["divergent"] = True
             result["divergence_type"] = "stalled"
             result["severity"] = 0.5
@@ -784,6 +864,9 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
             )
             result["auto_mixing_params"]["beta"] = 0.15
             result["auto_mixing_params"]["pratt_cycles"] = 3
+            if callback:
+                with contextlib.suppress(Exception):
+                    callback(result)
 
     return result
 

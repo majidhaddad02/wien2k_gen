@@ -30,7 +30,7 @@ from ..core.hardware import (
     get_total_mem_kb,
     is_hyperthreading_active,
 )
-from ..core.topology import Topology
+from ..core.topology import Topology, detect_gpu_topology
 from ..logging_config import get_logger
 
 # Lazy import to avoid circular dependency with backend_manager
@@ -117,16 +117,22 @@ class ModeScore(TypedDict):
 
 BACKEND_OPERATIONAL_INTENSITY: dict[str, dict[str, float]] = {
     "wien2k": {
-        "lapw0":      0.3,   # memory-bound, potential calculation
-        "lapw1":      0.5,   # base OI, scales with nmat (exact diagonalization)
-        "lapw2":      0.1,   # vector I/O, heaviest memory-bound component
-        "mixer":      0.05,  # pure memory
+        "lapw0":      0.3,
+        "lapw1":      0.5,
+        "lapw2":      0.1,
+        "mixer":      0.05,
     },
     "vasp": {
-        "elec":       0.25,  # mixed compute/memory
+        "elec":       0.25,
+        "nloc":       0.35,
+        "fft":        0.15,
+        "dav":        0.40,
     },
     "qe": {
-        "pw":         0.15,  # FFT-dominated, memory-bound
+        "pw":         0.15,
+        "fft":        0.12,
+        "dav":        0.35,
+        "ortho":      0.20,
     },
 }
 
@@ -251,6 +257,8 @@ def estimate_memory_footprint_gb(
     atoms: int = 10,
     is_soc: bool = False,
     is_hybrid: bool = False,
+    is_dftu: bool = False,
+    is_vdw: bool = False,
     total_cores: int = 1,
     omp_threads: int = 1,
 ) -> float:
@@ -297,12 +305,26 @@ def estimate_memory_footprint_gb(
     rkmax_factor = max(1.0, (rkmax / 7.0) ** 2)
     soc_factor = 2.0 if is_soc else 1.0
     hybrid_factor = 1.2 if is_hybrid else 1.0
+    dftu_factor = 1.25 if is_dftu else 1.0
+    vdw_factor = 1.15 if is_vdw else 1.0
     safety_factor = 1.5  # Per-rank safety (was 3.0x for aggregate estimate)
 
     total_gb = (distributed_gb + replicated_gb) * \
-               rkmax_factor * soc_factor * hybrid_factor * safety_factor
+               rkmax_factor * soc_factor * hybrid_factor * \
+               dftu_factor * vdw_factor * safety_factor
 
     return round(total_gb, 2)
+
+
+def estimate_vasp_memory(nmat, nbands, nk, atoms) -> float:
+    logger.warning("VASP memory estimation is approximate; using WIEN2k model as baseline")
+    return estimate_memory_footprint_gb(nmat, nbands=nbands, atoms=atoms, is_hybrid=False, is_soc=False)
+
+
+def estimate_qe_memory(nmat, nk, atoms) -> float:
+    logger.warning("QE memory estimation is approximate; using WIEN2k model as baseline")
+    return estimate_memory_footprint_gb(nmat, nbands=max(1, nmat // 2), atoms=atoms, is_hybrid=False, is_soc=False)
+
 
 def estimate_arithmetic_intensity(
     nmat: int,
@@ -745,6 +767,7 @@ def suggest_optimal_resources(  # noqa: C901
     """
     backend = _get_current_backend()
     params = backend.detect_problem_size()
+    backend_name = getattr(backend, 'name', 'wien2k') if backend else 'wien2k'
     
     # Extract problem parameters safely
     atoms = params.get("atoms", 10)
@@ -754,6 +777,8 @@ def suggest_optimal_resources(  # noqa: C901
     rkmax = params.get("rkmax", 7.0)
     is_soc = params.get("is_soc", False)
     is_hybrid = params.get("is_hybrid", False)
+    is_dftu = params.get("is_dftu", False)
+    is_vdw = params.get("is_vdw", False)
 
     # Hardware profile with dynamic peak FLOPS & FMA units
     # Attempt to use measured values from hardware counters (likwid/perf/RAPL)
@@ -793,6 +818,18 @@ def suggest_optimal_resources(  # noqa: C901
         "base_freq_mhz": get_cpu_frequency_info().get("base", 2000.0),
     }
 
+    # GPU detection
+    try:
+        gpu_topo = detect_gpu_topology()
+        if gpu_topo.gpu_per_node > 0:
+            hw_profile["gpu_count"] = gpu_topo.gpu_per_node
+            hw_profile["gpu_multi"] = gpu_topo.multi_gpu
+            hw_profile["nvlink"] = gpu_topo.nvlink_available
+            if gpu_topo.gpus:
+                hw_profile["gpu_name"] = gpu_topo.gpus[0].name
+    except Exception:
+        hw_profile["gpu_count"] = 0
+
     total_cores_available = topo.total_cores
     if hw_profile.get("ht_active"):
         physical = get_physical_cores()
@@ -801,10 +838,16 @@ def suggest_optimal_resources(  # noqa: C901
         total_cores_available = user_max_cores
 
     # Estimate memory requirements
-    estimated_mem_gb = estimate_memory_footprint_gb(
-        nmat, nbands, rkmax, atoms, is_soc, is_hybrid,
-        total_cores=total_cores_available,
-    )
+    if backend_name == "vasp":
+        estimated_mem_gb = estimate_vasp_memory(nmat, nbands, nk, atoms)
+    elif backend_name == "qe":
+        estimated_mem_gb = estimate_qe_memory(nmat, nk, atoms)
+    else:
+        estimated_mem_gb = estimate_memory_footprint_gb(
+            nmat, nbands, rkmax, atoms, is_soc, is_hybrid,
+            is_dftu=is_dftu, is_vdw=is_vdw,
+            total_cores=total_cores_available,
+        )
 
     # Roofline-based bandwidth cap for k-point parallelism
     max_kp_cores_bw = estimate_max_kp_cores_roofline(
@@ -914,6 +957,11 @@ def suggest_optimal_resources(  # noqa: C901
         warnings_list.append(
             f"SCRATCH on {hw_profile['scratch_fs']} may cause I/O bottleneck. "
             f"Use local NVMe if possible."
+        )
+    if hw_profile.get("gpu_count", 0) > 0 and mode in ("kpoint", "hybrid", "mpi"):
+        warnings_list.append(
+            f"GPUs detected ({hw_profile.get('gpu_name', 'unknown')}) but not utilized. "
+            f"Consider GPU-accelerated build (ELPA+NVIDIA) for up to 3x speedup."
         )
     if hw_profile["numa_nodes"] > 1 and mode == "mpi":
         warnings_list.append(

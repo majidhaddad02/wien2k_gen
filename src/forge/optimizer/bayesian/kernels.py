@@ -1,18 +1,46 @@
-"""Kernel functions for Gaussian Process regression."""
+"""
+Kernel functions for Gaussian Process regression.
+
+Nugget and Stability Contract
+-----------------------------
+This module defines two global stability constants used across the GP stack:
+
+  ``_NUGGET`` (1e-6)
+      Provides numerical stability for Cholesky decomposition.
+      Callers (GP modules) **must** add ``_NUGGET * eye(n)`` to every
+      kernel matrix before factorization.  The kernel functions themselves
+      do **not** apply the nugget — that responsibility belongs to the
+      decomposed-kernel call-site.
+
+  ``_EPS``   (1e-8)
+      Prevents division by zero in length-scale operations (e.g., squared
+      length-scale denominators).  All per-dimension length scales are
+      clipped to at least ``_EPS`` inside the kernels.
+
+Failure to apply the nugget in callers that factor the kernel matrix will
+result in ``LinAlgError`` for near-singular or rank-deficient matrices.
+"""
 
 import math
 
 import numpy as np
 
-_NUGGET = 1e-6
-_EPS = 1e-8
+_NUGGET = 1e-6  # additive jitter for Cholesky stability — see module docstring
+_EPS = 1e-8    # floor for length-scale denominators — see module docstring
 
 
 def rbf_kernel(x1: np.ndarray, x2: np.ndarray, length_scale: float = 1.0) -> np.ndarray:
-    """
+    r"""
     Radial Basis Function (squared exponential) kernel for Gaussian Process.
 
     k(x1, x2) = exp(-0.5 * ||x1 - x2||^2 / length_scale^2)
+
+    Note
+    ----
+    This function returns the **raw** kernel matrix — it does **not** add
+    the nugget term ``_NUGGET * eye(n)``.  Callers that factor the kernel
+    (e.g., via Cholesky) must add the nugget themselves; see the module
+    docstring for the full contract.
 
     Args:
         x1: First input vector or matrix (shape (n,) or (n, d)).
@@ -42,10 +70,17 @@ def rbf_kernel_ard(
     x2: np.ndarray,
     length_scales: np.ndarray,
 ) -> np.ndarray:
-    """
+    r"""
     RBF kernel with Automatic Relevance Determination (per-dimension length scales).
 
     k(x1, x2) = exp(-0.5 * sum_d ((x1_d - x2_d)^2 / length_scale[d]^2))
+
+    Note
+    ----
+    This function returns the **raw** kernel matrix — it does **not** add
+    the nugget term ``_NUGGET * eye(n)``.  Callers that factor the kernel
+    (e.g., via Cholesky) must add the nugget themselves; see the module
+    docstring for the full contract.
 
     Args:
         x1: First input matrix (shape (n, d)).

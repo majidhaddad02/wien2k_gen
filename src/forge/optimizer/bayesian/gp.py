@@ -54,7 +54,8 @@ class _GaussianProcess:
         try:
             self._L = np.linalg.cholesky(K)
         except np.linalg.LinAlgError:
-            K += 1e-3 * np.eye(n, dtype=np.float64)
+            jitter = max(1e-6, min(1e-2, np.max(np.diag(K)) * 1e-8))
+            K += jitter * np.eye(n, dtype=np.float64)
             self._L = np.linalg.cholesky(K)
 
         self._alpha = np.linalg.solve(self._L.T, np.linalg.solve(self._L, y))
@@ -131,7 +132,8 @@ class _GaussianProcessARD(_GaussianProcess):
             try:
                 L = np.linalg.cholesky(K)
             except np.linalg.LinAlgError:
-                K += 1e-3 * np.eye(n, dtype=np.float64)
+                jitter = max(1e-6, min(1e-2, np.max(np.diag(K)) * 1e-8))
+                K += jitter * np.eye(n, dtype=np.float64)
                 L = np.linalg.cholesky(K)
 
             alpha = np.linalg.solve(L.T, np.linalg.solve(L, y))
@@ -157,6 +159,11 @@ class _GaussianProcessARD(_GaussianProcess):
             current_ls = current_ls - self._learning_rate * grad
             current_ls = np.clip(current_ls, self._min_ls, self._max_ls)
 
+            if _step > 10:
+                ls_change = np.max(np.abs((current_ls - best_ls) / np.maximum(best_ls, _EPS)))
+                if ls_change < 1e-5:
+                    break
+
         self.length_scales = best_ls.copy()
 
         K = rbf_kernel_ard(X, X, self.length_scales)
@@ -164,7 +171,8 @@ class _GaussianProcessARD(_GaussianProcess):
         try:
             self._L = np.linalg.cholesky(K)
         except np.linalg.LinAlgError:
-            K += 1e-3 * np.eye(n, dtype=np.float64)
+            jitter = max(1e-6, min(1e-2, np.max(np.diag(K)) * 1e-8))
+            K += jitter * np.eye(n, dtype=np.float64)
             self._L = np.linalg.cholesky(K)
         self._alpha = np.linalg.solve(self._L.T, np.linalg.solve(self._L, y.flatten()))
 

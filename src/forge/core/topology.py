@@ -50,7 +50,7 @@ class TopologyType(Enum):
 # BLACS Grid Factorization for ScaLAPACK/ELPA
 # =============================================================================
 
-def factorize_blacs_grid(total_ranks: int) -> tuple[int, int]:
+def factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> tuple[int, int]:
     """
     Find the best p x q factorization of total_ranks with minimal |p - q| difference.
     Uses the algorithm from ScaLAPACK's pdlaset.f: start from sqrt(N), decrement p
@@ -67,6 +67,7 @@ def factorize_blacs_grid(total_ranks: int) -> tuple[int, int]:
 
     Args:
         total_ranks: Total number of MPI ranks participating in the diagonalization.
+        block_size: BLACS block size for distribution alignment (default 32).
 
     Returns:
         Tuple[p, q] where p <= q and p * q == total_ranks, minimizing |p - q|.
@@ -75,14 +76,17 @@ def factorize_blacs_grid(total_ranks: int) -> tuple[int, int]:
     if total_ranks <= 0:
         return (1, 1)
 
+    last_pq = (1, total_ranks)
     p = math.isqrt(total_ranks)
     while p >= 1:
         if total_ranks % p == 0:
             q = total_ranks // p
-            return (p, q) if p <= q else (q, p)
+            last_pq = (p, q) if p <= q else (q, p)
+            if block_size <= 1 or p % block_size == 0 or q % block_size == 0:
+                return last_pq
         p -= 1
 
-    return (1, total_ranks)
+    return last_pq
 
 
 def _is_blacs_friendly(n: int) -> bool:
@@ -116,18 +120,14 @@ def _nearest_factorizable(target: int) -> int:
     if _is_blacs_friendly(target):
         return target
 
-    max(4, int(target ** 0.5))
-    # Search outward from sqrt(target) for BLACS-friendly candidates.
-    # Two passes: first search larger values (prefer slight overshoot),
-    # then smaller (fallback to undershoot).
     for delta in range(0, target):
         for candidate in (target + delta, target - delta):
             if candidate >= 4 and _is_blacs_friendly(candidate):
                 return candidate
-        if delta > target:
+        if delta > target // 2:
             break
 
-    return target
+    return 4
 
 
 def adjust_for_blacs_grid(per_node_ranks: list[int]) -> list[int]:
@@ -877,10 +877,14 @@ class Topology:
 
     def to_file(self, path: Union[str, Path]) -> None:
         """Save topology to JSON file with atomic-like write safety."""
-        tmp_path = Path(path).with_suffix('.tmp')
+        import os as _os
+        target = Path(path)
+        tmp_path = target.with_suffix('.tmp')
         try:
             tmp_path.write_text(self.to_json(), encoding='utf-8')
-            tmp_path.replace(Path(path))
+            if _os.name == 'nt' and target.exists():
+                target.unlink()
+            tmp_path.replace(target)
         except Exception as e:
             logger.error(f"Failed to write topology to {path}: {e}")
             if tmp_path.exists():

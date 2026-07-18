@@ -83,7 +83,7 @@ _NUM_ATOMIC_FEATURES = 4
 # Crystal graph builder
 # ---------------------------------------------------------------------------
 
-def build_crystal_graph(  # noqa: C901
+def build_crystal_graph(
     positions: list[tuple[float, float, float]],
     atomic_numbers: list[int],
     lattice_vectors: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
@@ -120,33 +120,43 @@ def build_crystal_graph(  # noqa: C901
     for i, (x, y, z) in enumerate(positions):
         cart[i] = x * np.array(a) + y * np.array(b) + z * np.array(c_vec)
 
+    a_arr = np.array(a, dtype=np.float64)
+    b_arr = np.array(b, dtype=np.float64)
+    c_arr = np.array(c_vec, dtype=np.float64)
+
+    offsets = np.array(
+        [di * a_arr + dj * b_arr + dk * c_arr
+         for di in (-1, 0, 1) for dj in (-1, 0, 1) for dk in (-1, 0, 1)],
+        dtype=np.float64,
+    )
+
     edges_src, edges_dst = [], []
     edge_feats = []
     cutoff_sq = cutoff ** 2
 
     for i in range(n_atoms):
+        cart_i = cart[i]
         for j in range(i, n_atoms):
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    for dk in (-1, 0, 1):
-                        offset = di * np.array(a) + dj * np.array(b) + dk * np.array(c_vec)
-                        dist_vec = cart[j] + offset - cart[i]
-                        dist_sq = float(np.dot(dist_vec, dist_vec))
-                        if 0 < dist_sq <= cutoff_sq:
-                            dist = math.sqrt(dist_sq)
-                            zi, zj = atomic_numbers[i], atomic_numbers[j]
-                            en_i = _ATOMIC_FEATURES.get(zi, [1.0, 1.5])[1]
-                            en_j = _ATOMIC_FEATURES.get(zj, [1.0, 1.5])[1]
-                            en_diff = abs(en_i - en_j)
-                            bond_type = 0.0 if en_diff < 0.5 else (1.0 if en_diff < 1.7 else 2.0)
+            cart_j = cart[j]
+            diff_vectors = cart_j + offsets - cart_i
+            dist_sq = np.sum(diff_vectors ** 2, axis=1)
+            valid_mask = (dist_sq > 0) & (dist_sq <= cutoff_sq)
+            valid_indices = np.where(valid_mask)[0]
+            for o_idx in valid_indices:
+                dist = math.sqrt(float(dist_sq[o_idx]))
+                zi, zj = atomic_numbers[i], atomic_numbers[j]
+                en_i = _ATOMIC_FEATURES.get(zi, [1.0, 1.5])[1]
+                en_j = _ATOMIC_FEATURES.get(zj, [1.0, 1.5])[1]
+                en_diff = abs(en_i - en_j)
+                bond_type = 0.0 if en_diff < 0.5 else (1.0 if en_diff < 1.7 else 2.0)
 
-                            edges_src.append(i)
-                            edges_dst.append(j)
-                            edge_feats.append([dist, bond_type])
-                            if j != i:
-                                edges_src.append(j)
-                                edges_dst.append(i)
-                                edge_feats.append([dist, bond_type])
+                edges_src.append(i)
+                edges_dst.append(j)
+                edge_feats.append([dist, bond_type])
+                if j != i:
+                    edges_src.append(j)
+                    edges_dst.append(i)
+                    edge_feats.append([dist, bond_type])
 
     if not edges_src:
         edge_index = np.zeros((2, 0), dtype=np.int64)
@@ -188,20 +198,74 @@ class GraphConvLayer:
         self_msg = h @ self.W_self
         neigh_msg = np.zeros((n, self.out_dim), dtype=np.float32)
 
-        if edge_index.shape[1] > 0:
-            src = edge_index[0]
-            dst = edge_index[1]
-            edge_mlp = edge_feat @ self.W_edge
-            for e in range(edge_index.shape[1]):
-                d = dst[e]
-                s = src[e]
-                neigh_msg[d] += h[s] @ self.W_neigh * edge_mlp[e]
+        src = edge_index[0]
+        dst = edge_index[1]
+        has_edges = edge_index.shape[1] > 0
 
-        deg = np.maximum(np.bincount(edge_index[1], minlength=n) if edge_index.shape[1] > 0 else np.ones(n), 1).reshape(-1, 1)
+        if has_edges:
+            edge_mlp = edge_feat @ self.W_edge
+            hW = h[src] @ self.W_neigh
+            weighted = hW * edge_mlp
+            np.add.at(neigh_msg, dst, weighted)
+            deg = np.maximum(np.bincount(dst, minlength=n), 1).reshape(-1, 1)
+        else:
+            edge_mlp = np.zeros((0, self.out_dim), dtype=np.float32)
+            hW = np.zeros((0, self.out_dim), dtype=np.float32)
+            weighted = np.zeros((0, self.out_dim), dtype=np.float32)
+            deg = np.ones((n, 1), dtype=np.float32)
+
         neigh_msg /= deg
 
-        out = self_msg + neigh_msg + self.bias
-        return np.maximum(out, 0.0)
+        pre_act = self_msg + neigh_msg + self.bias
+        out = np.maximum(pre_act, 0.0)
+
+        self._cache = {
+            "h_input": h,
+            "self_msg": self_msg,
+            "src": src,
+            "dst": dst,
+            "edge_mlp": edge_mlp,
+            "hW": hW,
+            "weighted": weighted,
+            "deg": deg,
+            "neigh_msg_raw": neigh_msg * deg,
+            "pre_act": pre_act,
+            "has_edges": has_edges,
+        }
+
+        return out
+
+    def backward(self, dL_dout: np.ndarray, edge_feat: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+        cache = self._cache
+        dL_dpre = dL_dout * (cache["pre_act"] > 0).astype(np.float32)
+
+        grads: dict[str, np.ndarray] = {}
+        grads["bias"] = np.sum(dL_dpre, axis=0)
+
+        dL_dself = dL_dpre
+        grads["W_self"] = cache["h_input"].T @ dL_dself
+        dL_dh = dL_dself @ self.W_self.T
+
+        dL_dneigh = dL_dpre / cache["deg"]  # undo deg division
+        dL_dneigh_raw = dL_dneigh
+
+        if cache["has_edges"]:
+            dL_dweighted = dL_dneigh_raw[cache["dst"]]
+
+            dL_dhW = dL_dweighted * cache["edge_mlp"]
+            dL_dedge_mlp = dL_dweighted * cache["hW"]
+
+            grads["W_neigh"] = cache["h_input"][cache["src"]].T @ dL_dhW
+            grads["W_edge"] = edge_feat.T @ dL_dedge_mlp
+
+            dL_dh_from_neigh = np.zeros_like(cache["h_input"])
+            np.add.at(dL_dh_from_neigh, cache["src"], dL_dhW @ self.W_neigh.T)
+            dL_dh = dL_dh + dL_dh_from_neigh
+        else:
+            grads["W_neigh"] = np.zeros_like(self.W_neigh)
+            grads["W_edge"] = np.zeros_like(self.W_edge)
+
+        return dL_dh, grads
 
 
 class AdamOptimizer:
@@ -265,19 +329,91 @@ class CGCNNModel:
         return len(self.convs) + 1
 
     def forward(self, x: np.ndarray, edge_index: np.ndarray, edge_feat: np.ndarray) -> np.ndarray:
+        n = x.shape[0]
+
         h = self.conv1.forward(x, edge_index, edge_feat)
+        conv_caches = [self.conv1._cache]
+        h_list = [h]
+
         for conv in self.convs:
             h_res = conv.forward(h, edge_index, edge_feat)
+            conv_caches.append(conv._cache)
             h = h + h_res
+            h_list.append(h)
 
         mean_pool = np.mean(h, axis=0, keepdims=True)
         max_pool = np.max(h, axis=0, keepdims=True)
         pooled = np.concatenate([mean_pool, max_pool], axis=-1)
 
-        out = pooled @ self.fc1_W + self.fc1_b
-        out = np.maximum(out, 0.0)
-        out = out @ self.fc2_W + self.fc2_b
-        return out.flatten()
+        fc1_out = pooled @ self.fc1_W + self.fc1_b
+        fc1_act = np.maximum(fc1_out, 0.0)
+        fc2_out = fc1_act @ self.fc2_W + self.fc2_b
+
+        self._training_cache = {
+            "n": n,
+            "h_list": h_list,
+            "conv_caches": conv_caches,
+            "mean_pool": mean_pool,
+            "max_pool": max_pool,
+            "pooled": pooled,
+            "fc1_out": fc1_out,
+            "fc1_act": fc1_act,
+        }
+
+        return fc2_out.flatten()
+
+    def backward(self, target: np.ndarray, edge_feat: np.ndarray) -> dict[str, np.ndarray]:
+        cache = self._training_cache
+        n_nodes = cache["n"]
+        h_list = cache["h_list"]
+        _ = cache["conv_caches"]
+        grads: dict[str, np.ndarray] = {}
+
+        # Prediction from cache
+        pred = cache["fc1_act"] @ self.fc2_W + self.fc2_b
+        pred = pred.flatten()
+
+        # L = sum((pred - target)^2)
+        dL_dpred = 2.0 * (pred - target).astype(np.float32)
+        dL_dfc2 = dL_dpred.reshape(1, -1)
+
+        grads["fc2_W"] = cache["fc1_act"].T @ dL_dfc2
+        grads["fc2_b"] = dL_dpred
+
+        dL_dfc1_act = dL_dfc2 @ self.fc2_W.T
+        dL_dfc1 = dL_dfc1_act * (cache["fc1_out"] > 0).astype(np.float32)
+
+        grads["fc1_W"] = cache["pooled"].T @ dL_dfc1
+        grads["fc1_b"] = dL_dfc1.flatten()
+
+        dL_dpooled = dL_dfc1 @ self.fc1_W.T
+        hidden_dim = self.hidden_dim
+        dL_dmean = dL_dpooled[:, :hidden_dim]
+        dL_dmax = dL_dpooled[:, hidden_dim:]
+
+        h_final = h_list[-1]
+        dL_dh = np.full_like(h_final, dL_dmean / n_nodes)
+
+        max_vals = cache["max_pool"]
+        mask = (h_final == max_vals).astype(np.float32)
+        tied_counts = np.sum(mask, axis=0, keepdims=True)
+        dL_dh = dL_dh + mask * (dL_dmax / n_nodes) / np.maximum(tied_counts, 1.0)
+
+        dL_dh = dL_dh.astype(np.float32)
+
+        for idx in range(len(self.convs) - 1, -1, -1):
+            conv = self.convs[idx]
+            dL_dh_res, conv_grads = conv.backward(dL_dh, edge_feat)
+            key_prefix = f"convs_{idx}"
+            for k, v in conv_grads.items():
+                grads[f"{key_prefix}_{k}"] = v
+            dL_dh = dL_dh + dL_dh_res
+
+        _, conv1_grads = self.conv1.backward(dL_dh, edge_feat)
+        for k, v in conv1_grads.items():
+            grads[f"conv1_{k}"] = v
+
+        return grads
 
     def _all_parameters(self) -> list[tuple[int, str, np.ndarray]]:
         params: list[tuple[int, str, np.ndarray]] = [
@@ -311,8 +447,7 @@ class CGCNNModel:
                         new_val = optimizer.step(idx, key, getattr(conv, name), grads[key])
                         setattr(conv, name, new_val)
                     idx += 1
-        for name, attr in [("W", "fc1_W"), ("b", "fc1_b"), ("W", "fc2_W"), ("b", "fc2_b")]:
-            key = f"fc_{name}"
+        for attr, key in [("fc1_W", "fc1_W"), ("fc1_b", "fc1_b"), ("fc2_W", "fc2_W"), ("fc2_b", "fc2_b")]:
             if key in grads:
                 new_val = optimizer.step(idx, key, getattr(self, attr), grads[key])
                 setattr(self, attr, new_val)
@@ -371,10 +506,9 @@ class CGCNNModel:
                 target = targets[idx]
 
                 pred = self.forward(node_feat, edge_idx, edge_feat)
-                error = pred - target
-                nf_loss = float(np.sum(error ** 2))
+                nf_loss = float(np.sum((pred - target) ** 2))
 
-                grads = _compute_gradients(self, node_feat, edge_idx, edge_feat, error)
+                grads = self.backward(target, edge_feat)
                 self._apply_gradients(grads, optimizer)
                 epoch_loss += nf_loss
 
@@ -436,51 +570,6 @@ class CGCNNModel:
         model.fc2_b = data["fc2_b"]
         logger.info(f"GNN model loaded from {path}")
         return model
-
-
-def _compute_gradients(
-    model: CGCNNModel,
-    node_feat: np.ndarray,
-    edge_index: np.ndarray,
-    edge_feat: np.ndarray,
-    error: np.ndarray,
-) -> dict[str, np.ndarray]:
-    """Finite-difference gradient approximation for GNN training.
-
-    Each parameter is perturbed by +eps/-eps and the change in loss
-    (with respect to the error vector) gives the gradient.
-    Uses central difference: grad = (f(x+eps) - f(x-eps)) / (2*eps).
-    """
-    eps = 1e-4
-    grads: dict[str, np.ndarray] = {}
-
-    def _loss_for_pred(pred: np.ndarray) -> float:
-        return float(np.sum((pred - error) ** 2))
-
-    def _param_grad(param: np.ndarray) -> np.ndarray:
-        flat_param = param.ravel()
-        flat_grad = np.zeros_like(flat_param)
-        for idx in range(flat_param.shape[0]):
-            orig = flat_param[idx]
-            flat_param[idx] = orig + eps
-            loss_plus = _loss_for_pred(model.forward(node_feat, edge_index, edge_feat))
-            flat_param[idx] = orig - eps
-            loss_minus = _loss_for_pred(model.forward(node_feat, edge_index, edge_feat))
-            flat_param[idx] = orig
-            flat_grad[idx] = (loss_plus - loss_minus) / (2.0 * eps)
-        return flat_grad.reshape(param.shape)
-
-    for conv_list, prefix in [([model.conv1], "conv1"), (model.convs, "convs")]:
-        for ci, conv in enumerate(conv_list):
-            for name in ["W_self", "W_neigh", "W_edge", "bias"]:
-                key = f"{prefix}_{ci}_{name}" if conv_list is model.convs else f"{prefix}_{name}"
-                grads[key] = _param_grad(getattr(conv, name))
-
-    grads["fc_W1"] = _param_grad(model.fc1_W)
-    grads["fc_b1"] = _param_grad(model.fc1_b)
-    grads["fc_W2"] = _param_grad(model.fc2_W)
-    grads["fc_b2"] = _param_grad(model.fc2_b)
-    return grads
 
 
 # ---------------------------------------------------------------------------
