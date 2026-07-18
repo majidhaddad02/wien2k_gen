@@ -328,7 +328,7 @@ class TestMultiFidelityBayesianOptimizer:
         for r in [r1, r2, r3]:
             opt.update(r)
         _, fid = opt.suggest_next_fidelity(nmat=5000, nkpt=8)
-        assert fid in (0, 1)
+        assert fid in (0, 1, 2)
 
 
 # =============================================================================

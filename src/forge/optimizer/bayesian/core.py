@@ -314,6 +314,17 @@ def bayesian_optimize_scf_params(
     }
 
 
+def _divisors(n: int) -> list[int]:
+    """All positive divisors of n (including 1 and n), for valid OMP splits."""
+    result = []
+    for i in range(1, math.isqrt(n) + 1):
+        if n % i == 0:
+            result.append(i)
+            if i != n // i:
+                result.append(n // i)
+    return sorted(result)
+
+
 def _params_dict(x: np.ndarray, names: list[str]) -> dict[str, float]:
     """Convert numpy array to parameter dict."""
     out = {}
@@ -603,9 +614,8 @@ class BayesianOptimizer:
                     sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
 
                     if self._transfer_mean is not None and self._transfer_weight > 0:
-                        _GaussianProcess(length_scales=self._gp.length_scales)
                         mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                 self._transfer_weight * float(np.mean(self._y)) if self._y else mu_val
+                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
 
                     ei = compute_expected_improvement(
                         mu_val, sigma_val, current_best, xi=self._exploration_xi
@@ -690,8 +700,7 @@ class BayesianOptimizer:
 
             for _ in range(self._n_random_restarts):
                 cores = rng.randint(self.min_cores, max_cores + 1)
-                omp = rng.randint(1, min(65, cores + 1))
-                mode = _CATEGORICAL_MODES[rng.randint(0, len(_CATEGORICAL_MODES))]
+                mode, omp = self._random_valid_mode_omp(cores, rng)
 
                 candidate = _encode_config(mode, cores, omp)
 
@@ -702,7 +711,7 @@ class BayesianOptimizer:
 
                     if self._transfer_mean is not None and self._transfer_weight > 0:
                         mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                 self._transfer_weight * float(np.mean(self._y)) if self._y else mu_val
+                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
 
                     ei = compute_expected_improvement(
                         mu_val, sigma_val, current_best, xi=self._exploration_xi
@@ -750,12 +759,33 @@ class BayesianOptimizer:
             result["transfer_weight"] = self._transfer_weight
             return result
 
+    @staticmethod
+    def _random_valid_mode_omp(cores: int, rng: np.random.RandomState) -> tuple[str, int]:
+        """Generate a valid (mode, omp) pair consistent with physical core count.
+
+        Rules:
+          - cores == 1 → kpoint mode only, omp = 1
+          - hybrid mode → omp must divide cores evenly
+          - mpi/kpoint → omp = 1
+        """
+        if cores <= 1:
+            return ("kpoint", 1)
+
+        mode = _CATEGORICAL_MODES[rng.randint(0, len(_CATEGORICAL_MODES))]
+
+        if mode == "hybrid" and cores > 1:
+            divisors = _divisors(cores)
+            omp = divisors[rng.randint(0, len(divisors))]
+        else:
+            omp = 1
+
+        return (mode, omp)
+
     def _random_suggestion(self, max_cores: int) -> dict[str, Any]:
         """Fallback: return a randomly generated plausible configuration."""
         rng = np.random.RandomState(int(time.time() * 1e6) % (2 ** 31))
-        cores = rng.randint(self.min_cores, max_cores + 1)
-        omp = rng.randint(1, min(65, cores + 1))
-        mode = _CATEGORICAL_MODES[rng.randint(0, len(_CATEGORICAL_MODES))]
+        cores = max(1, rng.randint(self.min_cores, max_cores + 1))
+        mode, omp = self._random_valid_mode_omp(cores, rng)
 
         return {
             "mode": mode,
@@ -934,44 +964,44 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
                 corr = _FIDELITY_CORRELATION[fid_level]
                 cost = _FIDELITY_COST[fid_level]
 
-                for _ in range(self._n_random_restarts):
-                    cores = rng.randint(self.min_cores, max_cores + 1)
-                    omp = rng.randint(1, min(65, cores + 1))
-                    mode = _CATEGORICAL_MODES[rng.randint(0, len(_CATEGORICAL_MODES))]
-                    candidate = _encode_config(mode, cores, omp)
+            for _ in range(self._n_random_restarts):
+                cores = rng.randint(self.min_cores, max_cores + 1)
+                mode, omp = BayesianOptimizer._random_valid_mode_omp(cores, rng)
 
-                    try:
-                        mu, sigma2 = self._gp.predict(candidate.reshape(1, -1))
-                        mu_val = float(mu[0])
-                        sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
+                candidate = _encode_config(mode, cores, omp)
 
-                        if self._transfer_mean is not None and self._transfer_weight > 0:
-                            mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                     self._transfer_weight * float(np.mean(self._y)) if self._y else mu_val
+                try:
+                    mu, sigma2 = self._gp.predict(candidate.reshape(1, -1))
+                    mu_val = float(mu[0])
+                    sigma_val = float(math.sqrt(max(sigma2[0], _EPS)))
 
-                        ei = compute_expected_improvement(
-                            mu_val, sigma_val, current_best, xi=self._exploration_xi
-                        )
-                        mf_ei = ei * corr / max(cost, _EPS)
+                    if self._transfer_mean is not None and self._transfer_weight > 0:
+                        mu_val = (1.0 - self._transfer_weight) * mu_val + \
+                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
 
-                        if mf_ei > best_mf_ei:
-                            best_mf_ei = mf_ei
-                            config = _decode_config(candidate, self.min_cores, max_cores)
-                            best_config = {
-                                "mode": config["mode"],
-                                "total_cores": config["total_cores"],
-                                "omp_threads": config["omp_threads"],
-                                "expected_improvement": round(ei, 6),
-                                "mf_ei": round(mf_ei, 6),
-                                "predicted_mean": round(mu_val, 3),
-                                "predicted_std": round(sigma_val, 3),
-                                "fidelity": fid_level,
-                                "source": "model_mf",
-                                "transfer_weight": round(self._transfer_weight, 4),
-                            }
-                            best_fid = fid_level
-                    except Exception:
-                        continue
+                    ei = compute_expected_improvement(
+                        mu_val, sigma_val, current_best, xi=self._exploration_xi
+                    )
+                    mf_ei = ei * corr / max(cost, _EPS)
+
+                    if mf_ei > best_mf_ei:
+                        best_mf_ei = mf_ei
+                        config = _decode_config(candidate, self.min_cores, max_cores)
+                        best_config = {
+                            "mode": config["mode"],
+                            "total_cores": config["total_cores"],
+                            "omp_threads": config["omp_threads"],
+                            "expected_improvement": round(ei, 6),
+                            "mf_ei": round(mf_ei, 6),
+                            "predicted_mean": round(mu_val, 3),
+                            "predicted_std": round(sigma_val, 3),
+                            "fidelity": fid_level,
+                            "source": "model_mf",
+                            "transfer_weight": round(self._transfer_weight, 4),
+                        }
+                        best_fid = fid_level
+                except Exception:
+                    continue
 
             if best_config is not None:
                 ei_val = best_config.get("expected_improvement", 0.0)

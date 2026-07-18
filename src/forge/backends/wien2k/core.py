@@ -276,7 +276,6 @@ class Wien2kBackend(Backend):
         # Step 4: Cap lapw2 for small systems (vector work doesn't scale well)
         max_lapw2 = max(4, atoms * 4)  # ~4 cores per atom for vector I/O
         if lapw2_cores > max_lapw2 and atoms < 20:
-            lapw2_cores - max_lapw2
             lapw2_cores = max_lapw2
             # Redistribute excess as granularity within lapw1 groups
             # (not wasted: WIEN2k can use extra ranks per k-point for ScaLAPACK)
@@ -442,7 +441,7 @@ class Wien2kBackend(Backend):
 
         lines = []
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
-        lines.append(f"# FORGE v0.2.0 | {ts}")
+        lines.append(f"# FORGE v0.1.0 | {ts}")
         lines.append(f"# Mode: {mode.upper()} | Total cores = {sum(cores_per_node)} | OMP per rank = {omp}")
         lines.append(f"# Nodes: {', '.join(nodes)} | Cores: {cores_per_node}")
         lines.append(f"# Problem: atoms={atoms} kpts={kpoints} nmat={nmat} "
