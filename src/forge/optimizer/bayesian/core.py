@@ -552,6 +552,157 @@ class BayesianOptimizer:
             f"{len(source_X)} source records used."
         )
 
+    def auto_transfer_learn(  # noqa: C901
+        self,
+        target_elements: list[str],
+        top_k: int = 3,
+        min_similarity: float = 0.3,
+    ) -> float:
+        """Automatically transfer knowledge from chemically similar systems.
+
+        Scans the execution history for all records with known elements,
+        computes chemical similarity using the multi-factor scheme from
+        :func:`_chemical_similarity`, and builds a weighted prior for
+        the GP.  The prior mean is blended with the GP prediction via
+        ``transfer_weight * prior + (1 - transfer_weight) * gp`.
+
+        The method returns the aggregate similarity weight (0-1).  If no
+        sufficiently similar systems are found, the transfer weight is
+        set to zero (standard zero-mean GP prior).
+
+        Args:
+            target_elements: Chemical symbols of the target system's
+                             elements (e.g. ``["Fe", "O"]``).
+            top_k: Number of most similar historical systems to use.
+            min_similarity: Minimum chemical similarity to consider a
+                            source system useful.
+
+        Returns:
+            Float similarity weight used for blending.
+        """
+        target_z = {_ELEMENT_ATOMIC_NUMBERS.get(e, 0) for e in target_elements}
+        target_z.discard(0)
+
+        if not target_z:
+            logger.warning("No valid target elements for transfer learning.")
+            self._transfer_mean = None
+            self._transfer_weight = 0.0
+            return 0.0
+
+        all_records = self._history.query(
+            filters={"backend": self.backend, "success": True},
+            order_by="walltime_sec ASC",
+            limit=500,
+        )
+
+        if not all_records:
+            logger.warning("Empty execution history — skipping transfer learning.")
+            self._transfer_mean = None
+            self._transfer_weight = 0.0
+            return 0.0
+
+        system_groups: dict[tuple, list[Any]] = {}
+
+        for rec in all_records:
+            rec_tags = getattr(rec, "tags", None)
+            if not rec_tags:
+                continue
+            if isinstance(rec_tags, str):
+                try:
+                    rec_tags = json.loads(rec_tags)
+                except Exception:
+                    continue
+            rec_elements = [t for t in rec_tags if isinstance(t, str) and t in _ELEMENT_ATOMIC_NUMBERS]
+            if not rec_elements:
+                continue
+            rec_z = {_ELEMENT_ATOMIC_NUMBERS[e] for e in rec_elements}
+            rec_z.discard(0)
+            if not rec_z:
+                continue
+
+            sims = []
+            for tz in target_z:
+                for sz in rec_z:
+                    sims.append(_chemical_similarity(sz, tz))
+            if not sims:
+                continue
+            max_sim = max(sims)
+
+            if max_sim < min_similarity:
+                continue
+
+            key = tuple(sorted(rec_elements))
+            if key not in system_groups:
+                system_groups[key] = []
+            system_groups[key].append(rec)
+
+        system_scores: list[tuple[float, list[Any]]] = []
+        for key, recs in system_groups.items():
+            key_z = {_ELEMENT_ATOMIC_NUMBERS[e] for e in key}
+            key_z.discard(0)
+            sims = []
+            for tz in target_z:
+                for kz in key_z:
+                    sims.append(_chemical_similarity(kz, tz))
+            score = max(sims) if sims else 0.0
+            if score >= min_similarity:
+                system_scores.append((score, recs))
+
+        if not system_scores:
+            logger.info(
+                f"No chemically similar systems found (min similarity={min_similarity}). "
+                f"Using standard GP prior."
+            )
+            self._transfer_mean = None
+            self._transfer_weight = 0.0
+            return 0.0
+
+        system_scores.sort(key=lambda x: -x[0])
+        system_scores = system_scores[:top_k]
+
+        source_X_all = []
+        source_y_all = []
+        weights_all = []
+
+        for sim_score, recs in system_scores:
+            for rec in recs:
+                if rec.walltime_sec <= 0:
+                    continue
+                source_X_all.append(_encode_config(rec.mode, rec.total_cores, rec.omp_threads))
+                source_y_all.append(rec.walltime_sec)
+                weights_all.append(sim_score)
+
+        if len(source_X_all) < 2:
+            logger.warning("Insufficient transfer data — falling back to standard GP prior.")
+            self._transfer_mean = None
+            self._transfer_weight = 0.0
+            return 0.0
+
+        source_X_arr = np.array(source_X_all, dtype=np.float64)
+        source_y_arr = np.array(source_y_all, dtype=np.float64)
+        weights_arr = np.array(weights_all, dtype=np.float64)
+
+        w_sum = weights_arr.sum()
+        transfer_weight = min(1.0, w_sum / len(weights_arr))
+
+        source_gp = _GaussianProcess()
+        source_gp.fit(source_X_arr, source_y_arr)
+
+        self._transfer_mean = source_X_arr.mean(axis=0)
+        self._transfer_weight = transfer_weight
+        self._source_system = ",".join(target_elements)
+
+        self._gp = (
+            _GaussianProcessARD() if self._use_ard else _GaussianProcess()
+        )
+
+        logger.info(
+            f"Auto-transfer: {len(system_scores)} similar systems found, "
+            f"blend weight={transfer_weight:.4f}, "
+            f"{len(source_X_all)} source records used."
+        )
+        return transfer_weight
+
     def suggest_next(
         self,
         nmat: int,

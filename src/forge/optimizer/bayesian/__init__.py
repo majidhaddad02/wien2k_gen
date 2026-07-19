@@ -5,6 +5,7 @@ from .acquisition import (
     compute_expected_improvement,
     compute_q_expected_improvement,
 )
+from .bohb import BOHBOptimizer
 from .constraints import (
     _estimate_memory_gb_for_config,
     _estimate_walltime_min_for_config,
@@ -34,6 +35,7 @@ __all__ = [
     "_FIDELITY_CORRELATION",
     "_FIDELITY_COST",
     "_NUGGET",
+    "BOHBOptimizer",
     "BayesianOptimizer",
     "MultiFidelityBayesianOptimizer",
     "_GaussianProcess",
