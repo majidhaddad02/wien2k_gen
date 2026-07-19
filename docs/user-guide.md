@@ -333,7 +333,7 @@ The Bayesian hyperparameter optimizer tunes 5 parameters simultaneously:
 | GMAX | [10.0, 20.0] | Continuous |
 | LMAX APW | [8, 12] | Discrete |
 
-Uses Matérn ν=2.5 kernel (Snoek et al. 2012) for modeling non-smooth SCF convergence surfaces. Supports q-batch Expected Improvement for parallel evaluation of up to 4 candidates simultaneously.
+Uses Matérn ν=2.5 kernel (Snoek et al. 2012) for modeling non-smooth SCF convergence surfaces. Supports q-batch Expected Improvement via Monte Carlo joint posterior sampling for parallel evaluation of up to 4 candidates simultaneously (Ginsbourger et al. 2010).
 
 ### GPU Offloading
 

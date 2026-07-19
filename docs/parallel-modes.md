@@ -101,53 +101,32 @@ Similar to MPI fine-grain but with proportional reduction from atom decompositio
 
 ## Selection Algorithm
 
-The optimizer uses a scoring system:
+The optimizer makes mode selection decisions based on problem parameters:
 
-<!-- TODO: verify scoring formula against code -->
+- **kpoints ≥ 2×total_cores** and **atoms < 20** → kpoint mode (embarrassingly parallel)
+- **5000 < nmat ≤ 10000** and **NUMA nodes > 1** → hybrid NUMA-aware
+- **nmat > 10000** → fine-grain MPI with potential granularity
+- **nmat > 8000** and **ELPA available** → ELPA2 solver
+- **nmat < 500** → serial LAPACK (ELPA overhead exceeds benefit)
 
-```python
-score(mode) = w_kpt × kpoint_efficiency +
-              w_mat × matrix_parallelism +
-              w_mem × memory_headroom +
-              w_comm × communication_cost
-```
-
-Where:
-- **kpoint_efficiency** = min(1.0, kpoints / total_cores)
-- **matrix_parallelism** = min(1.0, nmat / nmat_threshold)
-- **memory_headroom** = (available_ram - estimated_memory) / available_ram
-- **communication_cost** = 1.0 for kpoint, 0.5 for hybrid, 0.2 for mpi, 0.1 for fine_grain
-
-The mode with the highest weighted score wins, subject to the user's `--target` preference:
-
-| Target | Preference |
-|--------|-----------|
-| `time` | Maximize throughput, prefer more parallelism |
-| `energy` | Minimize communication (network + inter-node traffic) |
-| `cost` | Minimize core-hours (efficiency > throughput) |
-| `balanced` | Equal weight to all factors |
+The final recommendation incorporates:
+- User `--target` preference (time, energy, cost, balanced)
+- Amdahl saturation analysis
+- Memory bandwidth constraints (< 50 GB/s → memory-bound warning)
+- GPU acceleration potential when detected
 
 ---
 
 ## Amdahl's Law Saturation
 
-The optimizer uses Amdahl's Law to prevent oversubscription:
+The optimizer estimates Amdahl saturation to prevent oversubscription:
 
 ```
-serial_fraction = MAX(
-    lapw0_overhead(atoms),     # 0.15 for <4 atoms, 0.02 for >100
-    iobw_penalty(scratch_fs),  # 0.05 for NFS, 0.01 for NVMe
-    ncomm_overhead(nodes),     # 0.02 per additional node
-)
-
-max_speedup = 1.0 / serial_fraction
-max_efficient_cores = kpoints × max_speedup / (max_speedup - 1 + kpoints/cores)
+amdahl_speedup = 1.0 / (serial_fraction + (1 - serial_fraction) / total_cores)
+efficiency_percent = (amdahl_speedup / total_cores) * 100
 ```
 
-If the user requests more cores than `max_efficient_cores`, the tool warns of saturation.
+The serial fraction is estimated from problem characteristics (atoms, scratch filesystem, node count) and clamped to [0.001, 0.99]. When efficiency drops below the target threshold, the tool warns that adding cores is counterproductive.
 
 **References:**
 - Amdahl, G. M. (1967). *AFIPS Conference Proceedings*, 30, 483-485.
-- Hager, G. & Wellein, G. (2010). *Introduction to High Performance Computing for Scientists and Engineers*. CRC Press.
-- Blaha, P. et al. (2020). *J. Chem. Phys.* 152, 074101.
-- Cebrián, J. M. et al. (2015). *Comput. Phys. Commun.* 201, 85-99.

@@ -250,7 +250,7 @@ Encoding function: `_encode_tuning_config()` at `bayesian_tuner.py:56`. Total: *
 | Confidence | `1 / (1 + 3 * std(prediction))` |
 | Optimizer | Adam (pure numpy): `lr=0.001`, `β₁=0.9`, `β₂=0.999` |
 | Loss | MSE on normalized k-point grid |
-| Gradient computation | Finite differences (central, `ε=1e-4`) |
+| Gradient computation | Analytical backpropagation (chain rule through MLP + conv layers) |
 | Parameters | `conv1: (4×64)` + `3 × conv_i: (64×64)` + `fc1: (128×128)` + `fc2: (128×3)` |
 
 ### GP: Gaussian Process
@@ -297,8 +297,8 @@ Encoding function: `_encode_tuning_config()` at `bayesian_tuner.py:56`. Total: *
 2. For each structure: build crystal graph (`build_crystal_graph`), encode target as `(kx/12, ky/12, kz/12)`
 3. Train for `epochs=80` with `lr=0.001`
 4. Each epoch: shuffle graphs, train one-by-one with Adam
-5. Loss: MSE over normalized k-point grid
-6. Converges to loss < 0.01 typically in ~45 epochs
+5. Loss: MSE over normalized k-point grid via analytical backpropagation
+6. Converges to loss < 0.01 in ~30-45 epochs on synthetic data
 7. Auto-save to `~/.forge/models/gnn_kpoint_v1.npz`
 
 ### GP Training

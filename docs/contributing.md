@@ -39,41 +39,108 @@ python -m pytest tests/ -v -m "slow or integration"
 
 ```
 src/forge/
-├── backends/          # DFT code backends (wien2k, vasp, qe, cp2k)
-│   └── base.py        # Abstract base + ProblemSize, ResourceEstimate TypedDicts
-├── core/              # Core detection and optimization
-│   ├── hardware.py    # CPU, memory, NUMA, interconnect detection
-│   ├── topology.py    # Topology representation and distribution
-│   ├── scheduler.py   # SLURM, PBS, LSF, SGE detection
-│   ├── builder.py     # Configuration build pipeline
-│   ├── pipeline.py    # End-to-end orchestration
-│   ├── case_parser.py # WIEN2k input file parser
-│   └── constants.py   # Physical constants
-├── optimizer/         # Resource optimization
-│   ├── advisor.py     # suggest_optimal_resources()
-│   ├── monitor.py     # SCF convergence monitoring
-│   ├── profiler.py    # Auto-profiling
-│   ├── history.py     # Execution history analysis
-│   └── bayesian.py    # Bayesian optimization
-├── submit/            # Scheduler job submission
+├── backends/              # DFT code backends
+│   ├── base.py            # Abstract backend + ProblemSize, ResourceEstimate
+│   ├── elpa_selector.py   # ELPA/ScaLAPACK solver selection
+│   ├── gpu_backend.py     # GPU detection and strategy
+│   ├── vasp.py            # VASP backend
+│   ├── cp2k.py            # CP2K backend
+│   ├── wien2k/            # WIEN2k backend
+│   │   ├── core.py        # Main WIEN2k backend
+│   │   └── parsers.py     # WIEN2k output parsers
+│   └── quantum_espresso/  # Quantum ESPRESSO backend
+│       ├── backend.py
+│       ├── executor.py
+│       └── parser.py
+├── core/                  # Core detection and optimization
+│   ├── hardware/          # Hardware detection (CPU, memory, NUMA)
+│   │   ├── cpu.py         # CPU architecture detection
+│   │   ├── detection.py   # Hardware feature detection
+│   │   ├── system.py      # System-level info
+│   │   ├── wrapper.py     # lscpu/likwid wrapper
+│   │   └── types.py       # Hardware type definitions
+│   ├── topology.py        # Topology representation and BLACS grid
+│   ├── scheduler.py       # SLURM, PBS, LSF, SGE detection
+│   ├── builder.py         # Configuration build pipeline
+│   ├── pipeline.py        # End-to-end orchestration
+│   ├── case_parser.py     # WIEN2k input file parser (in1, in2, inm, scf, struct)
+│   ├── workflow.py        # DAG-based workflow representation
+│   ├── workflow_executor.py  # DAG runtime engine (mixing, Kerker, CFP)
+│   ├── constants.py       # Physical constants
+│   ├── energy.py          # RAPL energy measurement
+│   ├── perf_counters.py   # likwid-perfctr / perf stat interface
+│   ├── electronic_structure.py  # Band structure analysis
+│   ├── materials_project.py     # Materials Project integration
+│   ├── terminal_monitor.py      # Terminal progress display
+│   └── locator.py         # WIENROOT auto-detection
+├── optimizer/             # Resource & parameter optimization
+│   ├── advisor.py         # suggest_optimal_resources()
+│   ├── parallel.py        # NUMA-aware parallelization engine
+│   ├── convergence.py     # SCF convergence analysis
+│   ├── history.py         # Execution history SQLite store
+│   ├── profiler.py        # Auto-profiling
+│   ├── bayesian_tuner.py  # Bayesian parameter tuning entry point
+│   ├── ml_predict.py      # ML prediction integration
+│   ├── gpu_detector.py    # GPU hardware detection
+│   ├── bayesian/          # Bayesian optimization subpackage
+│   │   ├── core.py        # BayesianOptimizer, multi-fidelity BO
+│   │   ├── gp.py          # GP with ARD, NLL, partial derivative
+│   │   ├── kernels.py     # RBF-ARD, Matérn ν=2.5 kernels
+│   │   ├── acquisition.py # EI, q-EI (Monte Carlo joint posterior)
+│   │   ├── elements.py    # Periodic table, chemical similarity
+│   │   ├── sampling.py    # Latin Hypercube Sampling
+│   │   └── constraints.py # Memory/walltime constraint estimation
+│   └── monitor/           # SCF convergence monitoring
+│       ├── convergence.py # Charge sloshing, Durbin-Watson, FFT
+│       ├── checkpoint.py  # SCF checkpoint/restore (heuristic, not Daly)
+│       ├── engine.py      # Monitoring engine
+│       └── types.py       # ConvergenceAnalysis type
+├── ml/                    # Machine learning
+│   └── gnn_kpoint_predictor.py  # CGCNN k-point prediction (pure NumPy)
+├── submit/                # Scheduler job submission
 │   ├── slurm.py
 │   ├── pbs.py
 │   └── lsf.py
-├── utils/             # Utilities
+├── utils/                 # Utilities
 │   ├── parallel_options.py  # parallel_options generation
 │   ├── validation.py        # .machines validation
 │   ├── diagnostic.py        # System diagnostics
-│   └── ...
-├── cli.py             # Rich CLI
-├── wizard.py          # Interactive wizard
-├── backend_manager.py # Backend registration
-├── ui/                # User interfaces
-│   ├── rich_ui.py     # Rich text UI utilities
-│   ├── analysis.py    # UI analysis helpers
-│   └── ...
-├── types.py           # Type definitions and enums
-├── config.py          # Configuration management
-└── exceptions.py      # Custom exceptions
+│   ├── export.py            # JSON export
+│   ├── scratch.py           # Scratch filesystem helpers
+│   ├── atomic_write.py      # Atomic file writes
+│   ├── filelock.py          # File locking
+│   └── subprocess_utils.py
+├── cli_commands/          # CLI subcommands
+│   ├── generate.py        # forge generate
+│   ├── submit.py          # forge submit
+│   ├── advise.py          # forge advise
+│   ├── diagnose.py        # forge diagnose
+│   ├── benchmark.py       # forge benchmark
+│   ├── optimize.py        # forge optimize
+│   ├── predict.py         # forge predict
+│   ├── diagnostics.py     # forge diagnostics
+│   ├── monitor.py         # forge monitor
+│   ├── screen.py          # forge screen
+│   ├── workflow.py        # forge workflow
+│   ├── history.py         # forge history
+│   ├── run.py             # forge run
+│   ├── converge.py        # forge converge
+│   ├── tui.py             # forge tui
+│   ├── hardware.py        # forge hardware
+│   ├── analyze.py         # forge analyze
+│   └── analyze_bands.py   # forge analyze_bands
+├── ui/                    # User interfaces
+│   ├── rich_ui.py         # Rich text UI utilities
+│   └── analysis.py        # UI analysis helpers
+├── benchmark/             # Benchmarking
+│   ├── synthetic.py       # LogP + Amdahl synthetic benchmarks
+│   └── real.py            # Real-world scaling benchmarks
+├── cli.py                 # Main CLI entry point
+├── wizard.py              # Interactive wizard (Textual TUI)
+├── backend_manager.py     # Backend registration
+├── config.py              # Configuration management
+├── types.py               # Type definitions and enums
+└── exceptions.py          # Custom exceptions
 ```
 
 ## Adding a New Backend

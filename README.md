@@ -72,12 +72,12 @@ forge_wizard                           # interactive configuration
 - Charge sloshing root cause diagnosis (metallic/symmetry/core-overlap/mixing)
 - QTL-B error root cause analysis with targeted fixes
 - SCF divergence detection (catastrophic/monotonic_drift/charge_sloshing/stalled)
-- Automatic checkpointing with incremental file copy (Daly 2006, J. Phys.: Conf. Ser. 46, 514-518)
-- Adaptive checkpoint intervals: <20% walltime → 5 cycles, <50% → 10, else → 15
+- Automatic checkpointing with incremental file copy (heuristic interval, not Daly formula) — see Daly 2006, FGCS 22(3), 303-312 for optimal derivation
+- Adaptive checkpoint intervals: <20 cycles → 5, <50 → 10, else → 15
 
 ### ML & AI-Assisted Optimization
 - Bayesian hyperparameter optimization with Matérn ν=2.5 kernel (Snoek et al. 2012)
-- Expected Improvement (EI) and q-batch EI acquisition functions
+- Expected Improvement (EI) and q-batch EI acquisition functions (Monte Carlo joint posterior sampling — Ginsbourger et al. 2010)
 - Latin Hypercube Sampling for uniform search space coverage
 - Physics-informed priors (element-aware RKMAX/mixing/kpt constraints)
 - GNN-based k-point grid prediction (CGCNN architecture, pure NumPy inference)

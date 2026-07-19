@@ -301,8 +301,8 @@ Main optimization function. Returns ResourceSuggestion with `mode`, `recommended
 }
 ```
 
-#### `estimate_memory_footprint_gb(nmat, nbands=None, rkmax=7.0, atoms=10, is_soc=False, is_hybrid=False, total_cores=1, omp_threads=1) -> float`
-Memory requirement estimate in GB.
+#### `estimate_memory_footprint_gb(nmat, nbands=None, rkmax=7.0, atoms=10, is_soc=False, is_hybrid=False, is_dftu=False, is_vdw=False, total_cores=1, omp_threads=1) -> float`
+Memory requirement estimate in GB per MPI rank. Accounts for Hamiltonian/eigenvector distribution, charge density, FFT grids, and optional DFT+U / VDW overhead.
 
 #### `roofline_crossover_analysis(hw_profile: dict, oi: float, target_backend: str) -> dict`
 Roofline model analysis with compute/memory-bound identification and crossover point.
@@ -327,16 +327,16 @@ from forge.optimizer.bayesian import (
 ```
 
 #### `matern_kernel(x1, x2, length_scales, nu=2.5) -> np.ndarray`
-Matérn ν=2.5 kernel: `(1 + √5·r + 5r²/3) × exp(-√5·r)`. Preferred over RBF for non-smooth SCF convergence surfaces (Snoek et al. 2012, NIPS 25, 2951–2959).
+Matérn kernel (currently ν=2.5 only; `nu` parameter is accepted for API compatibility but hardcoded). Formula: `(1 + √5·r + 5r²/3) × exp(-√5·r)`. Preferred over RBF for non-smooth SCF convergence surfaces (Snoek et al. 2012, NIPS 25, 2951–2959).
 
 #### `rbf_kernel_ard(x1, x2, length_scales) -> np.ndarray`
 RBF kernel with Automatic Relevance Determination (per-dimension length scales).
 
 #### `compute_expected_improvement(mu, sigma, best_y, xi=0.01) -> float`
-Single-point Expected Improvement acquisition function. EI(x) = σ·(z·Φ(z) + φ(z)).
+Single-point Expected Improvement acquisition function. EI(x) = σ·(z·Φ(z) + φ(z)) where z = (best_y - mu - xi)/σ for minimization.
 
-#### `compute_q_expected_improvement(mu, var, best_y, q=4, xi=0.01, n_mc_samples=500) -> np.ndarray`
-q-batch Expected Improvement for parallel evaluation of up to q points simultaneously (Ginsbourger et al. 2010).
+#### `compute_q_expected_improvement(gp, X_candidates, best_y, q=4, n_mc_samples=500, xi=0.01) -> list[int]`
+q-batch Expected Improvement using Monte Carlo joint posterior sampling (Ginsbourger et al. 2010). Returns list of q candidate indices for parallel evaluation, selected greedily from posterior samples.
 
 #### `latin_hypercube_sampling(bounds, n_samples, random_state=None) -> np.ndarray`
 Uniform search space coverage for BO initialisation (McKay et al. 1979).
@@ -471,10 +471,10 @@ Restores SCF state from most recent checkpoint.
 Reads walltime from SLURM `scontrol` or PBS `qstat -f`. Returns `walltime_limit_sec`, `elapsed_sec`, `remaining_sec`, `remaining_pct`.
 
 #### `calculate_checkpoint_interval(remaining_time_sec, time_per_cycle_sec=300.0) -> int`
-Adaptive checkpoint interval (Daly 2006, J. Phys.: Conf. Ser. 46, 514-518):
-- remaining < 20% → 5 cycles
-- remaining < 50% → 10 cycles
-- remaining ≥ 50% → 15 cycles
+Adaptive checkpoint interval (heuristic; see Daly 2006, FGCS 22(3), 303-312 for optimal formula):
+- < 20 cycles remaining → 5 cycle interval
+- < 50 cycles remaining → 10 cycle interval
+- >= 50 cycles → 15 cycle interval
 
 #### `perform_incremental_checkpoint(case_name, checkpoint_dir=".checkpoints", nowrite_vector=False, is_soc=False) -> Dict`
 Copies only modified files. Returns `checkpoint_id`, `files_copied`, `size_mb`.
@@ -566,7 +566,7 @@ GNN-based k-point grid prediction.
 }
 ```
 
-Confidence < 0.70 triggers MP grid fallback.
+Confidence < 0.60 triggers MP grid fallback.
 
 #### `CGCNNModel`
 Lightweight 4-layer graph convolution network with residual connections, global mean+max pooling, and 2-layer MLP head. Pure NumPy — zero PyTorch dependency.

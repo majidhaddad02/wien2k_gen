@@ -71,13 +71,13 @@ forge_wizard                          # interactive wizard
 ### SCF Convergence Optimization
 - Smart Kerker q0 based on system type (Winkelmann et al. 2020, PRB 102, 195138)
 - Restarted Pulay mixing for large systems (Pratapa & Suryanarayana 2015)
-- Automatic checkpointing with adaptive intervals (Daly 2006)
+- Automatic checkpointing (heuristic, see Daly 2006 FGCS 22(3) for optimal formula)
 - Charge sloshing root cause diagnosis with targeted remediation
 - QTL-B error analysis with specific fix recommendations
 
 ### ML & AI Assistance
 - Bayesian optimization with Matérn ν=2.5 kernel (Snoek et al. 2012)
-- q-batch Expected Improvement for parallel evaluation
+- q-batch Expected Improvement via Monte Carlo joint posterior (Ginsbourger et al. 2010)
 - GNN-based k-point prediction (CGCNN architecture)
 - Physics-informed parameter priors
 - History-driven warm-start from execution database
