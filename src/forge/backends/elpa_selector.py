@@ -182,12 +182,6 @@ def get_optimal_block_size(nmat: int, total_cores: int) -> int:
 
     sca_block = round(nmat / sqrt_cores / 3.0)
     sca_block = max(32, min(512, sca_block))
-
-    if nmat >= 20000 or nmat >= 10000:
-        pass
-    else:
-        pass
-
     return sca_block
 
 

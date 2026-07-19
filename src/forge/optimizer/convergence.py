@@ -744,12 +744,18 @@ def generate_convergence_report(results: dict[str, Any]) -> str:
 def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]] = None, callback=None) -> dict:  # noqa: C901
     """Detect SCF divergence and recommend automatic recovery actions.
 
-    Divergence signatures:
+    Divergence signatures (energies from :ENE line are in Ry, not eV):
       - Monotonic energy increase over 10+ cycles → unstable mixing
-      - Oscillating energy ±10 eV → charge sloshing
+      - Oscillating energy ± 0.01 Ry (~0.14 eV) → charge sloshing
       - Exploding energy > 1e5 → catastrophic divergence
       - Gap oscillation for metallic systems → need smearing
       - Stuck energy (flat for 20+ cycles) → stalled convergence
+
+    Severity calibration:
+      - charge_sloshing:  severity = min(1.0, max_amplitude / 0.01 Ry)
+      - monotonic_drift:  severity = min(1.0, |drift_rate| / 1.0 Ry/cycle)
+      - catastrophic:     severity = 1.0 (always maximum)
+      - stalled:          severity = 0.5
 
     Args:
         scf_content: Raw SCF output text to parse.
@@ -811,7 +817,7 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
             drift_rate = sum(d for d in recent_deltas if d > 0) / max(positive_count, 1)
             result["divergent"] = True
             result["divergence_type"] = "monotonic_drift"
-            result["severity"] = min(1.0, abs(drift_rate) / 10.0)
+            result["severity"] = min(1.0, abs(drift_rate) / 1.0)
             result["recommended_action"] = (
                 f"Energy drifting upward ({drift_rate:.3f} Ry/cycle). "
                 f"Reduce mixing beta 3x and increase PRATT to 5 cycles. "

@@ -109,12 +109,12 @@ class TestExpectedImprovement:
         assert ei > 0.0
 
     def test_zero_improvement_when_mu_much_worse(self):
-        ei = compute_expected_improvement(mu=0.0, sigma=0.5, best_y=5.0)
+        ei = compute_expected_improvement(mu=1000.0, sigma=0.5, best_y=5.0)
         assert ei < 1e-10
 
     def test_exploration_xi_effect(self):
-        ei_small_xi = compute_expected_improvement(mu=6.0, sigma=1.0, best_y=5.0, xi=0.01)
-        ei_large_xi = compute_expected_improvement(mu=6.0, sigma=1.0, best_y=5.0, xi=0.5)
+        ei_small_xi = compute_expected_improvement(mu=4.0, sigma=1.0, best_y=5.0, xi=0.01)
+        ei_large_xi = compute_expected_improvement(mu=4.0, sigma=1.0, best_y=5.0, xi=0.5)
         assert ei_small_xi > ei_large_xi
 
     def test_very_small_sigma(self):

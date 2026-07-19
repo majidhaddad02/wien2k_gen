@@ -39,7 +39,6 @@ def latin_hypercube_sampling(
         interval_width = (high - low) / n_samples
         for i in range(n_samples):
             lower = low + i * interval_width
-            lower + interval_width
             samples[i, d] = lower + rng.uniform(0.0, interval_width)
 
     for d in range(dims):

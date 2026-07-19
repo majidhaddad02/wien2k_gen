@@ -8,54 +8,100 @@ _DEFAULT_EI_THRESHOLD = 0.001
 
 
 def compute_q_expected_improvement(
-    mu: np.ndarray,
-    var: np.ndarray,
+    gp,                       # _GaussianProcess — fitted GP model
+    X_candidates: np.ndarray,  # candidate points (n, d)
     best_y: float,
     q: int = 4,
     xi: float = 0.01,
     n_mc_samples: int = 500,
-) -> np.ndarray:
+) -> list[int]:
     """
-    q-batch Expected Improvement for parallel Bayesian optimization.
+    q-batch Expected Improvement via greedy Monte Carlo joint posterior sampling.
 
-    Instead of selecting one point at a time (single EI), q-EI selects
-    a batch of q points simultaneously using Monte Carlo estimation.
-    This enables parallel evaluation of 4-8 candidates, reducing total
-    optimization wallclock from ~20h to ~3h.
+    Instead of selecting one point at a time (single EI), q-EI selects a batch of q
+    points simultaneously, accounting for the joint posterior correlation between them.
+    This prevents selecting redundant points that cluster in the same region.
 
-    Based on Ginsbourger et al. (2010) "Kriging Is Well-Suited to Parallelize
-    Optimization" and Wang, Clark, Liu & Frazier (2016), arXiv:1602.05149.
+    Algorithm (Ginsbourger et al. 2010):
+      1. Build joint posterior covariance K_joint over all candidates
+      2. Greedy selection: at each step, pick the candidate that maximises
+         E[max(0, max_{s in selected+candidate} f_s - best_y - xi)]
+      3. Estimate the expectation via Cholesky-based Monte Carlo sampling from
+         the multivariate normal posterior of selected + candidate points
 
     Args:
-        mu: Posterior mean at candidate points (shape (n,)).
-        var: Posterior variance at candidate points (shape (n,)).
-        best_y: Best observed value so far.
-        q: Batch size (number of points to select simultaneously).
+        gp: Fitted _GaussianProcess with _X_train, _alpha, length_scales.
+        X_candidates: Candidate points (n_candidates, d).
+        best_y: Best observed value (minimisation).
+        q: Number of points to select in the batch.
         xi: Exploration parameter.
-        n_mc_samples: Number of Monte Carlo samples for q-EI estimation.
+        n_mc_samples: Number of Monte Carlo samples per candidate evaluation.
 
     Returns:
-        q-EI values per candidate (shape (n,)).
+        List of q indices into X_candidates, selected greedily.
     """
-    _EPS = 1e-8
+    from .kernels import rbf_kernel_ard
 
-    n = len(mu)
-    sigma = np.sqrt(np.maximum(var, _EPS))
-    q_ei = np.zeros(n)
+    n_candidates = len(X_candidates)
+    if n_candidates == 0 or q <= 0:
+        return []
 
-    improvement = best_y - mu - xi
-    z = np.divide(improvement, sigma, out=np.zeros_like(mu), where=sigma > _EPS)
+    q = min(q, n_candidates)
 
-    pdf_z = (1.0 / math.sqrt(2.0 * math.pi)) * np.exp(-0.5 * z ** 2)
-    cdf_z = 0.5 * (1.0 + np.vectorize(math.erf)(z / math.sqrt(2.0)))
+    mu_full, _var_full = gp.predict(X_candidates)
+    mu_full = mu_full.ravel()
 
-    ei_single = improvement * cdf_z + sigma * pdf_z
-    ei_single = np.maximum(ei_single, 0.0)
+    # Posterior covariance between candidates:
+    #   cov(f_test) = K_tt - K_ttrain @ inv(K_train) @ K_traint
+    # Compute from stored GP decomposition for numerical stability.
+    K_tt = rbf_kernel_ard(X_candidates, X_candidates, gp.length_scales)
 
-    q_penalty = 1.0 / math.sqrt(float(q))
-    q_ei = ei_single * q_penalty
+    if gp._X_train is not None and gp._alpha is not None:
+        K_t_train = rbf_kernel_ard(X_candidates, gp._X_train, gp.length_scales)
+        v = np.linalg.solve(gp._L, K_t_train.T)
+        K_posterior = K_tt - v.T @ v
+    else:
+        K_posterior = K_tt
 
-    return q_ei
+    jitter = max(1e-6, np.max(np.diag(np.abs(K_posterior))) * 1e-8)
+    K_posterior += jitter * np.eye(n_candidates, dtype=np.float64)
+
+    selected: list[int] = []
+    rng = np.random.RandomState()
+
+    for _step in range(q):
+        best_qei = -float("inf")
+        best_idx = -1
+
+        for i in range(n_candidates):
+            if i in selected:
+                continue
+
+            joint_idx = np.array([*selected, i], dtype=int)
+            mu_joint = mu_full[joint_idx].astype(np.float64)
+            K_joint = K_posterior[joint_idx][:, joint_idx].astype(np.float64)
+
+            try:
+                L = np.linalg.cholesky(K_joint)
+            except np.linalg.LinAlgError:
+                K_joint += jitter * np.eye(len(joint_idx), dtype=np.float64)
+                L = np.linalg.cholesky(K_joint)
+
+            samples = L @ rng.randn(len(joint_idx), n_mc_samples) + mu_joint.reshape(-1, 1)
+            max_per_sample = np.max(samples, axis=0)
+            improvements = np.maximum(0, max_per_sample - best_y - xi)
+            q_ei_val = float(np.mean(improvements))
+
+            if q_ei_val > best_qei:
+                best_qei = q_ei_val
+                best_idx = i
+
+        if best_idx >= 0:
+            selected.append(best_idx)
+        else:
+            break
+
+    return selected
 
 
 def compute_expected_improvement(
@@ -68,7 +114,7 @@ def compute_expected_improvement(
     Expected Improvement acquisition function.
 
     EI(x) = sigma(x) * (z * Phi(z) + phi(z))
-    where z = (mu(x) - best_y - xi) / sigma(x)
+    where z = (best_y - mu(x) - xi) / sigma(x)   (minimisation)
     and Phi, phi are the standard normal CDF and PDF respectively.
 
     For sigma == 0, returns 0.0 (no uncertainty = no improvement potential).
@@ -87,7 +133,7 @@ def compute_expected_improvement(
     if sigma < _EPS:
         return 0.0
 
-    improvement = mu - best_y - xi
+    improvement = best_y - mu - xi
     z = improvement / sigma
 
     pdf_z = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * z * z)

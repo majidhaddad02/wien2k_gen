@@ -80,15 +80,19 @@ def calculate_checkpoint_interval(
     remaining_time_sec: float,
     time_per_cycle_sec: float = 300.0,
 ) -> int:
-    """Calculate adaptive checkpoint interval using Daly (2006) heuristic.
+    """Calculate adaptive checkpoint interval based on remaining walltime budget.
 
-    Daly (2006), J. Phys.: Conf. Ser. 46, 514-518.
-    DOI: 10.1088/1742-6596/46/1/071.
+    Densifies checkpoints as the allocation deadline approaches to minimise
+    lost work in the event of preemption:
 
-    In practice, densify checkpoints as remaining walltime shrinks:
-        remaining < 20% total_walltime  → interval = 5 cycles  (urgent)
-        remaining < 50% total_walltime  → interval = 10 cycles (moderate)
-        remaining >= 50% total_walltime → interval = 15 cycles (relaxed)
+        < 20 cycles remaining  → interval =  5 cycles (urgent)
+        < 50 cycles remaining  → interval = 10 cycles (moderate)
+        >= 50 cycles remaining → interval = 15 cycles (relaxed)
+
+    This is a simple stepped heuristic, not the optimal check-pointing
+    formula from Daly (2006, Future Generation Computer Systems 22(3),
+    303-312).  The latter requires MTBF estimates and measured I/O cost,
+    which are system-dependent and rarely available in HPC batch environments.
 
     Falls back to 15 if time_per_cycle is zero.
     """

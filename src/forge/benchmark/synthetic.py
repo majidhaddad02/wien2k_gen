@@ -82,7 +82,8 @@ class LogPParameters:
     References
     ----------
     Culler et al. 1993 "LogP: Towards a Realistic Model of Parallel Computation"
-    Hoefler et al. 2010 "LogP - A Simple, Realistic Communication Model for HPC"
+    Hoefler et al. 2010 (Procedia Computer Science) — LogP parameter measurement;
+    exact title of the cited work could not be independently verified.
     """
     L: float = 1.0e-6       # Network latency (seconds)
     o: float = 1.0e-7       # CPU overhead per message (seconds)
@@ -287,8 +288,8 @@ def estimate_logp_communication(
     ----------
     Culler et al. 1993, "LogP: Towards a Realistic Model of Parallel
     Computation", PPoPP.
-    Hoefler et al. 2010, "LogP - A Simple, Realistic Communication Model
-    for HPC", SC10.
+    Hoefler et al. 2010, LogP parameter measurement (Procedia Computer Science);
+    exact title could not be independently verified.
     """
     P = max(2, total_cores)
     G = float(message_size_bytes)
@@ -346,10 +347,10 @@ class WorkloadSimulator:
         if total_cores == 0: 
             total_cores = 1
         
-        # Amdahl's Law / Efficiency scaling
+        # Amdahl's Law speedup: S(N) = 1 / (f + (1-f)/N)
         # Serial fraction decreases with problem size (larger problems parallelize better)
         serial_fraction = 0.05 / (1.0 + math.log10(max(1, nmat)))
-        parallel_efficiency = 1.0 / (serial_fraction + (1.0 - serial_fraction) / total_cores)
+        amdahl_speedup = 1.0 / (serial_fraction + (1.0 - serial_fraction) / total_cores)
         
         # 4. Compute Theoretical Time (Roofline)
         if self.config.enable_roofline:
@@ -369,7 +370,7 @@ class WorkloadSimulator:
                 bottleneck = "cpu"
         else:
             # Simple estimation
-            time_sec = total_flops / (peak_flops * total_cores * parallel_efficiency)
+            time_sec = total_flops / (peak_flops * amdahl_speedup)
             bottleneck = "hybrid"
 
         # 5. Adjust for MPI/IO Overhead (LogP model, auto-detected interconnect)
@@ -394,11 +395,11 @@ class WorkloadSimulator:
             time_sec *= (1.0 + self.config.io_penalty_factor * 0.2)
             bottleneck = "io"
 
-        # 6. Scale by Efficiency
+        # 6. Scale by Amdahl speedup
         # In the Roofline model, we calculated single-node or saturated time.
-        # We need to divide by cores * efficiency for parallel speedup approximation.
+        # Apply Amdahl's Law: parallel_time = serial_time / S(N).
         if total_cores > 1:
-            time_sec = time_sec / (total_cores * parallel_efficiency)
+            time_sec = time_sec / amdahl_speedup
 
         # 7. Add Noise (Stochastic variance)
         noise = 1.0 + random.gauss(0, self.config.noise_level)
@@ -415,12 +416,13 @@ class WorkloadSimulator:
             "theoretical_time_sec": round(time_sec, 4),
             "simulated_time_sec": round(simulated_time, 4),
             "speedup": 0.0,  # Calculated relative to base later
-            "efficiency_percent": round(parallel_efficiency * 100, 2),
+            "efficiency_percent": round(amdahl_speedup / total_cores * 100, 2),
             "bottleneck": bottleneck,
             "metadata": {
                 "flops_estimated": total_flops,
                 "traffic_gb": total_traffic_gb,
-                "parallel_efficiency": parallel_efficiency,
+                "amdahl_speedup": round(amdahl_speedup, 2),
+                "serial_fraction": round(serial_fraction, 4),
                 "mpi_penalty_ms": mpi_penalty_sec * 1000,
                 "davidson_nbands": nbands if nbands > 0 else int(0.6 * nmat),
                 "logp_model": ic_type if ic_type else "infiniband_edr",

@@ -3,21 +3,23 @@
 import math
 
 
-def _estimate_memory_gb_for_config(nmat: int, total_cores: int) -> float:
+def _estimate_memory_gb_for_config(nmat: int, total_cores: int, omp_threads: int = 1) -> float:
     """
     Per-rank memory estimate for a given MPI/OpenMP configuration.
 
     In ScaLAPACK/ELPA block-cyclic distribution, the Hamiltonian matrix
-    is distributed across MPI ranks, so per-rank memory scales as nmat²/ranks.
+    is distributed across MPI ranks (NOT total cores), so per-rank memory
+    scales as nmat²/ranks. In hybrid mode, ranks = total_cores // omp_threads.
 
     Args:
         nmat: Hamiltonian matrix size.
-        total_cores: Total CPU cores (MPI ranks x OMP threads).
+        total_cores: Total CPU cores (MPI ranks x OpenMP threads).
+        omp_threads: OpenMP threads per MPI rank (1 for pure MPI/kpoint).
 
     Returns:
         Estimated per-rank memory in GB.
     """
-    ranks = max(1, total_cores)
+    ranks = max(1, total_cores // max(1, omp_threads))
     # Aggregate matrix memory, then divide by ranks for block-cyclic distribution
     aggregate_gb = (float(nmat) ** 2.0) * 16.0 / (1024.0 ** 3)
     per_rank_gb = aggregate_gb / float(ranks)

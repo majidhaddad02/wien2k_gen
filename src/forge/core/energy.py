@@ -396,7 +396,12 @@ def measure_energy_section(start: bool, label: str = "unnamed") -> Optional[_Ene
 # Empirical Energy-per-SCF-Cycle Estimation
 # =============================================================================
 
-# Empirically calibrated constants based on benchmark data from:
+# Empirically calibrated constants. NOTE: calibration scripts and measurement
+# data are not present in the repository. The constants below are approximate
+# and should be re-calibrated against actual RAPL measurements on target hardware
+# before relying on absolute energy estimates.
+#
+# Reference platforms:
 # - Intel Xeon Platinum (Skylake/Ice Lake)
 # - AMD EPYC Milan/Genoa
 # - NVIDIA A100 (for GPU-accelerated builds)

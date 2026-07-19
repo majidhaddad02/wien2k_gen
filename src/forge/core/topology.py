@@ -57,8 +57,11 @@ def factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> tuple[int, i
     until divisibility, producing an optimal 2D processor grid for ELPA Stage 2.
 
     For prime total_ranks where no 2D factorization exists, the function returns
-    (1, total_ranks) — a 1D grid — which is known to cause up to 40% efficiency
-    loss in ScaLAPACK/ELPA (Marek et al. 2014). Callers must handle this case
+    (1, total_ranks) — a 1D grid — which degrades performance compared to
+    square grids. The exact penalty is problem-dependent; empirical studies
+    (e.g. Marek et al. 2014, J. Phys.: Condens. Matter 26, 213201) show
+    square grids outperform 1D, but the "40%" figure requires verification
+    against the full-text article. Callers must handle this case
     by redistributing ranks or selecting a nearby composite count.
 
     Reference:
@@ -94,7 +97,7 @@ def _is_blacs_friendly(n: int) -> bool:
     Check if n can be factorized into p x q where both p > 1 and q > 1.
 
     Per Marek et al. 2014 (ELPA library), 1D grids (1 x N or N x 1) degrade
-    diagonalization performance by up to 40%. Only 2D grids with p,q >= 2 are
+    diagonalization performance substantially. Only 2D grids with p,q >= 2 are
     considered BLACS-friendly.
     """
     if n < 4:
@@ -112,7 +115,7 @@ def _nearest_factorizable(target: int) -> int:
     squashes to 4 (the smallest viable 2D ScaLAPACK grid).
 
     Per Marek et al. 2014, this ensures ELPA Stage 2 operates on a proper
-    2D processor grid, avoiding the 40% performance penalty of 1D grids.
+    2D processor grid, avoiding the performance penalty of 1D grids.
     """
     if target < 4:
         return 4
@@ -142,7 +145,7 @@ def adjust_for_blacs_grid(per_node_ranks: list[int]) -> list[int]:
     **Post-validation pass**: After primary adjustment, any remaining prime-number
     per-node counts are forcibly brought to the nearest BLACS-friendly value.
     Following Marek et al. 2014, 1D BLACS grids (1 x N) degrade ELPA Stage 2
-    performance by up to 40%, so this ensures every node operates on a proper 2D
+    performance, so this ensures every node operates on a proper 2D
     processor grid.
 
     Args:
@@ -211,8 +214,7 @@ def _post_validate_blacs(per_node_ranks: list[int]) -> list[int]:  # noqa: C901
     Post-validation pass: ensure every per-node count is BLACS-friendly.
     For any count that is prime (1D grid only), force it to the nearest
     BLACS-friendly composite >= 4. This guarantees that ScaLAPACK/ELPA
-    operates on proper 2D processor grids, avoiding the 40% performance
-    penalty documented by Marek et al. 2014.
+    operates on proper 2D processor grids (Marek et al. 2014).
 
     When forced adjustments change the total, the delta is distributed
     across the largest nodes that can absorb it while remaining BLACS-friendly.

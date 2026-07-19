@@ -268,10 +268,9 @@ def bayesian_optimize_scf_params(
         if acquisition == "qEI":
             n_test = min(2000, 50 * dims)
             X_test = latin_hypercube_sampling(bounds, n_test)
-            mu_test, var_test = gp.predict(X_test)
-            q_ei = compute_q_expected_improvement(
-                mu_test, var_test, best_cost, q=parallel_batch)
-            next_idx = int(np.argmax(q_ei))
+            batch_indices = compute_q_expected_improvement(
+                gp, X_test, best_cost, q=parallel_batch)
+            next_indices = batch_indices if batch_indices else [int(np.argmin(gp.predict(X_test)[0]))]
         else:
             n_test = min(2000, 50 * dims)
             X_test = latin_hypercube_sampling(bounds, n_test)
@@ -280,23 +279,24 @@ def bayesian_optimize_scf_params(
                 compute_expected_improvement(float(mu_test[i]), float(np.sqrt(max(var_test[i], 0))), best_cost)
                 for i in range(n_test)
             ])
-            next_idx = int(np.argmax(ei_vals))
+            next_indices = [int(np.argmax(ei_vals))]
 
-        next_params = _params_dict(X_test[next_idx], param_names)
-        next_y = eval_objective(next_params)
+        for next_idx in next_indices:
+            next_params = _params_dict(X_test[next_idx], param_names)
+            next_y = eval_objective(next_params)
 
-        X = np.vstack([X, X_test[next_idx].reshape(1, -1)])
-        y = np.append(y, next_y)
+            X = np.vstack([X, X_test[next_idx].reshape(1, -1)])
+            y = np.append(y, next_y)
 
-        evaluations.append({
-            "iteration": iteration,
-            "params": next_params,
-            "cost": float(next_y),
-        })
+            evaluations.append({
+                "iteration": iteration,
+                "params": next_params,
+                "cost": float(next_y),
+            })
 
-        if next_y < best_cost:
-            best_cost = float(next_y)
-            best_params = next_params
+            if next_y < best_cost:
+                best_cost = float(next_y)
+                best_params = next_params
 
         save_bo_history(history_file, evaluations)
         logger.info(
@@ -720,7 +720,7 @@ class BayesianOptimizer:
                         mu_val, sigma_val, current_best, xi=self._exploration_xi
                     )
 
-                    est_mem = _estimate_memory_gb_for_config(nmat, cores)
+                    est_mem = _estimate_memory_gb_for_config(nmat, cores, omp)
                     est_wt = _estimate_walltime_min_for_config(nmat, nkpt, cores)
 
                     p_mem_feasible = _sigmoid_feasibility(est_mem, max_memory_gb)

@@ -1,7 +1,7 @@
 """
 NUMA-Aware Parallelization Engine for WIEN2k HPC Workflows.
 
-Implements recommendations from Blaha et al. (CPC 185, 2014) and WIEN2k User Guide 2023:
+Implements recommendations from Laskowski & Blaha (CPC 185, 2014) and WIEN2k User Guide 2023:
 
 1. NUMA-Aware Parallelization — 1 MPI rank per NUMA node + OpenMP within node
 2. Hybrid MPI+OpenMP for LAPW0 — OpenMP for shared charge density access
@@ -11,7 +11,7 @@ Implements recommendations from Blaha et al. (CPC 185, 2014) and WIEN2k User Gui
 6. GMAX Optimization — based on calculation type
 
 References:
-  Blaha et al., CPC 185 (2014) 263-271
+  Laskowski & Blaha, CPC 185 (2014) 263-271
   Blaha et al., CPC 59 (1990) 399-415
   Schwarz et al., CPC 147 (2002) 71-76
   WIEN2k User Guide 2023, Sections 4-6
@@ -274,7 +274,6 @@ def recommend_rkmax(  # noqa: C901
         return 7.0
 
     max_z = max(atomic_numbers)
-    sum(atomic_numbers) / len(atomic_numbers)
 
     if max_z > 70:
         base = 8.0

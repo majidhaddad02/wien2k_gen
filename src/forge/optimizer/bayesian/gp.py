@@ -147,13 +147,13 @@ class _GaussianProcessARD(_GaussianProcess):
                 best_ls = current_ls.copy()
 
             grad = np.zeros(d, dtype=np.float64)
-            outer = alpha @ alpha.T - Kinv
+            outer = Kinv - alpha @ alpha.T
 
             for j in range(d):
                 ls_j = max(current_ls[j], _EPS)
                 diff = (X[:, j].reshape(-1, 1) - X[:, j].reshape(1, -1)) ** 2
                 dK = K * (diff / (ls_j ** 3))
-                grad[j] = 0.5 * float(np.trace(outer @ dK)) / ls_j
+                grad[j] = 0.5 * float(np.trace(outer @ dK))
 
             grad = np.clip(grad, -1.0, 1.0)
             current_ls = current_ls - self._learning_rate * grad
