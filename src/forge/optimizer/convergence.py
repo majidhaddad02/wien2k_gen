@@ -848,10 +848,29 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
             )
             beta = 0.05
             if energy_values:
-                current_beta = _infer_mixing_beta(scf_content)
+                current_beta = _parse_mixing_beta(scf_content)
                 beta = current_beta / 2.0 if current_beta > 0 else 0.05
             result["auto_mixing_params"]["beta"] = max(0.01, beta)
             result["auto_mixing_params"]["pratt_cycles"] = 3
+
+            # -- MSR1 suggestion when mixer is simple/Pratt --
+            mixing_type = _parse_mixing_type(scf_content)
+            if mixing_type in ("PRATT", "MSEC", "SIMPLE", "BROYDEN"):
+                result["recommended_action"] = (
+                    f"Charge sloshing detected (amplitude {max_amp:.6f} Ry). "
+                    f"Currently using {mixing_type} mixing — switch to MSR1 "
+                    f"with multi-secant stabilisation (Johnson PRB 38, 12807). "
+                    f"MSR1 applies SVD regularisation to the DIIS linear system, "
+                    f"damping near-singular directions responsible for charge sloshing."
+                )
+                if mixing_type != "BROYDEN":
+                    result["auto_mixing_params"]["msr1a"] = True
+            else:
+                result["recommended_action"] = (
+                    f"Charge sloshing detected (amplitude {max_amp:.6f} Ry). "
+                    f"Halve mixing beta, use PRATT mixing, or switch to MSR1a. "
+                    f"If metallic, add Methfessel-Paxton smearing (0.02 Ry)."
+                )
             if callback:
                 with contextlib.suppress(Exception):
                     callback(result)
@@ -877,15 +896,61 @@ def detect_scf_divergence(scf_content: str, energy_values: Optional[list[float]]
     return result
 
 
-def _infer_mixing_beta(scf_content: str) -> float:
-    """Try to infer current mixing beta from SCF log or case.inm."""
-    inm_match = re.search(
-        r'(?:MIXING|beta|MSEC|pratt)\s*[=:]\s*(0?\.\d+)',
-        scf_content, re.IGNORECASE,
-    )
-    if inm_match:
-        return float(inm_match.group(1))
-    return 0.0
+def _parse_mixing_params(scf_content: str) -> dict[str, Any]:
+    """Deterministic parser for WIEN2k mixing parameters from SCF output.
+
+    Extracts mixing type and beta from :MIXING lines in the SCF header,
+    not from regex heuristics on arbitrary text.  WIEN2k prints the
+    mixer name and beta at the top of each SCF cycle::
+
+        :MIXING:  MSR1, beta=0.250, cycles=5, reuse=YES
+
+    Returns dict with keys: type (str), beta (float), cycles (int).
+    All values are None if not found.
+    """
+    result: dict[str, Any] = {"type": None, "beta": None, "cycles": None}
+
+    for line in scf_content.splitlines():
+        stripped = line.strip()
+        if not stripped.upper().startswith(":MIXING"):
+            continue
+
+        # Example: :MIXING:  MSR1, beta=0.250, cycles=5, reuse=YES
+        after = stripped.split(":", 2)[-1].strip()
+        parts = [p.strip() for p in after.split(",")]
+        if not parts:
+            continue
+
+        method = parts[0].strip().upper()
+        if method in ("PRATT", "MSEC", "MSR1", "MSR1A", "SIMPLE", "BROYDEN"):
+            result["type"] = method
+
+        for part in parts[1:]:
+            kv = part.split("=", 1)
+            if len(kv) != 2:
+                continue
+            key = kv[0].strip().lower()
+            val = kv[1].strip()
+            if key == "beta":
+                with contextlib.suppress(ValueError):
+                    result["beta"] = float(val)
+            elif key == "cycles":
+                with contextlib.suppress(ValueError):
+                    result["cycles"] = int(val)
+
+        break  # first :MIXING line is sufficient
+
+    return result
+
+
+def _parse_mixing_type(scf_content: str) -> str | None:
+    """Return the mixing method name from SCF header (e.g. 'MSR1', 'PRATT')."""
+    return _parse_mixing_params(scf_content)["type"]  # type: ignore[return-value]
+
+
+def _parse_mixing_beta(scf_content: str) -> float:
+    """Return mixing beta from SCF header, or 0.0 if not found."""
+    return _parse_mixing_params(scf_content)["beta"] or 0.0
 
 
 __all__ = [

@@ -173,97 +173,163 @@ def build_crystal_graph(
 # ---------------------------------------------------------------------------
 
 class GraphConvLayer:
-    """A single graph convolution layer.
+    """Crystal Graph Convolution layer — Xie & Grossman (PRL 120, 145301, 2018).
 
-    h_i' = sigma( W_s*h_i + sum_{j in N(i)} W_n*h_j * EdgeMLP(e_ij) )
+    Per-edge gate/core decomposition with full analytical backprop::
+
+        z_ij = [v_i; v_j; e_ij]                      // concat (2*in_dim + edge_dim)
+        g_ij = sigma(z_ij @ W_g + b_g)               // gate (sigmoid)
+        c_ij = softplus(z_ij @ W_c + b_c)            // core
+        m_i  = sum_{j in N(i)} g_ij * c_ij           // scatter-add
+        v_i' = softplus(v_i + m_i)                   // residual update
+
+    Backward is closed-form O(1) relative to forward — no finite differences.
     """
 
     def __init__(self, in_dim: int, out_dim: int, edge_dim: int = 2):
-        scale = math.sqrt(2.0 / in_dim)
-        self.W_self = np.random.randn(in_dim, out_dim).astype(np.float32) * scale * 0.5
-        self.W_neigh = np.random.randn(in_dim, out_dim).astype(np.float32) * scale * 0.5
-        self.W_edge = np.random.randn(edge_dim, out_dim).astype(np.float32) * scale * 0.5
-        self.bias = np.zeros(out_dim, dtype=np.float32)
+        cat_dim = in_dim * 2 + edge_dim
+        scale_g = math.sqrt(2.0 / cat_dim)
+        scale_c = math.sqrt(2.0 / cat_dim)
+        self.W_g = np.random.randn(cat_dim, out_dim).astype(np.float32) * scale_g * 0.5
+        self.b_g = np.zeros(out_dim, dtype=np.float32)
+        self.W_c = np.random.randn(cat_dim, out_dim).astype(np.float32) * scale_c * 0.5
+        self.b_c = np.zeros(out_dim, dtype=np.float32)
+        self._in_dim = in_dim
+        self._edge_dim = edge_dim
+        self._has_proj = in_dim != out_dim
+        if self._has_proj:
+            proj_scale = math.sqrt(2.0 / in_dim)
+            self.W_proj = np.random.randn(in_dim, out_dim).astype(np.float32) * proj_scale * 0.5
+        else:
+            self.W_proj = np.eye(in_dim, dtype=np.float32)
 
     @property
     def in_dim(self) -> int:
-        return self.W_self.shape[0]
+        return self._in_dim
 
     @property
     def out_dim(self) -> int:
-        return self.W_self.shape[1]
+        return self.W_g.shape[1]
+
+    # ------------------------------------------------------------------
+    # Forward pass
+    # ------------------------------------------------------------------
+
+    def _sigmoid(self, x: np.ndarray) -> np.ndarray:
+        return 1.0 / (1.0 + np.exp(-np.maximum(x, -50.0).astype(np.float64))).astype(np.float32)
+
+    def _softplus(self, x: np.ndarray) -> np.ndarray:
+        return np.log1p(np.exp(np.minimum(x, 50.0).astype(np.float64))).astype(np.float32)
 
     def forward(self, h: np.ndarray, edge_index: np.ndarray, edge_feat: np.ndarray) -> np.ndarray:
         n = h.shape[0]
-        self_msg = h @ self.W_self
-        neigh_msg = np.zeros((n, self.out_dim), dtype=np.float32)
-
-        src = edge_index[0]
-        dst = edge_index[1]
+        d = self.out_dim
         has_edges = edge_index.shape[1] > 0
 
+        h_proj = h @ self.W_proj
+
         if has_edges:
-            edge_mlp = edge_feat @ self.W_edge
-            hW = h[src] @ self.W_neigh
-            weighted = hW * edge_mlp
-            np.add.at(neigh_msg, dst, weighted)
-            deg = np.maximum(np.bincount(dst, minlength=n), 1).reshape(-1, 1)
+            src = edge_index[0]
+            dst = edge_index[1]
+
+            z = np.concatenate([h[src], h[dst], edge_feat], axis=-1)
+
+            pre_g = z @ self.W_g + self.b_g
+            pre_c = z @ self.W_c + self.b_c
+
+            gate = self._sigmoid(pre_g)
+            core = self._softplus(pre_c)
+
+            msg = gate * core
+
+            m = np.zeros((n, d), dtype=np.float32)
+            np.add.at(m, dst, msg)
+
+            m_plus_h = h_proj + m
         else:
-            edge_mlp = np.zeros((0, self.out_dim), dtype=np.float32)
-            hW = np.zeros((0, self.out_dim), dtype=np.float32)
-            weighted = np.zeros((0, self.out_dim), dtype=np.float32)
-            deg = np.ones((n, 1), dtype=np.float32)
+            src = np.array([], dtype=np.int64)
+            dst = np.array([], dtype=np.int64)
+            z = np.zeros((0, self._in_dim * 2 + self._edge_dim), dtype=np.float32)
+            pre_g = np.zeros((0, d), dtype=np.float32)
+            pre_c = np.zeros((0, d), dtype=np.float32)
+            gate = np.zeros((0, d), dtype=np.float32)
+            core = np.zeros((0, d), dtype=np.float32)
+            msg = np.zeros((0, d), dtype=np.float32)
+            m = np.zeros((n, d), dtype=np.float32)
+            m_plus_h = h_proj
 
-        neigh_msg /= deg
-
-        pre_act = self_msg + neigh_msg + self.bias
-        out = np.maximum(pre_act, 0.0)
+        out = self._softplus(m_plus_h)
 
         self._cache = {
             "h_input": h,
-            "self_msg": self_msg,
+            "h_proj": h_proj,
             "src": src,
             "dst": dst,
-            "edge_mlp": edge_mlp,
-            "hW": hW,
-            "weighted": weighted,
-            "deg": deg,
-            "neigh_msg_raw": neigh_msg * deg,
-            "pre_act": pre_act,
+            "z": z,
+            "pre_g": pre_g,
+            "pre_c": pre_c,
+            "gate": gate,
+            "core": core,
+            "msg": msg,
+            "m": m,
+            "m_plus_h": m_plus_h,
             "has_edges": has_edges,
+            "n": n,
         }
-
         return out
+
+    # ------------------------------------------------------------------
+    # Analytical backward pass
+    # ------------------------------------------------------------------
 
     def backward(self, dL_dout: np.ndarray, edge_feat: np.ndarray) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         cache = self._cache
-        dL_dpre = dL_dout * (cache["pre_act"] > 0).astype(np.float32)
+        d = self.out_dim
+        has_edges = cache["has_edges"]
+
+        # softplus'(x) = sigmoid(x)
+        ds = dL_dout * self._sigmoid(cache["m_plus_h"])
+        dL_dh_proj = ds.copy()
+        dm = ds.copy()
 
         grads: dict[str, np.ndarray] = {}
-        grads["bias"] = np.sum(dL_dpre, axis=0)
+        grads["b_g"] = np.zeros(d, dtype=np.float32)
+        grads["b_c"] = np.zeros(d, dtype=np.float32)
+        grads["W_g"] = np.zeros_like(self.W_g)
+        grads["W_c"] = np.zeros_like(self.W_c)
 
-        dL_dself = dL_dpre
-        grads["W_self"] = cache["h_input"].T @ dL_dself
-        dL_dh = dL_dself @ self.W_self.T
+        # Projection backward: h_proj = h @ W_proj
+        grads["W_proj"] = cache["h_input"].T @ dL_dh_proj
+        dL_dh = dL_dh_proj @ self.W_proj.T
 
-        dL_dneigh = dL_dpre / cache["deg"]  # undo deg division
-        dL_dneigh_raw = dL_dneigh
+        if has_edges:
+            dm_dst = dm[cache["dst"]]
 
-        if cache["has_edges"]:
-            dL_dweighted = dL_dneigh_raw[cache["dst"]]
+            dgate = dm_dst * cache["core"]
+            dcore = dm_dst * cache["gate"]
 
-            dL_dhW = dL_dweighted * cache["edge_mlp"]
-            dL_dedge_mlp = dL_dweighted * cache["hW"]
+            # sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x))
+            dpre_g = dgate * cache["gate"] * (1.0 - cache["gate"])
+            # softplus'(x) = sigmoid(x)
+            dpre_c = dcore * self._sigmoid(cache["pre_c"])
 
-            grads["W_neigh"] = cache["h_input"][cache["src"]].T @ dL_dhW
-            grads["W_edge"] = edge_feat.T @ dL_dedge_mlp
+            grads["b_g"] = np.sum(dpre_g, axis=0)
+            grads["b_c"] = np.sum(dpre_c, axis=0)
+            grads["W_g"] = cache["z"].T @ dpre_g
+            grads["W_c"] = cache["z"].T @ dpre_c
 
-            dL_dh_from_neigh = np.zeros_like(cache["h_input"])
-            np.add.at(dL_dh_from_neigh, cache["src"], dL_dhW @ self.W_neigh.T)
-            dL_dh = dL_dh + dL_dh_from_neigh
-        else:
-            grads["W_neigh"] = np.zeros_like(self.W_neigh)
-            grads["W_edge"] = np.zeros_like(self.W_edge)
+            dz = dpre_g @ self.W_g.T + dpre_c @ self.W_c.T
+
+            split1 = self._in_dim
+            split2 = self._in_dim * 2
+            dsrc = dz[:, :split1]
+            ddst = dz[:, split1:split2]
+
+            dL_dsrc = np.zeros_like(cache["h_input"])
+            np.add.at(dL_dsrc, cache["src"], dsrc)
+            dL_ddst = np.zeros_like(cache["h_input"])
+            np.add.at(dL_ddst, cache["dst"], ddst)
+            dL_dh = dL_dh + dL_dsrc + dL_ddst
 
         return dL_dh, grads
 
@@ -417,17 +483,19 @@ class CGCNNModel:
 
     def _all_parameters(self) -> list[tuple[int, str, np.ndarray]]:
         params: list[tuple[int, str, np.ndarray]] = [
-            (0, "W_self", self.conv1.W_self),
-            (0, "W_neigh", self.conv1.W_neigh),
-            (0, "W_edge", self.conv1.W_edge),
-            (0, "bias", self.conv1.bias),
+            (0, "W_g", self.conv1.W_g),
+            (0, "b_g", self.conv1.b_g),
+            (0, "W_c", self.conv1.W_c),
+            (0, "b_c", self.conv1.b_c),
+            (0, "W_proj", self.conv1.W_proj),
         ]
         for i, conv in enumerate(self.convs):
             params.extend([
-                (i + 1, "W_self", conv.W_self),
-                (i + 1, "W_neigh", conv.W_neigh),
-                (i + 1, "W_edge", conv.W_edge),
-                (i + 1, "bias", conv.bias),
+                (i + 1, "W_g", conv.W_g),
+                (i + 1, "b_g", conv.b_g),
+                (i + 1, "W_c", conv.W_c),
+                (i + 1, "b_c", conv.b_c),
+                (i + 1, "W_proj", conv.W_proj),
             ])
         params.extend([
             (99, "W", self.fc1_W),
@@ -441,7 +509,7 @@ class CGCNNModel:
         idx = 0
         for conv_list, prefix in [([self.conv1], "conv1"), (self.convs, "convs")]:
             for ci, conv in enumerate(conv_list):
-                for name in ["W_self", "W_neigh", "W_edge", "bias"]:
+                for name in ["W_g", "b_g", "W_c", "b_c", "W_proj"]:
                     key = f"{prefix}_{ci}_{name}" if conv_list is self.convs else f"{prefix}_{name}"
                     if key in grads:
                         new_val = optimizer.step(idx, key, getattr(conv, name), grads[key])
@@ -522,15 +590,17 @@ class CGCNNModel:
     def save(self, path: str) -> None:
         """Save model weights to .npz file."""
         weights: dict[str, np.ndarray] = {}
-        weights["conv1_W_self"] = self.conv1.W_self
-        weights["conv1_W_neigh"] = self.conv1.W_neigh
-        weights["conv1_W_edge"] = self.conv1.W_edge
-        weights["conv1_bias"] = self.conv1.bias
+        weights["conv1_W_g"] = self.conv1.W_g
+        weights["conv1_b_g"] = self.conv1.b_g
+        weights["conv1_W_c"] = self.conv1.W_c
+        weights["conv1_b_c"] = self.conv1.b_c
+        weights["conv1_W_proj"] = self.conv1.W_proj
         for i, conv in enumerate(self.convs):
-            weights[f"convs_{i}_W_self"] = conv.W_self
-            weights[f"convs_{i}_W_neigh"] = conv.W_neigh
-            weights[f"convs_{i}_W_edge"] = conv.W_edge
-            weights[f"convs_{i}_bias"] = conv.bias
+            weights[f"convs_{i}_W_g"] = conv.W_g
+            weights[f"convs_{i}_b_g"] = conv.b_g
+            weights[f"convs_{i}_W_c"] = conv.W_c
+            weights[f"convs_{i}_b_c"] = conv.b_c
+            weights[f"convs_{i}_W_proj"] = conv.W_proj
         weights["fc1_W"] = self.fc1_W
         weights["fc1_b"] = self.fc1_b
         weights["fc2_W"] = self.fc2_W
@@ -543,27 +613,31 @@ class CGCNNModel:
         """Load model weights from .npz file."""
         data = np.load(path)
         n_conv_layers = 0
-        while f"convs_{n_conv_layers}_W_self" in data:
+        while f"convs_{n_conv_layers}_W_g" in data:
             n_conv_layers += 1
         n_conv_layers = max(n_conv_layers, 1)
         output_dim = data["fc2_b"].shape[0]
-        hidden_dim = data["conv1_W_self"].shape[1]
+        hidden_dim = data["conv1_W_g"].shape[1]
 
         model = CGCNNModel(
-            node_dim=data["conv1_W_self"].shape[0],
+            node_dim=data["conv1_W_g"].shape[0],
             hidden_dim=hidden_dim,
             n_conv_layers=n_conv_layers,
             output_dim=output_dim,
         )
-        model.conv1.W_self = data["conv1_W_self"]
-        model.conv1.W_neigh = data["conv1_W_neigh"]
-        model.conv1.W_edge = data["conv1_W_edge"]
-        model.conv1.bias = data["conv1_bias"]
+        model.conv1.W_g = data["conv1_W_g"]
+        model.conv1.b_g = data["conv1_b_g"]
+        model.conv1.W_c = data["conv1_W_c"]
+        model.conv1.b_c = data["conv1_b_c"]
+        if "conv1_W_proj" in data:
+            model.conv1.W_proj = data["conv1_W_proj"]
         for i in range(n_conv_layers - 1):
-            model.convs[i].W_self = data[f"convs_{i}_W_self"]
-            model.convs[i].W_neigh = data[f"convs_{i}_W_neigh"]
-            model.convs[i].W_edge = data[f"convs_{i}_W_edge"]
-            model.convs[i].bias = data[f"convs_{i}_bias"]
+            model.convs[i].W_g = data[f"convs_{i}_W_g"]
+            model.convs[i].b_g = data[f"convs_{i}_b_g"]
+            model.convs[i].W_c = data[f"convs_{i}_W_c"]
+            model.convs[i].b_c = data[f"convs_{i}_b_c"]
+            if f"convs_{i}_W_proj" in data:
+                model.convs[i].W_proj = data[f"convs_{i}_W_proj"]
         model.fc1_W = data["fc1_W"]
         model.fc1_b = data["fc1_b"]
         model.fc2_W = data["fc2_W"]

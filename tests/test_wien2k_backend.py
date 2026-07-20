@@ -3,16 +3,17 @@ Comprehensive tests for WIEN2k backend (core.py) and parsers (parsers.py).
 Focuses on pure functions, file-based parsing with tmp_path, and minimal mocking.
 """
 
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import sys
 
-from forge.backends.wien2k.core import Wien2kBackend, auto_detect_optimal_rkmax
-import forge.backends.wien2k  # noqa: F401
 # Ensure lazy-loader doesn't block patch() resolution
 import forge.backends as _be
+import forge.backends.wien2k
+from forge.backends.wien2k.core import Wien2kBackend, auto_detect_optimal_rkmax
+
 _be.wien2k = sys.modules.get("forge.backends.wien2k", forge.backends.wien2k)
 from forge.backends.wien2k.parsers import (
     detect_io_bottleneck,

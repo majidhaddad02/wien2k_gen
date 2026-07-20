@@ -13,9 +13,9 @@ from forge.optimizer.convergence import (
     _detect_progress_bar,
     _extract_iterations,
     _find_wien2k_commands,
-    _infer_mixing_beta,
     _modify_incar,
     _modify_klist,
+    _parse_mixing_beta,
     _parse_total_energy,
     _run_wien2k_command,
     detect_scf_divergence,
@@ -139,7 +139,7 @@ WIEN2k 23.1  (hybrid-DFT)
 def wien2k_beta_inferred() -> str:
     return """\
 WIEN2k 23.1
-MIXING beta = 0.20
+:MIXING:  PRATT, beta=0.200, cycles=5, reuse=YES
 :ENE  : TOTAL ENERGY = -40000.0
 :ENE  : TOTAL ENERGY = -40000.001
 :ENE  : TOTAL ENERGY = -40000.002
@@ -383,34 +383,34 @@ class TestExtractIterations:
 
 
 # ---------------------------------------------------------------------------
-# _infer_mixing_beta
+# _parse_mixing_beta
 # ---------------------------------------------------------------------------
 
 
-class TestInferMixingBeta:
+class TestParseMixingBeta:
     def test_mixing_keyword(self):
-        content = "MIXING beta = 0.15\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.15
+        content = ":MIXING:  MSR1, beta=0.150, cycles=5, reuse=YES\n:ENE  : TOTAL ENERGY = -100.0"
+        assert _parse_mixing_beta(content) == 0.15
 
     def test_pratt_keyword(self):
-        content = "pratt = 0.08\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.08
+        content = ":MIXING:  PRATT, beta=0.080, cycles=3, reuse=NO\n:ENE  : TOTAL ENERGY = -100.0"
+        assert _parse_mixing_beta(content) == 0.08
 
     def test_beta_keyword(self):
-        content = "beta: 0.25\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.25
+        content = ":MIXING:  MSEC, beta=0.250, cycles=5\n:ENE  : TOTAL ENERGY = -100.0"
+        assert _parse_mixing_beta(content) == 0.25
 
     def test_msec_keyword(self):
-        content = "MSEC = 0.10\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.10
+        content = ":MIXING:  MSEC, beta=0.100\n:ENE  : TOTAL ENERGY = -100.0"
+        assert _parse_mixing_beta(content) == 0.10
 
     def test_no_mixing_info(self):
         content = "lapw0 : cpu time : 10.5\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.0
+        assert _parse_mixing_beta(content) == 0.0
 
     def test_case_insensitive(self):
-        content = "MiXiNg = 0.12\n:ENE  : TOTAL ENERGY = -100.0"
-        assert _infer_mixing_beta(content) == 0.12
+        content = ":mixing:  msr1a, BETA=0.120\n:ENE  : TOTAL ENERGY = -100.0"
+        assert _parse_mixing_beta(content) == 0.12
 
 
 # ---------------------------------------------------------------------------
@@ -762,7 +762,7 @@ class TestDetectScfDivergenceBranches:
         assert result["divergence_type"] == "none"
 
     def test_sloshing_no_ene_in_text_empty_energy_values(self):
-        """Sloshing with no :ENE in text => _infer_mixing_beta returns 0 => beta=0.05."""
+        """Sloshing with no :ENE in text => _parse_mixing_beta returns 0 => beta=0.05."""
         energies = []
         base = -100.0
         for i in range(16):
