@@ -171,7 +171,7 @@ def _chol_insert(
         ))
         L_val = q_norm[i_r] * q_norm[i_new] * kern_val
         # Solve triangular system
-        L_new[k-1, r] = (L_val - np.dot(L_old[:r, r], L_new[k-1, :r])) / L_old[r, r]
+        L_new[k-1, r] = (L_val - np.dot(L_old[r, :r], L_new[k-1, :r])) / L_old[r, r]
 
     # Diagonal: L_kk² = L_ii - Σ_{j<k} L_kj²
     diag_val = float(q_norm[i_new] ** 2)
@@ -189,7 +189,9 @@ def _chol_insert(
 def _extract_kernel_fn(gp: Any):
     """Extract a kernel function k(x, x') → scalar from a fitted GP."""
     if hasattr(gp, "kernel"):
-        return lambda a, b: float(gp.kernel(a, b))
+        def _gp_kernel(a: np.ndarray, b: np.ndarray) -> float:
+            return float(gp.kernel(a, b))  # type: ignore[union-attr]
+        return _gp_kernel
 
     default_length_scales = np.ones(2) * 0.5
 

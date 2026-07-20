@@ -255,19 +255,16 @@ class BOHBOptimizer:
             bracket["results"].append((x, walltime, budget))
             bracket["evaluated"] += 1
 
-        if self._pending_rung_configs and bracket is not None:
-            full_count = (
-                len(bracket["configs"])
-                + len(self._pending_rung_configs)
-                + bracket["evaluated"]
-            )
-            if bracket["evaluated"] >= full_count:
-                self._advance_rung(bracket)
-                bracket = None
+            configs_remain = len(bracket["configs"])
+            pending_remain = len(self._pending_rung_configs)
+            rung_total = configs_remain + pending_remain
 
-        if bracket is not None and not self._pending_rung_configs:
-            self._finish_bracket(bracket)
-            self._active_bracket = None
+            if rung_total == 0 and bracket["evaluated"] > 0:
+                if len(bracket["budgets"]) > 1:
+                    self._advance_rung(bracket)
+                else:
+                    self._finish_bracket(bracket)
+                    self._active_bracket = None
 
     # -----------------------------------------------------------------
     # Internal: Bracket Management  (identical to previous version)
@@ -378,7 +375,7 @@ class BOHBOptimizer:
         if X_arr.shape[0] < self._eta:
             return self._random_config_vec(rng)
 
-        _good_mask, good, bad, bw = self._build_tpe_kdes(X_arr, y_arr, budget)
+        _good_mask, good, bad, bw = self._build_tpe_kdes(X_arr, y_arr)
         if good.shape[0] == 0 or bad.shape[0] == 0:
             return self._random_config_vec(rng)
 
@@ -446,7 +443,7 @@ class BOHBOptimizer:
         return X_arr[mask], y_arr[mask]
 
     def _build_tpe_kdes(
-        self, X_arr: np.ndarray, y_arr: np.ndarray, budget: int
+        self, X_arr: np.ndarray, y_arr: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
         """Build D_good / D_bad split and return (good_mask, good, bad, bandwidth)."""
         n_good = max(2, int(len(y_arr) * self._gamma))

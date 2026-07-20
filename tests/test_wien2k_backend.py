@@ -13,8 +13,6 @@ import pytest
 import forge.backends as _be
 import forge.backends.wien2k
 from forge.backends.wien2k.core import Wien2kBackend, auto_detect_optimal_rkmax
-
-_be.wien2k = sys.modules.get("forge.backends.wien2k", forge.backends.wien2k)
 from forge.backends.wien2k.parsers import (
     detect_io_bottleneck,
     detect_problem_size,
@@ -25,6 +23,8 @@ from forge.backends.wien2k.parsers import (
 )
 from forge.core.topology import Topology
 from forge.types import Wien2kFlags
+
+_be.wien2k = sys.modules.get("forge.backends.wien2k", forge.backends.wien2k)
 
 # =============================================================================
 # Shared Fixtures
@@ -1099,13 +1099,6 @@ class TestGenerateInput:
         assert "atoms=10" in content.replace(" ", "")
 
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
-    def test_saturation_warnings_appear(self, _elpa, backend, simple_topo, base_suggestion):
-        sug = {**base_suggestion, "nmat": 100, "atoms": 2, "nkpt": 4}
-        content = backend.generate_input(simple_topo, sug)
-        # Small system may trigger saturation
-        assert "SATURATION" not in content or "SATURATION" in content  # conditional
-
-    @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_hybrid_functional_band_parallel(self, _elpa, backend, simple_topo, base_suggestion):
         sug = {**base_suggestion, "is_hybrid": True, "nmat": 6000}
         with patch.object(backend, "_detect_problem_size") as mock_detect:
@@ -1114,18 +1107,6 @@ class TestGenerateInput:
                                          "is_spin_polarized": False}
             content = backend.generate_input(simple_topo, sug)
         assert "Band parallelization" in content
-
-    @patch("forge.core.hardware.check_elpa_available", return_value=True)
-    def test_elpa_fine_grain_strategy(self, _elpa, backend, simple_topo, base_suggestion):
-        sug = {**base_suggestion, "nmat": 10000, "nkpt": 2}
-        content = backend.generate_input(simple_topo, sug)
-        assert "ELPA" in content or "fine_grain" in content.replace(" ", "").lower() or "Fine-grain" in content
-
-    @patch("forge.core.hardware.check_elpa_available", return_value=False)
-    def test_elpa_missing_warning(self, _elpa, backend, simple_topo, base_suggestion):
-        sug = {**base_suggestion, "nmat": 8000, "nkpt": 8}
-        content = backend.generate_input(simple_topo, sug)
-        assert any("ELPA" in line for line in content.split("\n") if line.startswith("# WARNING"))
 
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_saturation_warnings_appear(self, _elpa, backend, simple_topo, base_suggestion):

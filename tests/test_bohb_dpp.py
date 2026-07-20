@@ -131,7 +131,7 @@ class TestBOHBOptimizer:
             bohb.observe(config, 50.0 + np.random.random() * 30, budget)
         X_arr = np.array(bohb._X, dtype=np.float64)
         y_arr = np.array(bohb._y, dtype=np.float64)
-        _, good, bad, bw = bohb._build_tpe_kdes(X_arr, y_arr, 1)
+        _, good, bad, bw = bohb._build_tpe_kdes(X_arr, y_arr)
         assert bw > 0
         assert good.shape[0] >= 1 or bad.shape[0] >= 1
 
