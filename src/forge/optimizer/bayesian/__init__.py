@@ -23,6 +23,7 @@ from .core import (
     load_warm_start_history,
     save_bo_history,
 )
+from .dpp import DPPBatchSelector
 from .elements import _chemical_similarity
 from .gp import _GaussianProcess, _GaussianProcessARD
 from .kernels import _EPS, _NUGGET, matern_kernel, rbf_kernel, rbf_kernel_ard
@@ -37,6 +38,7 @@ __all__ = [
     "_NUGGET",
     "BOHBOptimizer",
     "BayesianOptimizer",
+    "DPPBatchSelector",
     "MultiFidelityBayesianOptimizer",
     "_GaussianProcess",
     "_GaussianProcessARD",
