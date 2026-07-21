@@ -18,12 +18,11 @@ Usage (requires MP_API_KEY environment variable)::
 The output directory contains::
 
     gnn_data/
-    ├── train_nodes.npy          # (N_train, max_atoms, 4)  node features
-    ├── train_edges.npy          # (N_train, 2, max_edges)  edge_index pairs
-    ├── train_edge_feat.npy      # (N_train, max_edges, 2)  edge features
-    ├── train_targets.npy        # (N_train, 3)             (kx, ky, kz)
-    ├── val_nodes.npy, val_edges.npy, val_edge_feat.npy, val_targets.npy
-    └── metadata.json            # Dataset statistics
+    ├── train_graphs.npy       # list[dict] — variable-size graphs (no padding)
+    ├── train_targets.npy      # (N, 3)  (kx, ky, kz) normalised by /12
+    ├── val_graphs.npy
+    ├── val_targets.npy
+    └── metadata.json          # Dataset statistics
 
 Reference:
   Jain, A. et al. (2013).  The Materials Project: A materials genome approach
@@ -358,41 +357,37 @@ class MPDatasetPipeline:
         targets: list[tuple[int, int, int]],
         indices: np.ndarray,
     ) -> None:
-        """Pad and save a train/val split as .npy files.
+        """Save a train/val split as variable-size graphs (no padding).
 
-        Since structures have variable numbers of atoms and edges, we
-        zero-pad to the maximum within the split.
+        Each graph is stored with its natural number of atoms/edges.
+        Uses ``allow_pickle=True`` to serialise a list of dicts to a
+        single ``.npy`` file.
         """
         split_graphs = [graphs[i] for i in indices]
         split_targets = [(targets[i][0] / 12.0, targets[i][1] / 12.0, targets[i][2] / 12.0)
                           for i in indices]
 
-        max_nodes = max(g["node_feat"].shape[0] for g in split_graphs)
-        max_edges = max(g["edge_feat"].shape[0] for g in split_graphs)
-        node_dim = split_graphs[0]["node_feat"].shape[1]
-        edge_dim = split_graphs[0]["edge_feat"].shape[1]
+        targets_arr = np.array(split_targets, dtype=np.float32)
 
-        n_samples = len(split_graphs)
+        list_data: list[dict[str, np.ndarray]] = []
+        for g, _t in zip(split_graphs, split_targets):
+            entry = {
+                "node_feat": g["node_feat"],
+                "edge_index": g["edge_index"],
+                "edge_feat": g["edge_feat"],
+            }
+            list_data.append(entry)
 
-        nodes_arr = np.zeros((n_samples, max_nodes, node_dim), dtype=np.float32)
-        edges_arr = np.zeros((n_samples, 2, max_edges), dtype=np.int32)
-        edge_feat_arr = np.zeros((n_samples, max_edges, edge_dim), dtype=np.float32)
-        targets_arr = np.zeros((n_samples, 3), dtype=np.float32)
-
-        for i, (g, t) in enumerate(zip(split_graphs, split_targets)):
-            n = g["node_feat"].shape[0]
-            e = g["edge_feat"].shape[0]
-            nodes_arr[i, :n, :] = g["node_feat"]
-            edges_arr[i, :, :e] = g["edge_index"][:, :e]
-            edge_feat_arr[i, :e, :] = g["edge_feat"]
-            targets_arr[i] = t
-
-        np.save(str(out_dir / f"{split}_nodes.npy"), nodes_arr)
-        np.save(str(out_dir / f"{split}_edges.npy"), edges_arr)
-        np.save(str(out_dir / f"{split}_edge_feat.npy"), edge_feat_arr)
+        np.save(str(out_dir / f"{split}_graphs.npy"), list_data, allow_pickle=True)
         np.save(str(out_dir / f"{split}_targets.npy"), targets_arr)
 
-        logger.info(f"Saved {split} split: {n_samples} samples, max_nodes={max_nodes}, max_edges={max_edges}")
+        n_samples = len(split_graphs)
+        max_nodes = max(g["node_feat"].shape[0] for g in split_graphs)
+        max_edges = max(g["edge_feat"].shape[0] for g in split_graphs)
+        logger.info(
+            f"Saved {split} split: {n_samples} samples, "
+            f"max_nodes={max_nodes}, max_edges={max_edges}"
+        )
 
 
 __all__ = ["MPDatasetPipeline"]

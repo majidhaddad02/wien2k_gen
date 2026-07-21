@@ -729,7 +729,7 @@ _DEFAULT_MODEL_PATH = _DEFAULT_MODEL_DIR / "gnn_kpoint_v1.npz"
 _PACKAGE_MODEL_PATH = Path(__file__).parent / "gnn_kpoint_v1.npz"
 
 _MP_DATA_DIR = Path.home() / ".forge" / "mp_data"
-_MP_TRAIN_NODES = _MP_DATA_DIR / "train_nodes.npy"
+_MP_TRAIN_GRAPHS = _MP_DATA_DIR / "train_graphs.npy"
 
 
 def get_trained_model(force_retrain: bool = False) -> CGCNNModel:
@@ -780,32 +780,36 @@ def _train_from_synthetic() -> None:
 def _train_from_mp_dataset() -> tuple[CGCNNModel, bool]:
     """Train on Materials Project dataset if available.
 
+    Loads variable-size graphs (no padding) from ``train_graphs.npy``
+    and ``train_targets.npy``, produces by :class:`MPDatasetPipeline`.
+
     Returns (model, success_flag).  The model is also saved to disk.
     """
-    if not _MP_TRAIN_NODES.exists():
+    if not _MP_TRAIN_GRAPHS.exists():
         return CGCNNModel(), False
 
     logger.info("Loading MP dataset from %s ...", _MP_DATA_DIR)
-    train_nodes = np.load(str(_MP_DATA_DIR / "train_nodes.npy"))
-    train_edges = np.load(str(_MP_DATA_DIR / "train_edges.npy"))
-    train_edge_feat = np.load(str(_MP_DATA_DIR / "train_edge_feat.npy"))
+    train_graphs: list[dict[str, np.ndarray]] = np.load(
+        str(_MP_TRAIN_GRAPHS), allow_pickle=True
+    )
     train_targets = np.load(str(_MP_DATA_DIR / "train_targets.npy"))
 
     model = CGCNNModel()
     optimizer = AdamOptimizer(lr=0.001)
     history: list[float] = []
 
-    n_samples = train_nodes.shape[0]
+    n_samples = len(train_graphs)
     epochs = 30
     for epoch in range(epochs):
         perm = np.random.permutation(n_samples)
         epoch_loss = 0.0
 
         for idx in perm:
-            node_feat = train_nodes[idx]
-            edge_idx = train_edges[idx]
-            edge_feat = train_edge_feat[idx]
-            target = train_targets[idx]
+            g = train_graphs[int(idx)]
+            node_feat = g["node_feat"]
+            edge_idx = g["edge_index"]
+            edge_feat = g["edge_feat"]
+            target = train_targets[int(idx)]
 
             pred = model.forward(node_feat, edge_idx, edge_feat)
             nf_loss = float(np.sum((pred - target) ** 2))
