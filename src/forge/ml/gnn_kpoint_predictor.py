@@ -728,9 +728,18 @@ _DEFAULT_MODEL_DIR = Path.home() / ".forge" / "models"
 _DEFAULT_MODEL_PATH = _DEFAULT_MODEL_DIR / "gnn_kpoint_v1.npz"
 _PACKAGE_MODEL_PATH = Path(__file__).parent / "gnn_kpoint_v1.npz"
 
+_MP_DATA_DIR = Path.home() / ".forge" / "mp_data"
+_MP_TRAIN_NODES = _MP_DATA_DIR / "train_nodes.npy"
+
 
 def get_trained_model(force_retrain: bool = False) -> CGCNNModel:
-    """Load pre-trained GNN model or train a new one from synthetic data.
+    """Load pre-trained GNN model or train a new one.
+
+    Priority order:
+      1. Saved weights at ``~/.forge/models/gnn_kpoint_v1.npz``
+      2. MP dataset at ``~/.forge/mp_data/train_nodes.npy`` → train on real data
+      3. Package-bundled weights at ``forge/ml/gnn_kpoint_v1.npz``
+      4. Train on synthetic dataset (fallback)
 
     Args:
         force_retrain: Ignore saved weights and re-train from scratch.
@@ -738,21 +747,85 @@ def get_trained_model(force_retrain: bool = False) -> CGCNNModel:
     Returns:
         Trained CGCNNModel ready for inference.
     """
-    if not force_retrain and _DEFAULT_MODEL_PATH.exists():
-        try:
-            return CGCNNModel.load(str(_DEFAULT_MODEL_PATH))
-        except Exception as e:
-            logger.warning(f"Failed to load saved model: {e} — retraining")
+    if not force_retrain:
+        if _DEFAULT_MODEL_PATH.exists():
+            try:
+                return CGCNNModel.load(str(_DEFAULT_MODEL_PATH))
+            except Exception as e:
+                logger.warning(f"Failed to load saved model: {e}")
 
-    logger.info("Training GNN on synthetic dataset (this may take 30-60 seconds)...")
+        try:
+            model, ok = _train_from_mp_dataset()
+            if ok:
+                return model
+        except Exception as e:
+            logger.warning(f"MP dataset training failed: {e}")
+
+    _train_from_synthetic()
+    return CGCNNModel.load(str(_DEFAULT_MODEL_PATH))
+
+
+def _train_from_synthetic() -> None:
+    logger.info("Training GNN on synthetic dataset (this may take ~8 minutes)...")
     model = CGCNNModel()
     dataset = generate_synthetic_dataset(200)
     loss_history = model.train(dataset, epochs=80, lr=0.001, verbose=True)
 
     _DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
     model.save(str(_DEFAULT_MODEL_PATH))
-    logger.info(f"GNN trained. Final loss: {loss_history[-1]:.6f}, weights saved to {_DEFAULT_MODEL_PATH}")
-    return model
+    logger.info(f"GNN trained on synthetic data. Final loss: {loss_history[-1]:.6f}, "
+                f"weights saved to {_DEFAULT_MODEL_PATH}")
+
+
+def _train_from_mp_dataset() -> tuple[CGCNNModel, bool]:
+    """Train on Materials Project dataset if available.
+
+    Returns (model, success_flag).  The model is also saved to disk.
+    """
+    if not _MP_TRAIN_NODES.exists():
+        return CGCNNModel(), False
+
+    logger.info("Loading MP dataset from %s ...", _MP_DATA_DIR)
+    train_nodes = np.load(str(_MP_DATA_DIR / "train_nodes.npy"))
+    train_edges = np.load(str(_MP_DATA_DIR / "train_edges.npy"))
+    train_edge_feat = np.load(str(_MP_DATA_DIR / "train_edge_feat.npy"))
+    train_targets = np.load(str(_MP_DATA_DIR / "train_targets.npy"))
+
+    model = CGCNNModel()
+    optimizer = AdamOptimizer(lr=0.001)
+    history: list[float] = []
+
+    n_samples = train_nodes.shape[0]
+    epochs = 30
+    for epoch in range(epochs):
+        perm = np.random.permutation(n_samples)
+        epoch_loss = 0.0
+
+        for idx in perm:
+            node_feat = train_nodes[idx]
+            edge_idx = train_edges[idx]
+            edge_feat = train_edge_feat[idx]
+            target = train_targets[idx]
+
+            pred = model.forward(node_feat, edge_idx, edge_feat)
+            nf_loss = float(np.sum((pred - target) ** 2))
+
+            grads = model.backward(target, edge_feat)
+            model._apply_gradients(grads, optimizer)
+            epoch_loss += nf_loss
+
+        avg_loss = epoch_loss / max(n_samples, 1)
+        history.append(avg_loss)
+        if (epoch + 1) % 10 == 0:
+            logger.info(f"GNN MP-training epoch {epoch+1}/{epochs} — loss={avg_loss:.6f}")
+
+    _DEFAULT_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    model.save(str(_DEFAULT_MODEL_PATH))
+    logger.info(
+        f"GNN trained on MP data ({n_samples} structures). "
+        f"Final loss: {history[-1]:.6f}, weights saved to {_DEFAULT_MODEL_PATH}"
+    )
+    return model, True
 
 
 # ---------------------------------------------------------------------------
