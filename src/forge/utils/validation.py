@@ -182,9 +182,9 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
         else:
             config["mode"] = "mpi"
             
-    # Aggregate lapw cores
-    config["lapw1_cores"] = sum(node_allocations[n] for n in lapw1_nodes) if lapw1_nodes else sum(config["cores_per_node"])
-    config["lapw2_cores"] = sum(node_allocations[n] for n in lapw2_nodes) if lapw2_nodes else sum(config["cores_per_node"])
+    # Aggregate lapw cores (fallback to 0 if no dedicated nodes)
+    config["lapw1_cores"] = sum(node_allocations[n] for n in lapw1_nodes) if lapw1_nodes else 0
+    config["lapw2_cores"] = sum(node_allocations[n] for n in lapw2_nodes) if lapw2_nodes else 0
 
     return config, parse_warnings
 

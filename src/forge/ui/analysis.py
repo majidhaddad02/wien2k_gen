@@ -538,7 +538,7 @@ def generate_report(  # noqa: C901
     if not parsed_scf.get("converged"):
         recs.append("SCF not converged. Adjust mixing parameters (BROYDEN, KERKER), increase NSTEPS, or check k-point density.")
     if parsed_scf.get("cpu_time_sec", 0) > 0 and parsed_scf.get("wall_time_sec", 0) > 0:
-        ratio = parsed_scf["cpu_time_sec"] / parsed_scf["wall_time_sec"]
+        ratio = parsed_scf.get("cpu_time_sec", 0) / parsed_scf.get("wall_time_sec", 1)
         if ratio < 0.5:
             recs.append(f"Low CPU/Wall ratio ({ratio:.2f}). Likely I/O or network bottleneck. Use local scratch and check interconnect.")
         elif ratio > 0.95:

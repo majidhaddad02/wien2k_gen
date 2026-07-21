@@ -148,7 +148,11 @@ class ConsoleManager:
             self.console.print(*objects, **kwargs)
         except BrokenPipeError:
             # Handle piping to head/less gracefully
-            sys.stderr = open(os.devnull, "w")  # noqa: SIM115
+            try:
+                devnull = open(os.devnull, "w")  # noqa: SIM115
+                sys.stderr = devnull
+            except OSError:
+                pass
             sys.exit(0)
         except Exception as e:
             logging.getLogger(__name__).warning(f"Console print failed: {e}")

@@ -169,10 +169,8 @@ def run_command(  # noqa: C901
     # (e.g. Ctrl+C in a shell) unless explicitly forwarded.
     def _preexec() -> None:
         if start_new_session:
-            os.setpgrp()  # Create new process group (redundant if start_new_session=True, but safe)
-        # Ignore SIGINT/SIGTERM initially so the main process controls them
+            os.setpgrp()
         signal.signal(signal.SIGINT, signal.SIG_IGN)
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
     proc = None
 

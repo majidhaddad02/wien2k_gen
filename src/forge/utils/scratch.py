@@ -353,7 +353,8 @@ def setup_scratch(  # noqa: C901
 
     # 1. Select optimal scratch path
     selected_path = None
-    for candidate in cfg.priority_paths:
+    resolved_paths = cfg.resolve_priority_paths() if hasattr(cfg, "resolve_priority_paths") else cfg.priority_paths
+    for candidate in resolved_paths:
         if not candidate:
             continue
         p = Path(candidate)

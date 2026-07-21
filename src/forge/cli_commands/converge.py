@@ -50,7 +50,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         results["rkmax"] = run_rkmax_convergence(args.case, rkmax_values, wien2k_cmd)
 
     for key, data in results.items():
-        converged = find_converged_parameters(data, tolerance=args.tolerance * 1000.0)
+        converged = find_converged_parameters(data, tolerance=args.tolerance)
         console.print(f"[green]{key}: converged at {converged.get('converged_value')}[/green]")
 
     report = generate_convergence_report({"results": list(results.values())})

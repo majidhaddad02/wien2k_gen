@@ -18,6 +18,7 @@ All documentation and inline comments are in English per project standards.
 """
 
 import csv
+import io
 import json
 import os
 import re
@@ -206,14 +207,14 @@ def _export_csv(data: Any, path: Path, config: ExportConfig) -> int:
         rows.append(flat)
         
     fieldnames = list(rows[0].keys())
-    # FIXED: newline="" is the correct standard for csv module
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=config.get("csv_delimiter", ","))
-        if config.get("csv_header", True):
-            writer.writeheader()
-        writer.writerows(rows)
-        
-    return os.path.getsize(path)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=config.get("csv_delimiter", ","))
+    if config.get("csv_header", True):
+        writer.writeheader()
+    writer.writerows(rows)
+    content = output.getvalue()
+    atomic_write(path, content, mode=0o644)
+    return len(content.encode("utf-8"))
 
 
 def _export_txt(data: Any, path: Path, config: ExportConfig) -> int:
