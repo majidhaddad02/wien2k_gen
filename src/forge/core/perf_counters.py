@@ -51,12 +51,12 @@ _CACHE_TTL_SECONDS: int = 300  # 5 minutes
 def _which(executable: str) -> bool:
     """Return True if *executable* is found in PATH."""
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["which", executable],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, timeout=5
         )
-        return True
+        return result.returncode == 0
     except (subprocess.SubprocessError, FileNotFoundError):
         return False
 
@@ -546,10 +546,7 @@ def _measure_peak_flops_likwid(sample_sec: float = 2.0) -> Optional[float]:
             total += float(match.group(1))
 
     if total > 0:
-        # Handle MFLOPS vs GFLOPS
-        if total < 100:
-            total *= 1000
-        return round(total / 1000.0 if total > 10000 else total, 2)
+        return round(total, 2)
 
     return None
 

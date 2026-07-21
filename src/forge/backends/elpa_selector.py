@@ -81,14 +81,14 @@ def select_eigensolver(
         )
 
     if effective_nmat >= 8000:
-        elpa_kernel = "ELPA2" if effective_nmat >= 8000 else "ELPA1"
-        elpa_block = 64 if elpa_kernel == "ELPA2" else 32
+        elpa_kernel = "ELPA2"
+        elpa_block = 64
 
         if gpu_available:
             return _mk(
                 f"{elpa_kernel}+GPU",
                 min(256, max(32, effective_nmat // 8)),
-                3.5 if elpa_kernel == "ELPA2" else 2.5,
+                3.5,
                 f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
                 f"{elpa_kernel} with GPU acceleration recommended. "
                 f"Consider cuSOLVER (NVIDIA) or MAGMA (AMD/NVIDIA) for "
@@ -101,7 +101,7 @@ def select_eigensolver(
             return _mk(
                 elpa_kernel,
                 elpa_block,
-                2.8 if elpa_kernel == "ELPA2" else 1.8,
+                2.8,
                 f"Large matrix (nmat={nmat}, effective={effective_nmat}): "
                 f"{elpa_kernel} provides optimal strong scaling for matrices "
                 f"above 8000. Two-stage tridiagonalization reduces "

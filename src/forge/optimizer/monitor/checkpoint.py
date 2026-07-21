@@ -279,7 +279,6 @@ def resume_from_checkpoint(
     files_restored = []
     for src_file in ckpt_dir.glob("*"):
         if src_file.is_file() and src_file.name != "CHECKPOINT_INFO":
-            case / src_file.name.replace(ckpt_dir.name + "_", "")
             if src_file.name.startswith(case.name):
                 _shutil.copy2(str(src_file), str(case / src_file.name))
             else:

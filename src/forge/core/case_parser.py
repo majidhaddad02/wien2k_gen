@@ -1140,16 +1140,12 @@ def check_rmt_overlaps(
     Returns list of overlap entries.
     """
     atoms = structure.get("atoms", [])
-    calculate_nn_distances(structure)
     overlaps = []
 
     for i in range(len(atoms)):
         for j in range(i + 1, len(atoms)):
             rmt_i = rmts.get(i, atoms[i]["rmt"] if i < len(atoms) else 1.5)
             rmt_j = rmts.get(j, atoms[j]["rmt"] if j < len(atoms) else 1.5)
-
-            atoms[i]["x"], atoms[i]["y"], atoms[i]["z"]
-            atoms[j]["x"], atoms[j]["y"], atoms[j]["z"]
 
             lat = structure.get("lattice", {})
             a, b_val, c = lat.get("a", 1.0), lat.get("b", 1.0), lat.get("c", 1.0)

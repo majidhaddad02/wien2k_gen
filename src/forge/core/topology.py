@@ -717,7 +717,7 @@ class Topology:
         if self.nodes:
             name_groups: dict[str, list[str]] = {}
             for node in self.nodes:
-                prefix = re.sub(r"\d+$", "", node) if "re" in dir() else node.rsplit("-", 1)[0]
+                prefix = re.sub(r"\d+$", "", node)
                 name_groups.setdefault(prefix, []).append(node)
 
         node_naming = " ".join(self.nodes).lower()
@@ -748,8 +748,6 @@ class Topology:
 
         if not self.nodes or nranks <= 0:
             return placement
-
-        sum(self.cores_per_node)
 
         if topo_type == TopologyType.FAT_TREE:
             ranks_remaining = nranks

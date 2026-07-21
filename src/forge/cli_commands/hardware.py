@@ -18,8 +18,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 
 def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
-    from .core.hardware import (
+    from ..core.hardware import (
         get_cpu_architecture,
+    )
+    from ..core.hardware.wrapper import (
         get_cpu_generation,
         get_numa_node_count,
         get_physical_cores,
@@ -27,8 +29,8 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         get_system_type,
         get_total_mem_kb,
     )
-    from .core.topology import Topology
-    from .optimizer.parallel import (
+    from ..core.topology import Topology
+    from ..optimizer.parallel import (
         recommend_gmax,
         recommend_io_strategy,
         recommend_lapw0_strategy,
@@ -64,7 +66,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         atoms = 10
         if args.case:
             try:
-                from .core.case_parser import CaseFileParser
+                from ..core.case_parser import CaseFileParser
                 parser = CaseFileParser(Path(args.case) if Path(args.case).exists() else None)
                 data = parser.parse_all()
                 nmat = data.nmat or 2000

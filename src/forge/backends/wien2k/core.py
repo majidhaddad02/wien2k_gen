@@ -57,10 +57,10 @@ class Wien2kBackend(Backend):
 
     def generate_input(self, topo: Topology, suggestion: dict[str, Any]) -> str:
         """Generate .machines file content for WIEN2k parallel execution."""
-        # Integrate ELPA solver recommendation into suggestion dict
-        nmat = suggestion.get("nmat", self._detect_problem_size().get("nmat", 0))
-        nkpt = suggestion.get("nkpt", self._detect_problem_size().get("kpoints", 0))
-        is_soc = suggestion.get("is_soc", self._detect_problem_size().get("is_soc", False))
+        problem = self._detect_problem_size()
+        nmat = suggestion.get("nmat", problem.get("nmat", 0))
+        nkpt = suggestion.get("nkpt", problem.get("kpoints", 0))
+        is_soc = suggestion.get("is_soc", problem.get("is_soc", False))
         total_ranks = sum(topo.cores_per_node) if topo.cores_per_node else 1
 
         if nmat > 2000:
@@ -717,7 +717,7 @@ class Wien2kBackend(Backend):
         wienroot = find_wienroot()
         if not wienroot:
             logger.error("WIENROOT not set and run_lapw not found on PATH. Cannot generate script.")
-            return str(script_path)
+            return
 
         # Disable SSH for single-node jobs (performance optimization)
         disable_ssh = (len(topo.nodes) == 1)

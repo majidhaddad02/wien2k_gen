@@ -230,7 +230,7 @@ def _check_consistency(config: MachinesConfig) -> tuple[list[str], list[str]]:
                     
     # vector_split validation
     if config["vector_split"] > 0 and config["lapw2_cores"] % config["vector_split"] != 0:
-            warnings.append(f"lapw2_vector_split ({config['vector_split']}) does not divide lapw2 cores ({config['lapw2_cores']}).")
+        warnings.append(f"lapw2_vector_split ({config['vector_split']}) does not divide lapw2 cores ({config['lapw2_cores']}).")
             
     # lapw0 sanity
     if config["lapw0_cores"] > total_cores:

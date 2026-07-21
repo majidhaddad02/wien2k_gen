@@ -45,6 +45,7 @@ class ProblemSize(TypedDict, total=False):
     symmetry_group: Optional[str]
     magnetic_order: Optional[str]
     nspin: int
+    is_spin: bool
     ecut: float  # Plane-wave cutoff or equivalent basis limit
 
 

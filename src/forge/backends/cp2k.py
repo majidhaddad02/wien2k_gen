@@ -368,7 +368,6 @@ class CP2KBackend(Backend):
             content = inp_file.read_text(encoding="utf-8", errors="replace")
             sections = self._parse_cp2k_sections(content)
 
-            sections.get("_nesting", {})
             force_eval = sections.get("FORCE_EVAL", {})
             dft = force_eval.get("DFT", {})
             subsys = force_eval.get("SUBSYS", {})

@@ -513,10 +513,6 @@ def estimate_kpoint_density(rkmax: float | None = None) -> dict[str, Any]:  # no
                     atom_types[elem] = atom_types.get(elem, 0) + 1
 
             lattice_vectors: list[list[float]] = []
-            re.match(
-                r"^\s*LATTYP\s*=\s*(\S+)",
-                "",
-            )
             a_vector: list[float] | None = None
             b_vector: list[float] | None = None
             c_vector: list[float] | None = None

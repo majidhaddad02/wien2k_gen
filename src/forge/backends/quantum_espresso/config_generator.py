@@ -17,12 +17,12 @@ Key constraints enforced:
 This module replaces heuristic skeletons with production-grade number-theoretic optimization.
 """
 
-import logging
 import math
 from typing import Any, Optional
 
-# Use module-level logger for consistency with project standards.
-logger = logging.getLogger(__name__)
+from forge.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def _get_divisors(n: int) -> list[int]:

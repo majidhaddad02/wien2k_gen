@@ -769,7 +769,7 @@ class BayesianOptimizer:
 
                     if self._transfer_mean is not None and self._transfer_weight > 0:
                         mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
+                                 self._transfer_weight * (float(np.mean(self._y)) if len(self._y) > 0 else mu_val)
 
                     ei = compute_expected_improvement(
                         mu_val, sigma_val, current_best, xi=self._exploration_xi
@@ -865,7 +865,7 @@ class BayesianOptimizer:
 
                     if self._transfer_mean is not None and self._transfer_weight > 0:
                         mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                 self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
+                                 self._transfer_weight * (float(np.mean(self._y)) if len(self._y) > 0 else mu_val)
 
                     ei = compute_expected_improvement(
                         mu_val, sigma_val, current_best, xi=self._exploration_xi
@@ -1131,7 +1131,7 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
 
                         if self._transfer_mean is not None and self._transfer_weight > 0:
                             mu_val = (1.0 - self._transfer_weight) * mu_val + \
-                                     self._transfer_weight * (float(np.mean(self._y)) if self._y.size > 0 else mu_val)
+                                     self._transfer_weight * (float(np.mean(self._y)) if len(self._y) > 0 else mu_val)
 
                         ei = compute_expected_improvement(
                             mu_val, sigma_val, current_best, xi=self._exploration_xi

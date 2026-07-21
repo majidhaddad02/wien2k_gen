@@ -203,7 +203,7 @@ class SCFTimePredictor:
         records = []
         try:
             from ..optimizer.history import ExecutionHistory
-            with ExecutionHistory(path=history_path) as hist:
+            with ExecutionHistory(db_path=history_path) as hist:
                 if hasattr(hist, '_db_path') and hist._db_path:
                     import sqlite3
                     conn = sqlite3.connect(str(hist._db_path))

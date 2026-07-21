@@ -439,7 +439,11 @@ def _create_dag_for_steps(case: str, steps: list[str]) -> WorkflowDAG:
             parameters={"case": case, "task": step},
             parent_ids=[prev_id] if prev_id else [],
         )
-        dag.add_node(node)
+        dag.add_node(
+            name=node.name,
+            parameters=node.parameters,
+            parents=node.parent_ids,
+        )
         nodes[step] = node.node_id
         prev_id = node.node_id
 
@@ -506,7 +510,7 @@ def run_wien2k_pipeline(  # noqa: C901
 
         dag = create_wien2k_workflow(case_name, steps)
         executor = WorkflowExecutor(dag, auto_retry=auto_retry)
-        executor_status = executor.run(timeout_per_node=3600)
+        executor_status = executor.run()
 
         result["status"] = "completed" if executor_status.state == ExecutorState.COMPLETED else "failed"
 

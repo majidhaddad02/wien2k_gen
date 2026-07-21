@@ -365,8 +365,8 @@ def setup_scratch(  # noqa: C901
                 
             # FIXED: Corrected logic for tmpfs preference check
             if cfg.prefer_tmpfs and topo.total_cores <= (os.cpu_count() or 1) and _detect_filesystem_type(p) == "tmpfs":
-                    selected_path = p
-                    break
+                selected_path = p
+                break
                     
             if selected_path is None:
                 selected_path = p

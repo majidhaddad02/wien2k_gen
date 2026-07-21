@@ -856,10 +856,6 @@ def suggest_optimal_resources(  # noqa: C901
         fma_units=hw_profile.get("fma_units", 2)
     )
 
-    # Block-size rule for MPI fine-grain (ScaLAPACK efficiency)
-    block_thresh = 1500
-    max(1, (nmat // block_thresh) ** 2) if nmat > 0 else total_cores_available
-
     # OpenMP scaling limit (architecture-dependent)
     omp_limit = 16 if hw_profile["mkl"] and "intel" in hw_profile["arch"] else 8
     max_omp_threads = min(get_physical_cores(), omp_limit)

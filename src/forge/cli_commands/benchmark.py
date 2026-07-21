@@ -35,7 +35,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     topo = detect_topology(max_cores=args.max_cores)
 
     if args.type == "synthetic":
-        from .benchmark.synthetic import SyntheticWorkloadParams, generate_strong_scaling_suite
+        from ..benchmark.synthetic import SyntheticWorkloadParams, generate_strong_scaling_suite
 
         problem: SyntheticWorkloadParams = {"atoms": 20, "kpoints": 8, "nmat": 1500, "is_hybrid": False}
         suite = generate_strong_scaling_suite(problem, topo, max_cores=args.max_cores)

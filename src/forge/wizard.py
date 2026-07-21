@@ -444,26 +444,24 @@ def run_wizard(topo=None) -> None:  # noqa: C901
     # 5. Execution & Generation
     with console.status("[bold cyan]Generating configuration files...", spinner="dots"):
         try:
-            # Apply core limit to topology for builder
             topo_final = topo
             if max_cores and max_cores < topo.total_cores:
                 topo_final = detect_topology(max_cores=max_cores)
-                
-                build_result = build_auto(
-                    topo=topo_final,
-                    suggestion=sug_dict,
-                    backup=True,
-                    dry_run=False,
-                    validate=True
+
+            build_result = build_auto(
+                topo=topo_final,
+                suggestion=sug_dict,
+                backup=True,
+                dry_run=False,
+                validate=True
+            )
+
+            if not build_result.success:
+                raise ConfigurationError(
+                    getattr(build_result, "error_message", None)
+                    or "Build failed. Check input files and topology."
                 )
 
-                if not build_result.success:
-                    if hasattr(build_result, 'error_message') and build_result.error_message:
-                        raise ConfigurationError(build_result.error_message)
-                    raise ConfigurationError(
-                        "Build failed. Check input files and topology."  # Generic error for edge cases
-                    )
-                
             console.print("[green]✅ .machines and parallel_options generated successfully![/green]")
 
             # 5.5 Manual review/edit step

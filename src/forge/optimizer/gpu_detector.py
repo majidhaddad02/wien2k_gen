@@ -268,11 +268,11 @@ def analyze_offload_potential(
     analysis.gpu_memory_required_mb = estimate_gpu_memory(nmat, kpts_per_gpu)
 
     if analysis.gpu_memory_available_mb > 0 and analysis.gpu_memory_required_mb > 0.90 * analysis.gpu_memory_available_mb:
-            analysis.oom_risk = True
-            analysis.recommendation = (
-                f"GPU memory tight: required={analysis.gpu_memory_required_mb:.0f}MB, "
-                f"available={analysis.gpu_memory_available_mb:.0f}MB. Reduce k-points/GPU."
-            )
+        analysis.oom_risk = True
+        analysis.recommendation = (
+            f"GPU memory tight: required={analysis.gpu_memory_required_mb:.0f}MB, "
+            f"available={analysis.gpu_memory_available_mb:.0f}MB. Reduce k-points/GPU."
+        )
 
     parts = []
     if analysis.lapw1_offload:

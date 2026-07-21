@@ -40,7 +40,7 @@ _cached_instance: Optional[Backend] = None
 
 def _key_to_code(key: str) -> Optional[BackendCode]:
     """Map normalized string key to BackendCode enum."""
-    key = key.lower().strip().replace("-", " ").replace("  ", "_")
+    key = key.lower().strip().replace("-", " ").replace("  ", "").replace(" ", "_")
     mapping = {
         "wien2k": BackendCode.WIEN2K,
         "qe": BackendCode.QUANTUM_ESPRESSO,

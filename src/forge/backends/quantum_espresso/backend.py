@@ -141,11 +141,8 @@ class QuantumEspressoBackend(Backend):
     def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate suggestion against QE-specific mathematical & memory constraints."""
         errors = []
-        suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
-        suggestion.get("omp_threads_per_rank", 1)
         nkpts = suggestion.get("problem_params", {}).get("kpoints", 0)
-        suggestion.get("problem_params", {}).get("nbands", 0)
 
         # Strict divisibility check for QE domain decomposition
         npool = suggestion.get("npool", 1)
@@ -286,10 +283,10 @@ class QuantumEspressoBackend(Backend):
                 result["atoms"] = coord_lines
 
         # 2. K-points (K_POINTS card)
-        kpoints_match = re.search(r"K_POINTS\s*\((\w+)\)\s*\n\s*(\d+)", content, re.IGNORECASE)
+        kpoints_match = re.search(r"K_POINTS\s*\((\w+)\)\s*\n\s*(.+)", content, re.IGNORECASE)
         if kpoints_match:
             k_type = kpoints_match.group(1).lower()
-            if k_type == "tp" or k_type == "gamma":
+            if k_type.startswith("tp") or k_type == "gamma":
                 result["kpoints"] = 1
             elif k_type == "automatic":
                 parts = kpoints_match.group(2).split()

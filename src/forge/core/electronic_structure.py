@@ -163,9 +163,6 @@ def parse_band_structure(case_name: str, path: str) -> dict[str, Any]:  # noqa: 
     # Spin-polarized files have alternating spin-up/spin-down blocks
     nkpt_est: int = 0
     if eigenvalues_raw:
-        longest = max(eigenvalues_raw, key=len)
-        len(longest) // 2 if eigenvalues_raw else 0
-
         # Count k-points from band blocks
         nkpt_est = len(eigenvalues_raw) // 2 if nspin == 2 else len(eigenvalues_raw)
 
@@ -176,12 +173,6 @@ def parse_band_structure(case_name: str, path: str) -> dict[str, Any]:  # noqa: 
         all_lengths = [len(b) for b in eigenvalues_raw]
         nbnd = max(all_lengths) if all_lengths else 0
         eigenvalues = np.zeros((nspin, nkpt, nbnd), dtype=np.float64)
-        for ib in range(nbnd):
-            for ik in range(nkpt):
-                ib * 2 * nkpt + ik
-                ib * 2 * nkpt + nkpt + ik
-                # This indexing is complex; use a simpler approach
-                pass
 
         # Simpler: just parse all spin-up bands then all spin-dn bands
         half = len(eigenvalues_raw) // 2
@@ -276,9 +267,6 @@ def compute_direct_band_gap(
     eigenvalues = band_data["eigenvalues"]
     fermi = band_data["fermi"]
     nspin = band_data["nspin"]
-    nkpt = band_data["nkpt"]
-    nbnd = band_data["nbnd"]
-
     nkpt = band_data["nkpt"]
     nbnd = band_data["nbnd"]
 
