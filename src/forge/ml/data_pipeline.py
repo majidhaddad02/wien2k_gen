@@ -239,8 +239,8 @@ class MPDatasetPipeline:
                 ky = kpoints_data.get("ny", 0)
                 kz = kpoints_data.get("nz", 0)
                 if kx < 1 or ky < 1 or kz < 1:
-                    if kpoints_data and isinstance(kpoints_data, list):
-                        kx = ky = kz = kpoints_data[0] if len(kpoints_data) > 0 else 0
+                    if kpoints_data and isinstance(kpoints_data, list) and len(kpoints_data) >= 3:
+                        kx, ky, kz = int(kpoints_data[0]), int(kpoints_data[1]), int(kpoints_data[2])
                     else:
                         kx = ky = kz = 0
                 if kx < 1:
