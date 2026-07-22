@@ -12,11 +12,16 @@ All documentation and inline comments are in English per project standards.
 """
 
 import errno
-import fcntl
 import os
 import time
 from pathlib import Path
 from typing import Any, Optional, Union
+
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:
+    _HAS_FCNTL = False
 
 from ..logging_config import get_logger
 
@@ -151,7 +156,8 @@ class FileLock:
         # Release fcntl lock
         if self._fd is not None:
             try:
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
+                if _HAS_FCNTL:
+                    fcntl.flock(self._fd, fcntl.LOCK_UN)
                 os.close(self._fd)
                 logger.debug(f"fcntl lock released: {self.lock_path}")
             except OSError as e:
@@ -178,6 +184,8 @@ class FileLock:
 
     def _try_fcntl(self) -> None:
         """Attempt to acquire POSIX advisory lock."""
+        if not _HAS_FCNTL:
+            raise OSError(errno.ENOLCK, "fcntl not available on this platform")
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_RDWR)
         try:
