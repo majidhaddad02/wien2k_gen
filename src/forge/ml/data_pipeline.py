@@ -163,13 +163,9 @@ class MPDatasetPipeline:
     ) -> list[dict[str, Any]]:
         """Fetch structures from Materials Project summary endpoint.
 
-        Uses the ``/materials/summary/`` endpoint with POST search to find
-        entries that have computed band gaps and k-point information.
-
-        Filters for:
-          - ``band_gap`` is not ``None`` (DFT calculation converged)
-          - ``nsites`` ≤ ``max_atoms``
-          - Has lattice vectors and fractional coordinates
+        Uses GET to ``/materials/summary/`` with ``_limit``, ``_skip``,
+        and ``_fields`` query parameters.  Client-side filtering for
+        ``band_gap`` and ``nsites``.
         """
         import requests
 
@@ -180,30 +176,17 @@ class MPDatasetPipeline:
         all_entries: list[dict[str, Any]] = []
         chunk = max(20, min(max_entries, 100))
 
-        criteria = {
-            "band_gap": {"$exists": True},
-            "nsites": {"$lte": self._max_atoms},
-            "has_bandstructure": True,
-            "theoretical": True,
-        }
-
         for offset in range(0, n_total, chunk):
             try:
-                resp = requests.post(
+                resp = requests.get(
                     f"{_MP_API_BASE}/materials/summary/",
-                    json={
-                        "criteria": criteria,
-                        "properties": [
-                            "material_id", "formula_pretty", "nsites",
-                            "structure", "band_gap", "kpoints", "symmetry",
-                        ],
-                        "options": {
-                            "limit": min(chunk, n_total - offset),
-                            "skip": offset,
-                        },
+                    params={
+                        "_limit": min(chunk, n_total - offset),
+                        "_skip": offset,
+                        "_fields": "material_id,formula_pretty,nsites,structure,band_gap,kpoints,symmetry",
                     },
                     headers={
-                        "X-API-KEY": self._api_key,
+                        "x-api-key": self._api_key,
                         "User-Agent": "forge/1.0",
                     },
                     timeout=30,
@@ -222,6 +205,10 @@ class MPDatasetPipeline:
                 break
 
             for entry in entries:
+                if entry.get("nsites", 999) > self._max_atoms:
+                    continue
+                if entry.get("band_gap") is None:
+                    continue
                 struct = entry.get("structure")
                 if not struct:
                     continue
