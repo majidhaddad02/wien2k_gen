@@ -63,7 +63,7 @@ For clusters without internet access — use the installer's offline mode:
 
 ```bash
 # On a machine with internet:
-pip download -r requirements/core.txt -d ./offline_packages
+pip download -r offline_packages/requirements-offline.txt -d ./offline_packages
 rsync -av . cluster:/path/to/forge/
 
 # On the cluster:

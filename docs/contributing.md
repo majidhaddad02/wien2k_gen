@@ -6,7 +6,6 @@
 git clone https://github.com/majidhaddad02/forge.git
 cd forge
 pip install -e ".[dev]"
-pip install -r requirements-dev.txt
 ```
 
 ## Running Tests
