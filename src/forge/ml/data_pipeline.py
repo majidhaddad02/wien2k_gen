@@ -190,7 +190,7 @@ class MPDatasetPipeline:
         for offset in range(0, n_total, chunk):
             try:
                 resp = requests.post(
-                    f"{_MP_API_BASE}/materials/summary/search",
+                    f"{_MP_API_BASE}/materials/summary/",
                     json={
                         "criteria": criteria,
                         "properties": [
