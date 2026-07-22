@@ -215,7 +215,8 @@ class MPDatasetPipeline:
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
-                logger.error(f"MP API HTTP {e.code}: {e.reason}")
+                body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+                logger.error(f"MP API HTTP {e.code}: {e.reason} — {body}")
                 break
             except Exception as e:
                 logger.error(f"MP API request failed: {e}")

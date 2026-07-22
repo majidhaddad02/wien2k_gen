@@ -31,7 +31,11 @@ if __name__ == "__main__":
         n_structures=N_STRUCTURES,
         output_dir=OUTPUT_DIR,
     )
-    print(f"  Downloaded {meta['n_total_structures']} structures")
+    n_total = meta.get("n_total_structures", 0)
+    if n_total == 0:
+        print("ERROR: Downloaded 0 structures. Check MP_API_KEY or wait a few minutes after registration.")
+        sys.exit(1)
+    print(f"  Downloaded {n_total} structures")
     print(f"  Train: {meta['n_train']}, Val: {meta['n_val']}")
 
     print(f"\nStep 2/2: Training GNN model ({meta['n_train']} samples, 30 epochs)...")
