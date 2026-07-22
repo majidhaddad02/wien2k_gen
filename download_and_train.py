@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     model, ok = _train_from_mp_dataset()
     if ok:
-        print("Training complete — model saved to ~/.forge/models/kpoint_predictor.npz")
+        print("Training complete — model saved to ~/.forge/models/gnn_kpoint_v1.npz")
     else:
         print("ERROR: Training failed — check logs above.")
         sys.exit(1)
