@@ -50,7 +50,8 @@ src/forge/
 │   │   └── parsers.py     # WIEN2k output parsers
 │   └── quantum_espresso/  # Quantum ESPRESSO backend
 │       ├── backend.py
-│       ├── executor.py
+    │       ├── config_generator.py  # QE parallel config generator
+    │       ├── executor.py
 │       └── parser.py
 ├── core/                  # Core detection and optimization
 │   ├── hardware/          # Hardware detection (CPU, memory, NUMA)
@@ -82,21 +83,24 @@ src/forge/
 │   ├── bayesian_tuner.py  # Bayesian parameter tuning entry point
 │   ├── ml_predict.py      # ML prediction integration
 │   ├── gpu_detector.py    # GPU hardware detection
-│   ├── bayesian/          # Bayesian optimization subpackage
-│   │   ├── core.py        # BayesianOptimizer, multi-fidelity BO
-│   │   ├── gp.py          # GP with ARD, NLL, partial derivative
-│   │   ├── kernels.py     # RBF-ARD, Matérn ν=2.5 kernels
-│   │   ├── acquisition.py # EI, q-EI (Monte Carlo joint posterior)
-│   │   ├── elements.py    # Periodic table, chemical similarity
-│   │   ├── sampling.py    # Latin Hypercube Sampling
-│   │   └── constraints.py # Memory/walltime constraint estimation
-│   └── monitor/           # SCF convergence monitoring
+    │   ├── bayesian/          # Bayesian optimization subpackage
+    │   │   ├── core.py        # BayesianOptimizer, multi-fidelity BO
+    │   │   ├── gp.py          # GP with ARD, NLL, partial derivative
+    │   │   ├── kernels.py     # RBF-ARD, Matérn ν=2.5 kernels
+    │   │   ├── acquisition.py # EI, q-EI (Monte Carlo joint posterior)
+    │   │   ├── elements.py    # Periodic table, chemical similarity
+    │   │   ├── sampling.py    # Latin Hypercube Sampling
+    │   │   ├── constraints.py # Memory/walltime constraint estimation
+    │   │   ├── bohb.py        # BOHB with TPE/KDE multi-fidelity optimization
+    │   │   └── dpp.py         # DPP batch selector (Cholesky greedy MAP)
+    │   └── monitor/           # SCF convergence monitoring
 │       ├── convergence.py # Charge sloshing, Durbin-Watson, FFT
 │       ├── checkpoint.py  # SCF checkpoint/restore (heuristic, not Daly)
 │       ├── engine.py      # Monitoring engine
 │       └── types.py       # ConvergenceAnalysis type
 ├── ml/                    # Machine learning
-│   └── gnn_kpoint_predictor.py  # CGCNN k-point prediction (pure NumPy)
+│   ├── gnn_kpoint_predictor.py  # CGCNN k-point prediction (pure NumPy)
+│   └── data_pipeline.py         # Materials Project dataset builder
 ├── submit/                # Scheduler job submission
 │   ├── slurm.py
 │   ├── pbs.py
@@ -111,6 +115,8 @@ src/forge/
 │   ├── filelock.py          # File locking
 │   └── subprocess_utils.py
 ├── cli_commands/          # CLI subcommands
+│   ├── base.py            # Command registration framework
+│   ├── _utils.py          # Shared CLI utilities
 │   ├── generate.py        # forge generate
 │   ├── submit.py          # forge submit
 │   ├── advise.py          # forge advise
@@ -134,7 +140,8 @@ src/forge/
 │   └── analysis.py        # UI analysis helpers
 ├── benchmark/             # Benchmarking
 │   ├── synthetic.py       # LogP + Amdahl synthetic benchmarks
-│   └── real.py            # Real-world scaling benchmarks
+│   ├── real.py            # Real-world scaling benchmarks
+│   └── report.py          # Benchmark reporting and analysis
 ├── cli.py                 # Main CLI entry point
 ├── wizard.py              # Interactive wizard (Textual TUI)
 ├── backend_manager.py     # Backend registration

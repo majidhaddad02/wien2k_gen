@@ -15,6 +15,7 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 | [API Reference](api-reference.md) | Python module reference for scripting and automation |
 | [Examples](examples.md) | Real-world `.machines` output for different scenarios |
 | [Parallel Modes](parallel-modes.md) | kpoint, hybrid, mpi, fine-grain — when to use each |
+| [ML Dataset](ml_dataset.md) | GNN training data pipeline from Materials Project |
 | [Troubleshooting](troubleshooting.md) | Common errors, diagnostics, debugging |
 
 ---

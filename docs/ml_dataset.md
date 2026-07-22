@@ -148,9 +148,7 @@ Used by the base `BayesianOptimizer` for parallel execution tuning.
 | 3 | `mode=hybrid` | `{0, 1}` | One-hot: hybrid MPI+OpenMP |
 | 4 | `mode=mpi` | `{0, 1}` | One-hot: pure MPI |
 
-Encoding function: `_encode_config()` at `sampling.py:51`. Total: **6 dimensions** (2 cont + 3 one-hot = 5 features; the one-hot encoding of 3 categories creates 5 numeric features — 2 continuous + 3 categorical).
-
-Actually: `vec = np.zeros(2 + len(_CATEGORICAL_MODES))` → 2 continuous + 3 categorical = **5 dims**. The docstring in the code says 6 dims (off by one). The actual array has shape `(5,)`.
+Encoding function: `_encode_config()` at `sampling.py:51`. Total: **5 dimensions** (2 continuous + 3 one-hot categorical features).
 
 ### GP (BayesianParameterTuner) — 10-D Parameter Encoding
 

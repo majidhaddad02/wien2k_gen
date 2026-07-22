@@ -62,7 +62,7 @@ def _encode_config(mode: str, total_cores: int, omp_threads: int) -> np.ndarray:
         omp_threads: OpenMP threads per rank.
 
     Returns:
-        Feature vector of shape (6,).
+        Feature vector of shape (5,).
     """
     vec = np.zeros(2 + len(_CATEGORICAL_MODES), dtype=np.float64)
     vec[0] = float(total_cores) / 256.0

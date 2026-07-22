@@ -55,8 +55,20 @@ Optimization
    :members:
    :undoc-members:
 
+.. automodule:: forge.optimizer.convergence
+   :members:
+   :undoc-members:
+
+.. automodule:: forge.optimizer.history
+   :members:
+   :undoc-members:
+
 Backends
 --------
+
+.. automodule:: forge.submit
+   :members:
+   :undoc-members:
 
 .. automodule:: forge.backends.wien2k
    :members:
@@ -67,6 +79,10 @@ Backends
    :undoc-members:
 
 .. automodule:: forge.backends.quantum_espresso.backend
+   :members:
+   :undoc-members:
+
+.. automodule:: forge.backends.cp2k
    :members:
    :undoc-members:
 
@@ -81,5 +97,9 @@ Machine Learning
 ----------------
 
 .. automodule:: forge.ml.gnn_kpoint_predictor
+   :members:
+   :undoc-members:
+
+.. automodule:: forge.ml.data_pipeline
    :members:
    :undoc-members:

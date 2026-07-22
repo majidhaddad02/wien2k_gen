@@ -211,12 +211,11 @@ forge generate --export config.json
   "status": "success",
   "mode": "hybrid",
   "recommended_total_cores": 128,
-  "recommended_nodes": 4,
   "cores_per_node": [32, 32, 32, 32],
-  "mpi_ranks_per_node": [8, 8, 8, 8],
+  "mpi_ranks_per_node": 32,
   "omp_threads_per_rank": 4,
   "warnings": ["ELPA not found; MPI fine-grain may be slow"],
-  "confidence_score": 0.85,
+  "confidence": 0.85,
   "estimated_memory_gb": 48.2,
   "vector_split_active": false
 }

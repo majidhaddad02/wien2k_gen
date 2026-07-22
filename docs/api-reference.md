@@ -88,7 +88,7 @@ Aggregate hardware summary with all fields above.
 ```python
 from forge.core.topology import (
     Topology, NUMANode, NodeSpec, GPUInfo,
-    factorize_blacs_grid, blacs_grid_quality,
+    factorize_blacs_grid,
 )
 ```
 
@@ -105,14 +105,11 @@ Topology(
 Key methods:
 - `topo.total_cores` → int
 - `topo.get_mpi_binding_hints()` → dict (openmpi, intel_mpi, mpich, mvapich, srun)
-- `topo.split_load_balanced(total_cores: int)` → list of (node, cores) tuples
+- `topo.split_load_balanced(total_cores=None)` → list of (node, cores) tuples
 - `topo.get_optimal_mpi_distribution(mode: str)` → core distribution
 
-#### `factorize_blacs_grid(total_cores: int) -> Tuple[int, int]`
+#### `factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> Tuple[int, int]`
 Returns optimal 2D BLACS processor grid for ScaLAPACK/ELPA.
-
-#### `blacs_grid_quality(rows: int, cols: int) -> float`
-Quality score for BLACS grid (0-1). Penalizes 1D grids (Marek et al. 2014).
 
 ---
 
@@ -444,7 +441,6 @@ from forge.optimizer.monitor import (
     cleanup_old_checkpoints,
     resume_from_checkpoint,
     detect_charge_sloshing,
-    detect_scf_divergence,
 )
 ```
 
@@ -484,6 +480,31 @@ Removes old checkpoints keeping last N. Warns if > 1GB.
 
 #### `resume_from_checkpoint(case_name, checkpoint_id=None) -> Dict`
 Restores checkpoint files and returns cycle tracking info.
+
+---
+
+### `forge.optimizer.convergence`
+
+```python
+from forge.optimizer.convergence import (
+    detect_scf_divergence,
+    parse_mixing_params,
+    suggest_mixing_strategy,
+    run_kpoint_convergence,
+    run_rkmax_convergence,
+    find_converged_parameters,
+    generate_convergence_report,
+)
+```
+
+#### `detect_scf_divergence(scf_content, energy_values=None, callback=None) -> dict`
+Detects SCF divergence patterns (charge sloshing, oscillatory, monotonic divergence) and suggests mixing parameter adjustments. Returns diagnostics with root cause analysis and recommended actions.
+
+#### `parse_mixing_params(case_name) -> dict`
+Parses mixing parameters from `:MIXING:` header lines in case.inm. Returns `beta`, `type`, and other mixing parameters deterministically.
+
+#### `suggest_mixing_strategy(energy_history, current_mixing=None) -> dict`
+Analyzes energy convergence history and suggests mixing strategy (Pratt, Broyden, MSR1, MSEC1). Recommends parameters for improved convergence.
 
 ---
 
@@ -581,7 +602,8 @@ Single graph convolution: `h_i' = σ(W_s·h_i + Σ W_n·h_j ⊙ EdgeMLP(e_ij))` 
 ### `forge.backends.wien2k`
 
 ```python
-from forge.backends.wien2k import Wien2kBackend, check_elpa_available
+from forge.backends.wien2k import Wien2kBackend
+from forge.core.hardware.wrapper import check_elpa_available
 ```
 
 #### `Wien2kBackend`
