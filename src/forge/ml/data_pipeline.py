@@ -171,8 +171,7 @@ class MPDatasetPipeline:
           - ``nsites`` ≤ ``max_atoms``
           - Has lattice vectors and fractional coordinates
         """
-        import urllib.error
-        import urllib.request
+        import requests
 
         if not self._api_key:
             logger.error("No MP_API_KEY set — cannot fetch structures.")
@@ -189,34 +188,30 @@ class MPDatasetPipeline:
         }
 
         for offset in range(0, n_total, chunk):
-            payload = json.dumps({
-                "criteria": criteria,
-                "properties": [
-                    "material_id", "formula_pretty", "nsites",
-                    "structure", "band_gap", "kpoints", "symmetry",
-                ],
-                "options": {
-                    "limit": min(chunk, n_total - offset),
-                    "skip": offset,
-                },
-            }).encode("utf-8")
-
-            req = urllib.request.Request(
-                f"{_MP_API_BASE}/materials/summary/search",
-                data=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-API-KEY": self._api_key,
-                },
-                method="POST",
-            )
-
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", errors="replace") if e.fp else ""
-                logger.error(f"MP API HTTP {e.code}: {e.reason} — {body}")
+                resp = requests.post(
+                    f"{_MP_API_BASE}/materials/summary/search",
+                    json={
+                        "criteria": criteria,
+                        "properties": [
+                            "material_id", "formula_pretty", "nsites",
+                            "structure", "band_gap", "kpoints", "symmetry",
+                        ],
+                        "options": {
+                            "limit": min(chunk, n_total - offset),
+                            "skip": offset,
+                        },
+                    },
+                    headers={
+                        "X-API-KEY": self._api_key,
+                        "User-Agent": "forge/1.0",
+                    },
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"MP API HTTP {e.response.status_code}: {e.response.text[:500]}")
                 break
             except Exception as e:
                 logger.error(f"MP API request failed: {e}")
