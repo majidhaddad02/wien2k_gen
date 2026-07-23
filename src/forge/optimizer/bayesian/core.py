@@ -16,6 +16,7 @@ from .acquisition import (
     compute_expected_improvement,
     compute_q_expected_improvement,
 )
+from .bohb import BOHBOptimizer
 from .constraints import (
     _estimate_memory_gb_for_config,
     _estimate_walltime_min_for_config,
@@ -368,6 +369,7 @@ class BayesianOptimizer:
         exploration_xi: float = 0.01,
         n_random_restarts: int = 50,
         use_ard: bool = True,
+        strategy: str = "gp_ei",
     ) -> None:
         """
         Initialize the Bayesian optimiser.
@@ -382,6 +384,7 @@ class BayesianOptimizer:
             n_random_restarts: Number of random restarts for global optimisation
                                of the acquisition function.
             use_ard: If True, use _GaussianProcessARD; otherwise _GaussianProcess.
+            strategy: Acquisition strategy — ``"gp_ei"`` (default) or ``"bohb"``.
         """
         self._history = history
         self.backend = backend
@@ -390,6 +393,7 @@ class BayesianOptimizer:
         self._exploration_xi = exploration_xi
         self._n_random_restarts = n_random_restarts
         self._use_ard = use_ard
+        self._strategy = strategy
         self._gp: _GaussianProcess = (
             _GaussianProcessARD(length_scales=length_scales)
             if use_ard
@@ -404,6 +408,9 @@ class BayesianOptimizer:
         self._transfer_mean: Optional[np.ndarray] = None
         self._transfer_weight: float = 0.0
         self._source_system: Optional[str] = None
+
+        self._bohb: Optional[BOHBOptimizer] = None
+        self._last_bohb_nkpt: int = 0
 
         self._warm_start()
 
@@ -455,6 +462,12 @@ class BayesianOptimizer:
         with self._lock:
             self._add_observation_no_lock(record)
             self._refit_gp()
+            if self._bohb is not None:
+                config = _decode_config(
+                    _encode_config(record.mode, record.total_cores, record.omp_threads),
+                    self.min_cores, self.max_cores,
+                )
+                self._bohb.observe(config, record.walltime_sec, self._last_bohb_nkpt)
         with self._lock:
             best_y_val = self._best_y
             n_x = len(self._X)
@@ -710,31 +723,29 @@ class BayesianOptimizer:
         user_max_cores: Optional[int] = None,
     ) -> dict[str, Any]:
         """
-        Suggest the next configuration to evaluate using Expected Improvement.
+        Suggest the next configuration to evaluate.
 
-        Performs a randomised search over the parameter space, evaluating
-        the EI acquisition function at each candidate. Returns the config
-        with the highest expected improvement.
-
-        If transfer learning is active, candidate predictions are adjusted
-        toward the source prior mean.
+        With ``strategy="gp_ei"`` (default): uses Expected Improvement over GP.
+        With ``strategy="bohb"``: uses BOHB multi-fidelity TPE sampling with
+        Hyperband bracket scheduling.
 
         Args:
             nmat: Hamiltonian matrix size (for context, passed through).
-            nkpt: Number of k-points (for context, passed through).
+            nkpt: Number of k-points (used as max budget for BOHB).
             user_max_cores: Override max_cores (e.g. from topology limit).
 
         Returns:
             Dictionary with keys:
-            - mode: str
-            - total_cores: int
-            - omp_threads: int
-            - expected_improvement: float
-            - predicted_mean: float
-            - predicted_std: float
-            - source: str ('model' or 'random')
+            - mode: str, total_cores: int, omp_threads: int
+            - expected_improvement: float (gp_ei) or 0.0 (bohb)
+            - predicted_mean: float, predicted_std: float
+            - source: str ('model', 'bohb', or 'random')
             - transfer_weight: float
+            - bohb_budget: int (only for bohb strategy)
         """
+        if self._strategy == "bohb":
+            return self._suggest_next_bohb(nmat, nkpt, user_max_cores)
+
         max_cores = self.max_cores
         if user_max_cores is not None:
             max_cores = min(self.max_cores, max(1, user_max_cores))
@@ -912,6 +923,48 @@ class BayesianOptimizer:
             result["p_feasible"] = 1.0
             result["transfer_weight"] = self._transfer_weight
             return result
+
+    def _lazy_init_bohb(self, nkpt: int) -> None:
+        if self._bohb is not None and nkpt == self._last_bohb_nkpt:
+            return
+        self._bohb = BOHBOptimizer(
+            nkpt=nkpt,
+            max_budget=nkpt,
+            min_cores=self.min_cores,
+            max_cores=self.max_cores,
+        )
+        self._last_bohb_nkpt = nkpt
+        for x_vec, y_val in zip(self._X, self._y):
+            config = _decode_config(x_vec, self.min_cores, self.max_cores)
+            self._bohb.observe(config, float(y_val), nkpt)
+
+    def _suggest_next_bohb(
+        self,
+        nmat: int,
+        nkpt: int,
+        user_max_cores: Optional[int] = None,
+    ) -> dict[str, Any]:
+        self._lazy_init_bohb(nkpt)
+        max_cores = self.max_cores
+        if user_max_cores is not None:
+            max_cores = min(self.max_cores, max(1, user_max_cores))
+
+        config, budget = self._bohb.suggest()
+        cores = min(config.get("total_cores", 1), max_cores)
+        omp = min(config.get("omp_threads", 1), cores)
+        mode = config.get("mode", _CATEGORICAL_MODES[0])
+
+        return {
+            "mode": mode,
+            "total_cores": cores,
+            "omp_threads": omp,
+            "expected_improvement": 0.0,
+            "predicted_mean": 0.0,
+            "predicted_std": 0.0,
+            "source": "bohb",
+            "transfer_weight": 0.0,
+            "bohb_budget": budget,
+        }
 
     @staticmethod
     def _random_valid_mode_omp(cores: int, rng: np.random.RandomState) -> tuple[str, int]:

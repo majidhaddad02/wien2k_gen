@@ -16,6 +16,8 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--case", type=str, default="case", help="WIEN2k case name")
     p.add_argument("--budget", type=int, default=10, help="Max DFT runs (default: 10)")
     p.add_argument("--target", type=str, default="energy_convergence", help="Target metric")
+    p.add_argument("--strategy", type=str, choices=["gp_ei", "bohb"], default="gp_ei",
+                   help="Optimisation strategy: gp_ei (GP+EI, default) or bohb (BOHB+TPE)")
     p.add_argument("--simulated", action="store_true", help="Use simulated objective for testing")
     p.add_argument("--verbose", "-v", action="store_true", help="Show iteration details")
 
@@ -30,7 +32,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     console.print(Panel(
         f"[cyan]Bayesian Parameter Optimization[/]\n"
         f"Case: [bold]{args.case}[/] | Budget: [bold]{args.budget} runs[/] | "
-        f"Target: [bold]{args.target}[/]",
+        f"Target: [bold]{args.target}[/] | Strategy: [bold]{args.strategy}[/]",
         border_style="magenta",
     ))
 
@@ -39,6 +41,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         budget=args.budget,
         use_simulated=args.simulated,
         verbose=args.verbose,
+        strategy=args.strategy,
     )
 
     table = Table(title="Optimization Results", border_style="green")

@@ -135,12 +135,14 @@ class BayesianParameterTuner:
         exploration_xi: float = 0.01,
         use_ard: bool = True,
         verbose: bool = False,
+        strategy: str = "gp_ei",
     ) -> None:
         self.case_name = case_name
         self.budget = budget
         self.exploration_xi = exploration_xi
         self.use_ard = use_ard
         self.verbose = verbose
+        self._strategy = strategy
 
         self._rng = np.random.RandomState(42)
         self._X: list[np.ndarray] = []
@@ -430,6 +432,7 @@ def optimize_convergence_parameters(
     target: str = "energy_convergence",
     use_simulated: bool = False,
     verbose: bool = True,
+    strategy: str = "gp_ei",
 ) -> TunerResult:
     """Entry point for `forge optimize` CLI command.
 
@@ -439,6 +442,7 @@ def optimize_convergence_parameters(
         target: Optimization target ('energy_convergence' only for now).
         use_simulated: Use synthetic objective (test mode).
         verbose: Print iteration details.
+        strategy: Optimisation strategy — ``"gp_ei"`` (GP+EI) or ``"bohb"``.
 
     Returns:
         TunerResult with best parameters found.
@@ -448,5 +452,6 @@ def optimize_convergence_parameters(
         budget=budget,
         use_ard=True,
         verbose=verbose,
+        strategy=strategy,
     )
     return tuner.tune(use_simulated=use_simulated)

@@ -22,6 +22,8 @@ from .advisor import (
 )
 from .bayesian import (
     BayesianOptimizer,
+    BOHBOptimizer,
+    DPPBatchSelector,
     MultiFidelityBayesianOptimizer,
     compute_expected_improvement,
 )
@@ -61,8 +63,10 @@ __all__ = [
     "BACKEND_OPERATIONAL_INTENSITY",
     "AutoProfiler",
     # Bayesian
+    "BOHBOptimizer",
     "BayesianOptimizer",
     "ConvergenceAnalysis",
+    "DPPBatchSelector",
     "ExecutionHistory",
     # History
     "ExecutionRecord",
