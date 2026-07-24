@@ -257,7 +257,7 @@ class MPDatasetPipeline:
     # Internal: Heuristic validation
     # -----------------------------------------------------------------
 
-    def _validate_metal_heuristic(
+    def _validate_metal_heuristic(  # noqa: C901
         self,
         mp_entries: list[dict[str, Any]],
         graphs: list[dict[str, np.ndarray]],
@@ -265,37 +265,65 @@ class MPDatasetPipeline:
         """Compare VEC-based is_metal heuristic against MP band_gap."""
         if len(mp_entries) != len(graphs):
             return
-        correct = 0
-        total = 0
-        misc_soc = 0
         from ..optimizer.bayesian.core import _ELEMENT_ATOMIC_NUMBERS as _en
         from .gnn_kpoint_predictor import _HIGH_SOC_ELEMENTS
 
+        total = 0
+        correct = 0
+        best_metal = 0
+        best_semi = 0
+        best_mixed = 0
+        t_metal = 0
+        t_semi = 0
+        t_mixed = 0
+        misc_soc = 0
+
         for entry, graph in zip(mp_entries, graphs):
-            bg = entry.get("band_gap", 0.0)
-            if bg is None or bg == 0.0:
+            bg = entry.get("band_gap")
+            if bg is None:
                 continue
             is_metal_real = 1.0 if bg < 0.05 else 0.0
             is_metal_heuristic = float(graph.get("is_metal", 0.5))
-            is_metal_heuristic_bin = 1.0 if is_metal_heuristic > 0.5 else 0.0
-            total += 1
-            if abs(is_metal_real - is_metal_heuristic_bin) < 0.1:
-                correct += 1
+
+            if is_metal_heuristic > 0.8:
+                heuristic_cat = "metal"
+            elif is_metal_heuristic < 0.2:
+                heuristic_cat = "semi"
             else:
+                heuristic_cat = "mixed"
+
+            if is_metal_real > 0.5:
+                t_metal += 1
+                if heuristic_cat == "metal":
+                    correct += 1
+                    best_metal += 1
+            else:
+                t_semi += 1
+                if heuristic_cat == "semi":
+                    correct += 1
+                    best_semi += 1
+                elif heuristic_cat == "mixed":
+                    t_mixed += 1
+                    best_mixed += 1
+
+            if heuristic_cat != ("metal" if is_metal_real > 0.5 else "semi"):
                 sites = entry.get("sites", [])
                 for site in sites:
                     sp = site.get("species", [{}])
                     if isinstance(sp, list) and sp:
-                        el = sp[0].get("element", "")
-                        z = _en.get(el, 0)
+                        z = _en.get(sp[0].get("element", ""), 0)
                         if z in _HIGH_SOC_ELEMENTS:
                             misc_soc += 1
                             break
 
+            total += 1
+
         if total > 0:
             acc = correct / total * 100
             logger.info(
-                f"VEC metal/semiconductor heuristic accuracy: {correct}/{total} = {acc:.1f}%"
+                f"VEC heuristic accuracy: {correct}/{total} = {acc:.1f}% "
+                f"(metals: {best_metal}/{t_metal}, semiconductors: {best_semi}/{t_semi}, "
+                f"mixed/SOC: {best_mixed}/{t_mixed})"
             )
             if misc_soc > 0:
                 logger.info(
