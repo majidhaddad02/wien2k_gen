@@ -128,6 +128,10 @@ class MPDatasetPipeline:
         graphs, targets = self._build_graphs(mp_data)
         logger.info(f"Built {len(graphs)} crystal graphs from MP data.")
 
+        if len(graphs) < 2:
+            logger.error(f"Insufficient graphs ({len(graphs)}) — need at least 2.")
+            return {"n_train": 0, "n_val": 0, "status": "no_graphs"}
+
         self._validate_metal_heuristic(mp_data, graphs)
 
         n_val = max(1, int(len(graphs) * test_fraction))
@@ -179,27 +183,38 @@ class MPDatasetPipeline:
         chunk = max(20, min(max_entries, 100))
 
         for offset in range(0, n_total, chunk):
-            try:
-                resp = requests.get(
-                    f"{_MP_API_BASE}/materials/summary/",
-                    params={
-                        "_limit": min(chunk, n_total - offset),
-                        "_skip": offset,
-                        "_fields": "material_id,formula_pretty,nsites,structure,band_gap,kpoints,symmetry",
-                    },
-                    headers={
-                        "x-api-key": self._api_key,
-                        "User-Agent": "forge/1.0",
-                    },
-                    timeout=30,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            except requests.exceptions.HTTPError as e:
-                logger.error(f"MP API HTTP {e.response.status_code}: {e.response.text[:500]}")
-                break
-            except Exception as e:
-                logger.error(f"MP API request failed: {e}")
+            data = {}
+            for attempt in range(3):
+                try:
+                    resp = requests.get(
+                        f"{_MP_API_BASE}/materials/summary/",
+                        params={
+                            "_limit": min(chunk, n_total - offset),
+                            "_skip": offset,
+                            "_fields": "material_id,formula_pretty,nsites,structure,band_gap,kpoints,symmetry",
+                        },
+                        headers={
+                            "x-api-key": self._api_key,
+                            "User-Agent": "forge/1.0",
+                        },
+                        timeout=30,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except requests.exceptions.HTTPError as e:
+                    logger.error(f"MP API HTTP {e.response.status_code}: {e.response.text[:500]}")
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        logger.warning(f"MP API attempt {attempt+1}/3 failed: {e} — retrying...")
+                        time.sleep(2.0 * (attempt + 1))
+                    else:
+                        logger.warning(f"MP API failed at offset {offset} after 3 attempts: {e}")
+                        break
+            else:
+                if offset > 0:
+                    logger.warning("Connection lost mid-download — keeping partial data.")
                 break
 
             entries = data.get("data", [])
