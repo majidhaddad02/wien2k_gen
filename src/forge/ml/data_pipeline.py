@@ -128,6 +128,8 @@ class MPDatasetPipeline:
         graphs, targets = self._build_graphs(mp_data)
         logger.info(f"Built {len(graphs)} crystal graphs from MP data.")
 
+        self._validate_metal_heuristic(mp_data, graphs)
+
         n_val = max(1, int(len(graphs) * test_fraction))
         n_train = len(graphs) - n_val
 
@@ -252,6 +254,56 @@ class MPDatasetPipeline:
         return all_entries
 
     # -----------------------------------------------------------------
+    # Internal: Heuristic validation
+    # -----------------------------------------------------------------
+
+    def _validate_metal_heuristic(
+        self,
+        mp_entries: list[dict[str, Any]],
+        graphs: list[dict[str, np.ndarray]],
+    ) -> None:
+        """Compare VEC-based is_metal heuristic against MP band_gap."""
+        if len(mp_entries) != len(graphs):
+            return
+        correct = 0
+        total = 0
+        misc_soc = 0
+        from ..optimizer.bayesian.core import _ELEMENT_ATOMIC_NUMBERS as _en
+        from .gnn_kpoint_predictor import _HIGH_SOC_ELEMENTS
+
+        for entry, graph in zip(mp_entries, graphs):
+            bg = entry.get("band_gap", 0.0)
+            if bg is None or bg == 0.0:
+                continue
+            is_metal_real = 1.0 if bg < 0.05 else 0.0
+            is_metal_heuristic = float(graph.get("is_metal", 0.5))
+            is_metal_heuristic_bin = 1.0 if is_metal_heuristic > 0.5 else 0.0
+            total += 1
+            if abs(is_metal_real - is_metal_heuristic_bin) < 0.1:
+                correct += 1
+            else:
+                sites = entry.get("sites", [])
+                for site in sites:
+                    sp = site.get("species", [{}])
+                    if isinstance(sp, list) and sp:
+                        el = sp[0].get("element", "")
+                        z = _en.get(el, 0)
+                        if z in _HIGH_SOC_ELEMENTS:
+                            misc_soc += 1
+                            break
+
+        if total > 0:
+            acc = correct / total * 100
+            logger.info(
+                f"VEC metal/semiconductor heuristic accuracy: {correct}/{total} = {acc:.1f}%"
+            )
+            if misc_soc > 0:
+                logger.info(
+                    f"  ({misc_soc} mismatches involve heavy/SOC elements — "
+                    f"expected limitation for Au, Pb, Bi, etc.)"
+                )
+
+    # -----------------------------------------------------------------
     # Internal: Graph Construction
     # -----------------------------------------------------------------
 
@@ -306,7 +358,7 @@ class MPDatasetPipeline:
             )
 
             try:
-                node_feat, edge_idx, edge_feat = build_crystal_graph(
+                node_feat, edge_idx, edge_feat, is_metal = build_crystal_graph(
                     positions_arr, atomic_arr, lattice_vecs,
                     cutoff=_DEFAULT_CRYSTAL_CUTOFF,
                 )
@@ -318,6 +370,7 @@ class MPDatasetPipeline:
                 "node_feat": node_feat.astype(np.float32),
                 "edge_index": edge_idx.astype(np.int32),
                 "edge_feat": edge_feat.astype(np.float32),
+                "is_metal": is_metal,
             })
 
             kx, ky, kz = entry["kpoints"]

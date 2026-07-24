@@ -79,6 +79,38 @@ _ATOMIC_FEATURES: dict[int, list[float]] = {
 
 _NUM_ATOMIC_FEATURES = 4
 
+_VALENCE_ELECTRONS: dict[int, int] = {
+    1: 1, 2: 0, 3: 1, 4: 2, 5: 3, 6: 4, 7: 5, 8: 6, 9: 7, 10: 8,
+    11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6, 17: 7, 18: 8,
+    19: 1, 20: 2, 21: 3, 22: 4, 23: 5, 24: 6, 25: 7, 26: 8, 27: 9, 28: 10,
+    29: 11, 30: 12, 31: 3, 32: 4, 33: 5, 34: 6, 35: 7, 36: 8,
+    37: 1, 38: 2, 39: 3, 40: 4, 41: 5, 42: 6, 43: 7, 44: 8, 45: 9, 46: 10,
+    47: 11, 48: 12, 49: 3, 50: 4, 51: 5, 52: 6, 53: 7, 54: 8,
+    55: 1, 56: 2, 57: 3, 58: 3, 59: 3, 60: 3, 61: 3, 62: 3,
+    63: 3, 64: 3, 65: 3, 66: 3, 67: 3, 68: 3, 69: 3, 70: 3, 71: 3,
+    72: 4, 73: 5, 74: 6, 75: 7, 76: 8, 77: 9, 78: 10,
+    79: 11, 80: 12, 81: 3, 82: 4, 83: 5, 84: 6, 85: 7, 86: 8,
+    87: 1, 88: 2, 89: 3, 90: 4, 91: 5, 92: 6, 93: 6, 94: 6,
+    95: 6, 96: 6, 97: 6, 98: 6, 99: 6, 100: 6, 101: 6, 102: 6, 103: 3,
+}
+
+_HIGH_SOC_ELEMENTS: set[int] = {z for z in range(55, 87)}  # Cs—Rn: heavy 5d/6p
+
+def _compute_is_metal_from_vec(atomic_numbers: list[int]) -> float:
+    if not atomic_numbers:
+        return 0.5
+    total_ve = sum(_VALENCE_ELECTRONS.get(z, 0) for z in atomic_numbers)
+    n_atoms = len(atomic_numbers)
+    ve_per_atom = total_ve / max(n_atoms, 1)
+    has_heavy = any(z in _HIGH_SOC_ELEMENTS for z in atomic_numbers)
+    if total_ve % 2 == 1:
+        return 1.0
+    if ve_per_atom < 2.0 or ve_per_atom > 9.0:
+        return 1.0
+    if has_heavy:
+        return 0.4
+    return 0.0
+
 # ---------------------------------------------------------------------------
 # Crystal graph builder
 # ---------------------------------------------------------------------------
@@ -88,7 +120,7 @@ def build_crystal_graph(
     atomic_numbers: list[int],
     lattice_vectors: tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]],
     cutoff: float = 8.0,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """Build crystal graph from atomic structure.
 
     Args:
@@ -101,13 +133,16 @@ def build_crystal_graph(
         node_features:  (N, 4)  — atomic features per atom
         edge_index:     (2, E)  — source->target atom pairs
         edge_features:  (E, 2)  — distance + bond_type per edge
+        is_metal:       float   — VEC-based heuristic (0.0=semiconductor, 1.0=metal)
     """
+    is_metal = _compute_is_metal_from_vec(atomic_numbers)
     n_atoms = len(atomic_numbers)
     if n_atoms == 0:
         return (
             np.zeros((0, _NUM_ATOMIC_FEATURES)),
             np.zeros((2, 0), dtype=np.int64),
             np.zeros((0, 2)),
+            is_metal,
         )
 
     node_features = np.zeros((n_atoms, _NUM_ATOMIC_FEATURES))
@@ -165,7 +200,7 @@ def build_crystal_graph(
         edge_index = np.array([edges_src, edges_dst], dtype=np.int64)
         edge_features = np.array(edge_feats)
 
-    return node_features.astype(np.float32), edge_index, edge_features.astype(np.float32)
+    return node_features.astype(np.float32), edge_index, edge_features.astype(np.float32), is_metal
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +420,7 @@ class CGCNNModel:
         self.conv1 = GraphConvLayer(node_dim, hidden_dim)
         self.convs = [GraphConvLayer(hidden_dim, hidden_dim) for _ in range(n_conv_layers - 1)]
         scale = math.sqrt(2.0 / hidden_dim)
-        self.fc1_W = np.random.randn(hidden_dim * 2, 128).astype(np.float32) * scale * 0.5
+        self.fc1_W = np.random.randn(hidden_dim * 2 + 1, 128).astype(np.float32) * scale * 0.5
         self.fc1_b = np.zeros(128, dtype=np.float32)
         self.fc2_W = np.random.randn(128, output_dim).astype(np.float32) * scale * 0.5
         self.fc2_b = np.zeros(output_dim, dtype=np.float32)
@@ -394,7 +429,8 @@ class CGCNNModel:
     def n_conv_layers(self) -> int:
         return len(self.convs) + 1
 
-    def forward(self, x: np.ndarray, edge_index: np.ndarray, edge_feat: np.ndarray) -> np.ndarray:
+    def forward(self, x: np.ndarray, edge_index: np.ndarray, edge_feat: np.ndarray,
+                is_metal: float = 0.5) -> np.ndarray:
         n = x.shape[0]
 
         h = self.conv1.forward(x, edge_index, edge_feat)
@@ -409,7 +445,8 @@ class CGCNNModel:
 
         mean_pool = np.mean(h, axis=0, keepdims=True)
         max_pool = np.max(h, axis=0, keepdims=True)
-        pooled = np.concatenate([mean_pool, max_pool], axis=-1)
+        metal_feat = np.array([[is_metal]], dtype=np.float32)
+        pooled = np.concatenate([mean_pool, max_pool, metal_feat], axis=-1)
 
         fc1_out = pooled @ self.fc1_W + self.fc1_b
         fc1_act = np.maximum(fc1_out, 0.0)
@@ -455,7 +492,7 @@ class CGCNNModel:
         dL_dpooled = dL_dfc1 @ self.fc1_W.T
         hidden_dim = self.hidden_dim
         dL_dmean = dL_dpooled[:, :hidden_dim]
-        dL_dmax = dL_dpooled[:, hidden_dim:]
+        dL_dmax = dL_dpooled[:, hidden_dim:2 * hidden_dim]
 
         h_final = h_list[-1]
         dL_dh = np.full_like(h_final, dL_dmean / n_nodes)
@@ -548,13 +585,13 @@ class CGCNNModel:
                 (0.0, 0.0, lattice.get("c", 10.0)),
             )
 
-            nf, ei, ef = build_crystal_graph(positions, atomic_numbers, lat_vecs)
+            nf, ei, ef, is_metal = build_crystal_graph(positions, atomic_numbers, lat_vecs)
             if nf.shape[0] == 0:
                 continue
 
             kpts = entry.get("kpoints", (4, 4, 4))
             target = np.array([kpts[0] / 12.0, kpts[1] / 12.0, kpts[2] / 12.0], dtype=np.float32)
-            graphs.append((nf, ei, ef))
+            graphs.append((nf, ei, ef, is_metal))
             targets.append(target)
 
         if len(graphs) == 0:
@@ -570,10 +607,10 @@ class CGCNNModel:
             epoch_loss = 0.0
 
             for idx in perm:
-                node_feat, edge_idx, edge_feat = graphs[idx]
+                node_feat, edge_idx, edge_feat, is_metal = graphs[idx]
                 target = targets[idx]
 
-                pred = self.forward(node_feat, edge_idx, edge_feat)
+                pred = self.forward(node_feat, edge_idx, edge_feat, is_metal=is_metal)
                 nf_loss = float(np.sum((pred - target) ** 2))
 
                 grads = self.backward(target, edge_feat)
@@ -642,6 +679,20 @@ class CGCNNModel:
         model.fc1_b = data["fc1_b"]
         model.fc2_W = data["fc2_W"]
         model.fc2_b = data["fc2_b"]
+
+        fc1_rows = model.fc1_W.shape[0]
+        if fc1_rows != hidden_dim * 2 + 1:
+            logger.warning(
+                f"Model fc1_W has {fc1_rows} rows, expected {hidden_dim * 2 + 1}. "
+                f"Re-initialising fc1 for is_metal feature."
+            )
+            scale = math.sqrt(2.0 / hidden_dim)
+            model.fc1_W = np.random.randn(hidden_dim * 2 + 1, 128).astype(np.float32) * scale * 0.5
+            model.fc1_b = np.zeros(128, dtype=np.float32)
+        else:
+            model.fc1_W = data["fc1_W"]
+            model.fc1_b = data["fc1_b"]
+
         logger.info(f"GNN model loaded from {path}")
         return model
 
@@ -809,9 +860,10 @@ def _train_from_mp_dataset() -> tuple[CGCNNModel, bool]:
             node_feat = g["node_feat"]
             edge_idx = g["edge_index"]
             edge_feat = g["edge_feat"]
+            is_metal = float(g.get("is_metal", 0.5))
             target = train_targets[int(idx)]
 
-            pred = model.forward(node_feat, edge_idx, edge_feat)
+            pred = model.forward(node_feat, edge_idx, edge_feat, is_metal=is_metal)
             nf_loss = float(np.sum((pred - target) ** 2))
 
             grads = model.backward(target, edge_feat)
@@ -862,7 +914,7 @@ def predict_kpoints(
         (0.0, 0.0, lattice.get("c", 10.0)),
     )
 
-    node_feat, edge_idx, edge_feat = build_crystal_graph(
+    node_feat, edge_idx, edge_feat, is_metal = build_crystal_graph(
         positions, atomic_numbers, lattice_vectors
     )
 
@@ -872,7 +924,7 @@ def predict_kpoints(
     model = _get_or_create_model(model_path, default_model_dir)
 
     try:
-        prediction = model.forward(node_feat, edge_idx, edge_feat)
+        prediction = model.forward(node_feat, edge_idx, edge_feat, is_metal=is_metal)
     except Exception as e:
         logger.warning(f"GNN inference failed: {e}")
         return _kpoint_fallback(structure, f"Inference error: {e}")
