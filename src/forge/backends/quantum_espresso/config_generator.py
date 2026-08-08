@@ -106,6 +106,25 @@ def optimal_nband(cores_per_pool: int, nbnd: Optional[int], is_hybrid: bool) -> 
     return 1
 
 
+def optimal_ndiag(nproc_bgrp: int) -> int:
+    """
+    Determine optimal number of processors in the linear-algebra (diagonalization) group.
+
+    QE logic (Doc/user_guide.tex §Parallelization, PW/Doc/user_guide.tex §Parallelization issues):
+    • The diagonalization group is a sub-group of the band-group pool.
+    • Its size must be a perfect square n^2 (ScaLAPACK 2D grid).
+    • n^2 must be smaller than or equal to the number of processors in the PW group.
+    • QE defaults to the square integer smaller than or equal to nproc_bgrp.
+    """
+    if nproc_bgrp <= 1:
+        return 1
+
+    n = math.isqrt(nproc_bgrp)
+    while n > 1 and n * n > nproc_bgrp:
+        n -= 1
+    return max(1, n * n)
+
+
 def generate_qe_config(  # noqa: C901
     total_cores: int,
     nkpts: int,
@@ -117,30 +136,36 @@ def generate_qe_config(  # noqa: C901
     user_ntg: Optional[int] = None,
 ) -> dict[str, Any]:
     """
-    Generate full parallel configuration for QE, ensuring strict divisibility.
+    Generate full parallel configuration for QE, following the real QE domain
+    decomposition hierarchy (QEF user_guide.tex §Parallelization).
 
-    Hierarchy of decomposition:
-    1. npool: Determined first to maximize k-point parallelism.
-    2. nband: Determined next to handle large band counts or hybrid functionals.
-    3. ntg: Determined for memory constraints (default 1 for max performance).
-    4. ndiag: Consumes the remainder (forms the ScaLAPACK diagonalization grid).
+    QE structure (MPI ranks per image):
+        nproc = npool x nband x ntg x procs_per_task_group
+    where:
+        npool   (-nk)  splits the world into k-point pools.
+        nband   (-nb)  splits each pool into band groups.
+        ntg     (-nt)  splits each band group into FFT task groups.
+        ndiag   (-nd)  is NOT a multiplicative factor: it is a *sub-group* of the
+                       band group, of size n^2 (perfect square, 2D ScaLAPACK grid),
+                       with n^2 <= procs per band group. QE sets it automatically
+                       to the largest square <= procs per band group when omitted.
 
     Args:
         total_cores: Total MPI ranks available.
         nkpts: Number of k-points (from input file).
         nbnd: Number of bands (optional, for nband optimization).
         is_hybrid: Whether hybrid functional is used.
-        user_npool: Optional user override.
-        user_ndiag: Optional user override (currently informational/checked).
-        user_nband: Optional user override.
-        user_ntg: Optional user override.
+        user_npool: Optional user override for -nk.
+        user_ndiag: Optional user override for -nd (must be a perfect square).
+        user_nband: Optional user override for -nb.
+        user_ntg: Optional user override for -nt.
 
     Returns:
-        Dictionary with npool, ndiag, nband, ntg, and any warnings.
+        Dictionary with npool, ndiag, nband, ntg, procs_per_task_group, and warnings.
     """
     warnings: list[str] = []
 
-    # --- 1. Determine npool ---
+    # --- 1. Determine npool (-nk) ---
     if user_npool is not None:
         npool = user_npool
         if total_cores % npool != 0:
@@ -159,7 +184,7 @@ def generate_qe_config(  # noqa: C901
         cores_per_pool = total_cores // npool
         warnings.append(f"Non-divisible npool results in {cores_per_pool} cores/pool (some cores may be idle).")
 
-    # --- 2. Determine nband ---
+    # --- 2. Determine nband (-nb) ---
     if user_nband is not None:
         nband = user_nband
         if cores_per_pool % nband != 0:
@@ -178,7 +203,7 @@ def generate_qe_config(  # noqa: C901
 
     cores_per_band_group = cores_per_pool // nband
 
-    # --- 3. Determine ntg ---
+    # --- 3. Determine ntg (-nt) ---
     if user_ntg is not None:
         ntg = user_ntg
         if cores_per_band_group % ntg != 0:
@@ -187,49 +212,49 @@ def generate_qe_config(  # noqa: C901
             ntg = min(divs, key=lambda x: abs(x - user_ntg))
             warnings.append(f"Adjusted ntg to {ntg}.")
     else:
-        # Default ntg=1 maximizes cores available for diagonalization (performance).
-        # Increase ntg only if memory limits are hit (handled by external logic or user).
+        # Default ntg=1 keeps all band-group cores for the FFT slice and maximizes
+        # the available diagonalization grid (ndiag). Increase ntg only for memory
+        # reduction or when procs/band-group exceeds the FFT planes (handled externally).
         ntg = 1
 
-    # --- 4. Determine ndiag (Remainder) ---
-    # ndiag consumes all remaining cores in the band/task group.
-    # It forms the processor grid for ScaLAPACK diagonalization.
-    if cores_per_band_group % ntg == 0:
-        ndiag = cores_per_band_group // ntg
-    else:
-        ndiag = 1
+    if cores_per_band_group % ntg != 0:
+        ntg = 1
         warnings.append("Invalid ntg choice, reset to 1.")
 
-    if ndiag <= 0:
-        ndiag = 1
-        warnings.append("Calculated ndiag <= 0, reset to 1.")
+    procs_per_task_group = cores_per_band_group // ntg
+
+    # --- 4. Determine ndiag (-nd) ---
+    # QE: diag group is a sub-group of the band group with a square 2D grid.
+    # It must be n^2 with n^2 <= procs per band group (not a multiplicative factor).
+    max_ndiag = cores_per_band_group
+    if user_ndiag is not None:
+        ndiag = user_ndiag
+        if ndiag > max_ndiag:
+            warnings.append(
+                f"user_ndiag={ndiag} exceeds procs per band group ({max_ndiag}). "
+                f"QE would truncate it to the largest square <= {max_ndiag}."
+            )
+        n_sqrt = math.isqrt(ndiag)
+        if n_sqrt * n_sqrt != ndiag:
+            warnings.append(
+                f"user_ndiag={ndiag} is not a perfect square. QE requires n^2 for the "
+                f"2D ScaLAPACK grid; use {n_sqrt * n_sqrt} instead."
+            )
+        ndiag = min(ndiag, max_ndiag)
+    else:
+        ndiag = optimal_ndiag(max_ndiag)
 
     # --- 5. Heuristic Checks ---
-    # ndiag represents the number of processors for the diagonalization group.
-    # ScaLAPACK works best if ndiag is composite (allows 2D grid decomposition).
-    if ndiag > 1:
-        is_prime = True
-        limit = int(ndiag**0.5) + 1
-        for i in range(2, limit):
-            if ndiag % i == 0:
-                is_prime = False
-                break
-        if is_prime:
-            warnings.append(
-                f"ndiag={ndiag} is prime. ScaLAPACK will use a 1D processor grid (less efficient). "
-                f"Consider adjusting nband or ntg."
-            )
-
-    # User override for ndiag is informational unless it matches the calculated remainder.
-    if user_ndiag is not None and user_ndiag != ndiag:
-        warnings.append(
-            f"user_ndiag={user_ndiag} ignored. Calculated ndiag is {ndiag} based on remaining cores."
-        )
+    if ndiag > max_ndiag:
+        ndiag = max_ndiag
+        warnings.append(f"ndiag capped at {ndiag} (procs per band group).")
 
     return {
         "npool": npool,
         "ndiag": ndiag,
         "nband": nband,
         "ntg": ntg,
+        "procs_per_task_group": procs_per_task_group,
+        "procs_per_band_group": cores_per_band_group,
         "warnings": warnings,
     }

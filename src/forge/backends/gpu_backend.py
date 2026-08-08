@@ -559,16 +559,43 @@ def _generate_qe_gpu_input(
     gpu_count: int,
     suggestion: dict[str, Any],
 ) -> str:
-    """Generate Quantum ESPRESSO GPU input flags."""
+    """Generate Quantum ESPRESSO GPU configuration guidance.
+
+    QE GPU support is a COMPILE-TIME feature: the binary must be built with
+    CUDA support (./configure --with-gpu=cuda ... + nvfortran). There is NO
+    runtime ``use_gpu`` namelist keyword in QE (verified in QE 6.5/7.0/7.6:
+    Modules/input_parameters.f90 &control has no use_gpu; the internal
+    control_flags%use_gpu is set from __CUDA compilation / USEGPU env var).
+
+    Parallelization is expressed via command-line flags passed to pw.x:
+      mpirun -np N pw.x -nk NP -nd ND -nb NB -nt NT -input file
+    QE forces -nd 1 on GPU builds (serial GPU eigensolver), see PW/src/setup.f90.
+    """
+    total_cores = suggestion.get("recommended_total_cores", 1)
+
+    # QE keeps ndiag = 1 on GPU builds (serial device eigensolver outperforms
+    # the parallel CPU one for typical GPU job sizes).
+    ndiag = 1
+    npool = max(1, min(gpu_count, total_cores))
+
     lines = [
         "# Quantum ESPRESSO GPU Configuration",
-        "# Add to pw.x or ph.x input:",
-        f"# -ndiag {max(1, gpu_count)}",
-        f"# -npool {max(1, gpu_count)}",
-        "# Or set in input file:",
-        "&CONTROL",
-        "  use_gpu = .true.",
-        "/",
+        "#",
+        "# GPU support in QE is COMPILE-TIME ONLY. Build the binary with:",
+        "#   ./configure --with-gpu=cuda --with-cuda-runtime=<ver> --with-cuda-cc=<cc>",
+        "#   (requires the NVHPC nvfortran compiler).",
+        "#",
+        "# There is NO 'use_gpu' input keyword. GPU acceleration is active by",
+        "# default in a CUDA build (output prints: 'GPU acceleration is ACTIVE.').",
+        "#",
+        "# Pass QE parallelization flags to the executable (not the MPI launcher):",
+        f"mpirun -np {total_cores} pw.x -nk {npool} -nd {ndiag} -input <file>",
+        "#",
+        "# Notes:",
+        "#  - -nd (diagonalization grid) is forced to 1 on GPU builds.",
+        "#  - -nk (k-point pools) spreads the workload across available GPUs.",
+        "#  - Use CUDA-aware MPI (--with-cuda-mpi=yes) and NVLink/Infiniband RDMA",
+        "#    for best scaling across multiple GPUs.",
     ]
     return "\n".join(lines)
 

@@ -22,6 +22,7 @@ from .backend import QuantumEspressoBackend
 from .config_generator import (
     generate_qe_config,
     optimal_nband,
+    optimal_ndiag,
     optimal_npool,
 )
 
@@ -46,6 +47,7 @@ __all__ = [
     "execute_qe_calculation",
     "generate_qe_config",
     "optimal_nband",
+    "optimal_ndiag",
     "optimal_npool",
     "parse_qe_output",
 ]

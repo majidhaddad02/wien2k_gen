@@ -192,9 +192,9 @@ def preflight_check(
     # Rough estimate: Base overhead ~ 500MB + (Bands * Kpts * 2KB).
     est_mem_mb = 500.0
     if problem_size:
-        band_term = (problem_size.n_bands * problem_size.n_kpoints * 0.002) 
+        band_term = ((problem_size.nbands or 0) * (problem_size.kpoints or 0) * 0.002) 
         est_mem_mb += band_term
-        if problem_size.has_spin_orbit:
+        if problem_size.is_soc:
             est_mem_mb *= 1.5  # SOC increases memory footprint significantly
             
     # Check against Job Limit first, then System Limit
@@ -342,9 +342,22 @@ def run_pipeline(  # noqa: C901
         # Step 5: Final Validation
         if machines_path and machines_path.exists():
             logger.info(f"[{op_id}] Validating output file: {machines_path}")
-            val_result = validate_machines(machines_path)
-            if not val_result.get("valid", False):
-                raise ValueError(f"Generated configuration invalid: {val_result.get('errors', 'Unknown error')}")
+            # Only run the WIEN2k-specific .machines validator when the backend is
+            # WIEN2k-compatible. Backends that implement validate_config (e.g. QE,
+            # which has no .machines file) are already validated inside build_auto.
+            backend_name = backend.__class__.__name__.lower()
+            uses_machines = "wien" in backend_name or "vasp" in backend_name
+            if uses_machines:
+                val_result = validate_machines(machines_path)
+                if not val_result.get("valid", False):
+                    raise ValueError(f"Generated configuration invalid: {val_result.get('errors', 'Unknown error')}")
+            elif callable(getattr(backend, "validate_config", None)):
+                try:
+                    content_text = machines_path.read_text(encoding="utf-8", errors="replace")
+                    if not backend.validate_config(content_text, machines_path):
+                        raise ValueError(f"Generated configuration failed backend validation: {machines_path}")
+                except OSError as e:
+                    raise ValueError(f"Could not read generated configuration: {e}") from e
         
         # Step 6: Export
         if export_path:

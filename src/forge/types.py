@@ -93,6 +93,31 @@ class OptimizationTarget(str, Enum):
 # =============================================================================
 
 @dataclass
+class ProblemSize:
+    """Structured problem parameters extracted from DFT input files.
+
+    Mirrors the TypedDict contract used by backend ``detect_problem_size()``
+    so pipeline code can consume it as a real dataclass (attribute access,
+    ``__dataclass_fields__`` filtering) instead of a raw dict.
+    """
+    atoms: Optional[int] = None
+    kpoints: Optional[int] = None
+    nmat: int = 0  # Critical: basis set / matrix size for memory estimation
+    nbands: Optional[int] = None
+    rkmax: float = 0.0
+    is_soc: bool = False
+    is_hybrid: bool = False
+    complexity: float = 0.0
+    # Optional extensions for advanced backends
+    lattice_type: Optional[str] = None
+    symmetry_group: Optional[str] = None
+    magnetic_order: Optional[str] = None
+    nspin: int = 1
+    is_spin: bool = False
+    ecut: float = 0.0
+
+
+@dataclass
 class StageConfig:
     """Configuration for a specific execution stage (lapw0/1/2)."""
     max_ranks: int = 1
@@ -124,7 +149,8 @@ class ResourceSuggestion:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d["mode"] = self.mode.value  # Convert Enum to string for JSON
+        # Convert Enum to string for JSON, but accept plain strings too
+        d["mode"] = self.mode.value if isinstance(self.mode, ExecutionMode) else self.mode
         return d
 
     def validate_memory(self, topo_memory_limit_mb: Optional[float] = None) -> list[str]:
@@ -229,6 +255,7 @@ class PipelineResult:
     success: bool = False
     config_path: Optional[str] = None
     config_content: Optional[str] = None
+    suggestion: Optional["ResourceSuggestion"] = None
     validation_errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     dry_run_content: Optional[str] = None

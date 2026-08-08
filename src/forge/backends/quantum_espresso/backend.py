@@ -19,7 +19,6 @@ Key Improvements Applied:
 """
 
 import datetime
-import math
 import os
 import re
 import shutil
@@ -36,6 +35,7 @@ from ...utils.atomic_write import atomic_write
 
 # Adjust imports to match project package structure
 from ..base import Backend, ProblemSize
+from .config_generator import generate_qe_config
 
 logger = get_logger(__name__)
 
@@ -119,12 +119,28 @@ class QuantumEspressoBackend(Backend):
         """
         Return dynamically constructed execution command.
         Auto-selects executable (pw.x, ph.x, etc.) and applies MPI launcher flags.
+        QE parallelization flags (-nk/-nb/-nt/-nd) are passed to the executable,
+        NOT to the MPI launcher (see QE Doc/user_guide.tex §Parallelization).
         """
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
         exec_name = suggestion.get("executable", "pw.x")
         input_file = suggestion.get("input_file", "pwscf.in")
+
+        # Compute QE domain decomposition (unified with config_generator)
+        cfg = self._optimize_qe_parallelization(None, suggestion)
+
+        # QE flags applied to the executable itself
+        qe_flags = []
+        if cfg["npool"] > 1:
+            qe_flags.append(f"-nk {cfg['npool']}")
+        if cfg["nband"] > 1:
+            qe_flags.append(f"-nb {cfg['nband']}")
+        if cfg["ntg"] > 1:
+            qe_flags.append(f"-nt {cfg['ntg']}")
+        if cfg["ndiag"] > 1:
+            qe_flags.append(f"-nd {cfg['ndiag']}")
 
         # MPI launcher detection
         if os.getenv("SLURM_JOB_ID"):
@@ -136,7 +152,10 @@ class QuantumEspressoBackend(Backend):
 
         # OpenMP & MPI env
         omp_prefix = f"OMP_NUM_THREADS={omp} " if mode == "hybrid" else ""
-        return f"{omp_prefix}{launcher} {exec_name} -input {input_file}"
+        flags_str = " ".join(qe_flags)
+        if flags_str:
+            flags_str = " " + flags_str
+        return f"{omp_prefix}{launcher} {exec_name}{flags_str} -input {input_file}"
 
     def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
         """Validate suggestion against QE-specific mathematical & memory constraints."""
@@ -144,18 +163,33 @@ class QuantumEspressoBackend(Backend):
         total_cores = suggestion.get("recommended_total_cores", 1)
         nkpts = suggestion.get("problem_params", {}).get("kpoints", 0)
 
-        # Strict divisibility check for QE domain decomposition
+        # QE domain decomposition: nproc = npool * nband * ntg * procs_per_task_group
+        # ndiag is a square sub-group of the band group, NOT a multiplicative factor.
         npool = suggestion.get("npool", 1)
         ndiag = suggestion.get("ndiag", 1)
         nband = suggestion.get("nband", 1)
         ntg = suggestion.get("ntg", 1)
 
-        proc_product = npool * ndiag * nband * ntg
+        # Multiplicative factors must divide total cores
+        proc_product = npool * nband * ntg
         if total_cores % proc_product != 0:
             errors.append(
-                f"QE domain decomposition invalid: npool*ndiag*nband*ntg ({proc_product}) "
+                f"QE domain decomposition invalid: npool*nband*ntg ({proc_product}) "
                 f"does not divide total_cores ({total_cores}). MPI ranks must be exact multiple."
             )
+
+        # ndiag must be a perfect square (ScaLAPACK 2D grid) not exceeding procs per band group
+        if ndiag > 1:
+            import math as _math
+            n_sqrt = _math.isqrt(ndiag)
+            if n_sqrt * n_sqrt != ndiag:
+                errors.append(f"QE ndiag must be a perfect square (n^2). Got {ndiag}.")
+            procs_per_band_group = total_cores // max(1, npool * nband)
+            if ndiag > procs_per_band_group:
+                errors.append(
+                    f"QE ndiag ({ndiag}) exceeds procs per band group ({procs_per_band_group}). "
+                    f"Diagonalization group is a sub-group of the band group."
+                )
 
         # K-point pool constraint
         if nkpts > 0 and npool > nkpts:
@@ -183,6 +217,20 @@ class QuantumEspressoBackend(Backend):
     def get_config_filename(self) -> str:
         """Return default configuration filename for QE."""
         return "parallel_qe_config.in"
+
+    def validate_config(self, content: str, path: Optional[Path] = None) -> bool:
+        """
+        Validate QE parallel configuration content.
+
+        QE has no WIEN2k-style .machines file; the parallel config is expressed as
+        comment blocks and CLI flags, so we only sanity-check the generated block
+        instead of running the WIEN2k machines validator.
+        """
+        if not content or not str(content).strip():
+            return False
+        if not isinstance(content, str):
+            content = str(content)
+        return all(key in content for key in ("npool", "ndiag", "nband", "ntg"))
 
     def parse_output(self, log_path: Path) -> dict[str, Any]:
         """Parse QE output files for convergence, timing, and error detection."""
@@ -270,20 +318,28 @@ class QuantumEspressoBackend(Backend):
             return result
 
         # 1. Atom count (ATOMIC_POSITIONS or CELL_PARAMETERS + species)
-        atoms_section = re.search(r"ATOMIC_POSITIONS\s*\((\w+)\)", content)
+        # QE accepts both parentheses () and braces {} for card tags.
+        atoms_section = re.search(r"ATOMIC_POSITIONS\s*[\(\{]\w+[\)\}]", content)
         if atoms_section:
             coord_lines = 0
-            for line in content.splitlines():
-                line = line.strip()
-                if line.startswith("!") or line.startswith("/"):
+            # Count coordinate lines only AFTER the ATOMIC_POSITIONS card, and stop
+            # at the next QE card (K_POINTS, CELL_PARAMETERS, CONSTRAINTS, ...).
+            for line in content[atoms_section.end():].splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                if stripped.startswith(("!", "/")):
                     break
-                if re.match(r"^[A-Z][a-z]?\s+[\-\d\.]+\s+[\-\d\.]+\s+[\-\d\.]+", line, re.IGNORECASE):
+                if re.match(r"^[A-Z][a-z]?\s+[\-\d\.]+\s+[\-\d\.]+\s+[\-\d\.]+", stripped, re.IGNORECASE):
                     coord_lines += 1
+                elif re.match(r"^[A-Z_]+", stripped) and coord_lines == 0:
+                    # A new card started without atoms counted yet -> stop scanning.
+                    break
             if coord_lines > 0:
                 result["atoms"] = coord_lines
 
         # 2. K-points (K_POINTS card)
-        kpoints_match = re.search(r"K_POINTS\s*\((\w+)\)\s*\n\s*(.+)", content, re.IGNORECASE)
+        kpoints_match = re.search(r"K_POINTS\s*[\(\{]\s*(\w+)[\)\}]\s*\n\s*(.+)", content, re.IGNORECASE)
         if kpoints_match:
             k_type = kpoints_match.group(1).lower()
             if k_type.startswith("tp") or k_type == "gamma":
@@ -319,63 +375,31 @@ class QuantumEspressoBackend(Backend):
     def _optimize_qe_parallelization(self, topo: Topology, suggestion: dict[str, Any]) -> QEParallelConfig:
         """
         Compute optimal npool, ndiag, nband, ntg based on total MPI ranks and problem size.
-        Enforces strict divisibility: total_ranks = npool * ndiag * nband * ntg
+        Delegates to the shared, QE-faithful domain decomposition in config_generator.
         """
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
         total_mpi_ranks = total_cores // omp if mode == "hybrid" else total_cores
-        nkpts = suggestion.get("problem_params", {}).get("kpoints", 1)
-        nbnd = suggestion.get("problem_params", {}).get("nbands", 50)
+        nkpts = suggestion.get("problem_params", {}).get("kpoints", 1) or 1
+        nbnd = suggestion.get("problem_params", {}).get("nbands", None)
+        is_hybrid = suggestion.get("problem_params", {}).get("is_hybrid", False)
 
-        # 1. npool optimization (k-point parallelism)
-        npool = 1
-        if nkpts > 1:
-            # Largest divisor of nkpts that also divides total_mpi_ranks
-            divisors = [d for d in range(1, min(nkpts, total_mpi_ranks) + 1) if nkpts % d == 0 and total_mpi_ranks % d == 0]
-            npool = divisors[-1] if divisors else 1
+        cfg = generate_qe_config(
+            total_cores=total_mpi_ranks,
+            nkpts=nkpts,
+            nbnd=nbnd,
+            is_hybrid=bool(is_hybrid),
+        )
 
-        remaining_ranks = total_mpi_ranks // npool
-
-        # 2. ndiag optimization (diagonalization parallelism)
-        # Prefer square-ish grid for ScaLAPACK-style diagonalization
-        ndiag = 1
-        if remaining_ranks > 1:
-            limit = int(math.sqrt(remaining_ranks))
-            # QE recommends ndiag ~ sqrt(ranks) rounded to a factor
-            for d in range(limit, 0, -1):
-                if remaining_ranks % d == 0:
-                    ndiag = d
-                    break
-
-        remaining_ranks //= ndiag
-
-        # 3. nband optimization (band parallelism)
-        nband = 1
-        if remaining_ranks > 1 and nbnd > 0:
-            # nband should divide nbnd if possible, and remaining ranks
-            band_divisors = [d for d in range(1, min(nbnd, remaining_ranks) + 1) if nbnd % d == 0 and remaining_ranks % d == 0]
-            nband = band_divisors[-1] if band_divisors else 1
-
-        remaining_ranks //= nband
-
-        # 4. ntg gets remainder (task groups)
-        ntg = max(1, remaining_ranks)
-
-        # Validation warnings
-        warnings = []
-        proc_product = npool * ndiag * nband * ntg
-        if proc_product != total_mpi_ranks:
-            warnings.append(f"Domain decomposition product ({proc_product}) != MPI ranks ({total_mpi_ranks}). Adjusting ntg.")
-            ntg = total_mpi_ranks // (npool * ndiag * nband) if (npool * ndiag * nband) > 0 else 1
-
-        if npool == 1 and nkpts > 4:
+        warnings = list(cfg.get("warnings", []))
+        if cfg["npool"] == 1 and nkpts > 4:
             warnings.append("npool=1: k-point parallelism underutilized. Check k-point count divisibility.")
-        if ndiag == 1 and total_mpi_ranks > 16:
+        if cfg["ndiag"] == 1 and total_mpi_ranks > 16:
             warnings.append("ndiag=1: diagonalization bottleneck likely. Increase k-points or bands.")
 
         return QEParallelConfig(
-            npool=npool, ndiag=ndiag, nband=nband, ntg=ntg,
+            npool=cfg["npool"], ndiag=cfg["ndiag"], nband=cfg["nband"], ntg=cfg["ntg"],
             total_mpi_ranks=total_mpi_ranks, warnings=warnings
         )
 
@@ -407,6 +431,21 @@ class QuantumEspressoBackend(Backend):
         total_cores = suggestion.get("recommended_total_cores", 1)
         exec_name = suggestion.get("executable", "pw.x")
         input_file = suggestion.get("input_file", "pwscf.in")
+
+        # QE domain decomposition flags (passed to the executable, not the launcher)
+        cfg = self._optimize_qe_parallelization(topo, suggestion)
+        qe_flags = []
+        if cfg["npool"] > 1:
+            qe_flags.append(f"-nk {cfg['npool']}")
+        if cfg["nband"] > 1:
+            qe_flags.append(f"-nb {cfg['nband']}")
+        if cfg["ntg"] > 1:
+            qe_flags.append(f"-nt {cfg['ntg']}")
+        if cfg["ndiag"] > 1:
+            qe_flags.append(f"-nd {cfg['ndiag']}")
+        qe_flags_str = " ".join(qe_flags)
+        if qe_flags_str:
+            qe_flags_str = " " + qe_flags_str
 
         # QE-specific environment variables
         qe_env = (
@@ -471,7 +510,7 @@ fi
 
 # Execute Quantum ESPRESSO
 echo "[qe_gen] Starting {exec_name} execution..."
-$EXEC_CMD {exec_name} -input {input_file} > {exec_name}.out 2>&1
+$EXEC_CMD {exec_name}{qe_flags_str} -input {input_file} > {exec_name}.out 2>&1
 EXIT_CODE=$?
 
 # Clean up scratch on normal exit
