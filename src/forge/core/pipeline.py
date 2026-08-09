@@ -286,13 +286,17 @@ def run_pipeline(  # noqa: C901
                 raise TypeError("Invalid user_suggestion type.")
         else:
             from ..optimizer.advisor import suggest_optimal_resources as _advisor
-            raw_suggestion = _advisor(topo, prob_size)
+            raw_suggestion = _advisor(topo)
+            # The advisor returns its own ResourceSuggestion dataclass which is
+            # not the forge.types class; normalize through to_dict() and filter
+            # to the canonical fields so the result is never silently dropped.
+            raw_dict = {}
             if isinstance(raw_suggestion, dict):
-                sug_obj = ResourceSuggestion(**raw_suggestion)
-            elif isinstance(raw_suggestion, ResourceSuggestion):
-                sug_obj = raw_suggestion
-            else:
-                sug_obj = ResourceSuggestion()
+                raw_dict = raw_suggestion
+            elif hasattr(raw_suggestion, "to_dict") and callable(raw_suggestion.to_dict):
+                raw_dict = raw_suggestion.to_dict()
+            valid_fields = set(ResourceSuggestion.__dataclass_fields__)
+            sug_obj = ResourceSuggestion(**{k: v for k, v in raw_dict.items() if k in valid_fields})
                 
         logger.info(f"[{op_id}] Suggestion: {sug_obj.recommended_total_cores} cores, Mode: {sug_obj.mode}")
         

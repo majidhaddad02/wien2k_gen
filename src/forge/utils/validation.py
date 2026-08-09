@@ -121,7 +121,7 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
             continue
             
         # Directives with values
-        val_match = re.match(r'^(omp_global|kpar|granularity|extrafine|lapw2_vector_split)\s*:\s*(\d+)', stripped, re.IGNORECASE)
+        val_match = re.match(r'^(omp_global|omp_lapw0|omp_mixer|kpar|granularity|extrafine|lapw2_vector_split)\s*:\s*(\d+)', stripped, re.IGNORECASE)
         if val_match:
             key, val = val_match.group(1).lower(), int(val_match.group(2))
             if key == "omp_global":
@@ -134,6 +134,7 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
                 config["extrafine"] = val
             elif key == "lapw2_vector_split":
                 config["vector_split"] = val
+            # omp_lapw0 / omp_mixer accepted (recognized directives, no field)
             continue
             
         # lapw0 directive
@@ -157,14 +158,15 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
                 lapw2_nodes.add(node)
             continue
             
-        # k-point parallel mode (1: hostname)
-        kpt_match = re.match(r'^1\s*:\s*([^\s:]+)', stripped)
+        # k-point parallel mode (1: hostname or 1: hostname:cores)
+        kpt_match = re.match(r'^1\s*:\s*([^\s:]+)(?::\s*(\d+))?', stripped)
         if kpt_match:
             node = kpt_match.group(1)
+            cores = int(kpt_match.group(2)) if kpt_match.group(2) else 1
             config["mode"] = "kpoint"
             if node not in node_allocations:
                 node_allocations[node] = 0
-            node_allocations[node] += 1
+            node_allocations[node] += cores
             continue
             
         # Fallback: warn about unrecognized non-comment lines

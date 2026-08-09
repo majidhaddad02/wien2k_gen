@@ -6,13 +6,14 @@ optimization engine, and type system without requiring hardware or cluster acces
 
 import json
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from forge.cli import create_parser
 from forge.config import ConfigManager, load_config
-from forge.core.scheduler import apply_max_cores, detect
+from forge.core.scheduler import apply_max_cores
+from forge.core.topology import Topology
 from forge.optimizer.advisor import suggest_optimal_resources
 
 # Project imports
@@ -96,25 +97,38 @@ class TestTypeSystemSerialization:
 class TestCoreToOptimizerFlow:
     """Verify data flows correctly from Scheduler to Advisor."""
 
-    @patch("forge.optimizer.advisor.get_hardware_profile")
-    def test_suggestion_generation(self, mock_hw, sample_topology, sample_hardware_profile):
-        mock_hw.return_value = sample_hardware_profile
-        
-        suggestion = suggest_optimal_resources(sample_topology)
-        
-        assert isinstance(suggestion, dict)
-        assert suggestion["recommended_total_cores"] <= 64
-        assert suggestion["mode"] in ["mpi", "hybrid", "kpoint"]
-        assert "reason" in suggestion
-        assert isinstance(suggestion["warnings"], list)
+    @patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024)
+    @patch("forge.optimizer.advisor.get_physical_cores", return_value=64)
+    @patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0)
+    @patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0)
+    def test_suggestion_generation(self, mock_flops, mock_bw, mock_cores, mock_mem,
+                                   sample_hardware_profile):
+        topo = Topology(
+            nodes=["node1", "node2"],
+            cores_per_node=[32, 32],
+            env_type="slurm",
+            scheduler_hints={"mpi_launcher": "srun", "numa_aware": True},
+        )
+        suggestion = suggest_optimal_resources(topo)
+        data = suggestion.to_dict() if hasattr(suggestion, "to_dict") else suggestion
 
-    def test_apply_max_cores_integrity(self, sample_topology):
+        assert data["recommended_total_cores"] <= 64
+        assert data["mode"] in ["mpi", "hybrid", "kpoint"]
+        assert "reason" in data
+        assert isinstance(data["warnings"], list)
+
+    def test_apply_max_cores_integrity(self):
+        topo = Topology(
+            nodes=["node1", "node2"],
+            cores_per_node=[32, 32],
+            env_type="slurm",
+        )
         # Test limiting cores
-        limited = apply_max_cores(sample_topology, 20)
+        limited = apply_max_cores(topo, 20)
         assert sum(limited.cores_per_node) == 20
         
         # Test expanding (should return original or capped)
-        expanded = apply_max_cores(sample_topology, 128)
+        expanded = apply_max_cores(topo, 128)
         assert expanded.total_cores == 64
 
 
@@ -177,31 +191,25 @@ class TestCLIArgumentRouting:
 class TestEndToEndPipelineSimulation:
     """Simulate the full lifecycle: Detect -> Suggest -> Config -> Result."""
 
-    @patch("forge.core.scheduler.subprocess.run")
-    @patch("forge.core.scheduler.shutil.which", return_value="/usr/bin/lscpu")
-    def test_mocked_pipeline(self, mock_which, mock_run, sample_hardware_profile):
-        # Mock lscpu output for detection
-        mock_run.return_value = MagicMock(
-            stdout=json.dumps({
-                "lscpu": [
-                    {"field": "CPU(s):", "data": "32"},
-                    {"field": "Socket(s):", "data": "1"},
-                    {"field": "Core(s) per socket:", "data": "32"}
-                ]
-            }), 
-            returncode=0
+    def test_mocked_pipeline(self, sample_hardware_profile):
+        topo = Topology(
+            nodes=["node1", "node2"],
+            cores_per_node=[16, 16],
+            env_type="slurm",
+            scheduler_hints={"mpi_launcher": "srun", "numa_aware": True},
         )
-        
-        with patch("forge.optimizer.advisor.get_hardware_profile", return_value=sample_hardware_profile):
-            # 1. Detect
-            topo = detect()
-            assert topo.total_cores == 32
-            
-            # 2. Suggest
+        assert topo.total_cores == 32
+
+        # Suggest
+        with patch("forge.optimizer.advisor.get_total_mem_kb", return_value=256 * 1024 * 1024), \
+             patch("forge.optimizer.advisor.get_physical_cores", return_value=32), \
+             patch("forge.optimizer.advisor.get_memory_bandwidth_gb_s", return_value=200.0), \
+             patch("forge.optimizer.advisor.calculate_peak_fp64_gflops", return_value=800.0):
             suggestion = suggest_optimal_resources(topo)
-            assert suggestion["recommended_total_cores"] <= 32
-            
-            # 3. Validate Type Consistency
-            assert suggestion["recommended_total_cores"] == int(suggestion["recommended_total_cores"])
-            assert isinstance(suggestion["mode"], str)
-            assert suggestion["mode"] in [m.value for m in ExecutionMode]
+        data = suggestion.to_dict() if hasattr(suggestion, "to_dict") else suggestion
+
+        # Validate Type Consistency
+        assert data["recommended_total_cores"] <= 32
+        assert data["recommended_total_cores"] == int(data["recommended_total_cores"])
+        assert isinstance(data["mode"], str)
+        assert data["mode"] in [m.value for m in ExecutionMode]

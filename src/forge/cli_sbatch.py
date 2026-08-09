@@ -152,10 +152,18 @@ def _build_directives_from_args(args: argparse.Namespace) -> SlurmDirectives:
 
 
 def _get_exec_command() -> str:
-    """Auto-detect the correct WIEN2k execution command from input files."""
+    """Auto-detect the correct execution command from the active backend.
+
+    Prefers the backend's get_execution_command() (QE, VASP, ...) and falls back
+    to the classic WIEN2k run_lapw invocation for legacy flows.
+    """
     try:
         from .backend_manager import get_current_backend as _gcb
         backend = _gcb()
+        if hasattr(backend, "get_execution_command") and callable(backend.get_execution_command):
+            cmd = backend.get_execution_command({})
+            if cmd and cmd.strip():
+                return cmd.strip()
         params = backend.detect_problem_size()
         return params.get("exec_command", "run_lapw -p")
     except Exception:

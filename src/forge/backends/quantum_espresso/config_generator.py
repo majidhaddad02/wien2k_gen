@@ -96,7 +96,7 @@ def optimal_nband(cores_per_pool: int, nbnd: Optional[int], is_hybrid: bool) -> 
     # Find valid divisors
     divs_pool = set(_get_divisors(cores_per_pool))
     divs_nbnd = set(_get_divisors(nbnd))
-    common = sorted([d for d in divs_pool if d in divs_nbnd], reverse=True)
+    common = sorted([d for d in divs_pool if d in divs_nbnd])
 
     # We prefer the smallest valid divisor > 1 to minimize overhead and leave cores for ndiag.
     candidates = [d for d in common if d > 1]
@@ -228,19 +228,21 @@ def generate_qe_config(  # noqa: C901
     # It must be n^2 with n^2 <= procs per band group (not a multiplicative factor).
     max_ndiag = cores_per_band_group
     if user_ndiag is not None:
-        ndiag = user_ndiag
-        if ndiag > max_ndiag:
+        # Clamp to the largest perfect square <= procs per band group, which is
+        # exactly what QE does. This guarantees -nd is always a valid n^2 grid.
+        if user_ndiag > max_ndiag:
             warnings.append(
-                f"user_ndiag={ndiag} exceeds procs per band group ({max_ndiag}). "
+                f"user_ndiag={user_ndiag} exceeds procs per band group ({max_ndiag}). "
                 f"QE would truncate it to the largest square <= {max_ndiag}."
             )
-        n_sqrt = math.isqrt(ndiag)
-        if n_sqrt * n_sqrt != ndiag:
+        n_sqrt = math.isqrt(user_ndiag)
+        if n_sqrt * n_sqrt != user_ndiag:
             warnings.append(
-                f"user_ndiag={ndiag} is not a perfect square. QE requires n^2 for the "
-                f"2D ScaLAPACK grid; use {n_sqrt * n_sqrt} instead."
+                f"user_ndiag={user_ndiag} is not a perfect square. QE requires n^2 for the "
+                f"2D ScaLAPACK grid; clamped to {n_sqrt * n_sqrt}."
             )
-        ndiag = min(ndiag, max_ndiag)
+        n_sqrt = min(n_sqrt, math.isqrt(max_ndiag))
+        ndiag = max(1, n_sqrt * n_sqrt)
     else:
         ndiag = optimal_ndiag(max_ndiag)
 

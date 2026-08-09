@@ -547,6 +547,36 @@ def detect(  # noqa: C901
     return Topology(**cache_payload)
 
 
+def apply_max_cores(topo: Topology, max_cores: int) -> Topology:
+    """Return a copy of ``topo`` with the total core count capped at ``max_cores``.
+
+    Cores are reduced proportionally across nodes (largest-remainder method) so
+    the resulting ``cores_per_node`` sums exactly to the requested limit. If the
+    topology already fits within the limit, an unchanged copy is returned.
+    """
+    if max_cores <= 0:
+        return topo
+    if sum(topo.cores_per_node) <= max_cores:
+        return topo
+
+    weights = [max(c, 1) for c in topo.cores_per_node]
+    wsum = sum(weights)
+    raw = [c * max_cores / wsum for c in weights]
+    floor = [int(r) for r in raw]
+    leftover = max_cores - sum(floor)
+    order = sorted(range(len(raw)), key=lambda i: raw[i] - floor[i], reverse=True)
+    for i in range(leftover):
+        floor[order[i % len(order)]] += 1
+
+    return Topology(
+        nodes=list(topo.nodes),
+        cores_per_node=floor,
+        env_type=topo.env_type,
+        scheduler_hints=dict(topo.scheduler_hints),
+        heterogeneous=topo.heterogeneous,
+    )
+
+
 def _detect_scheduler() -> str:
     """Auto-detect available scheduler from environment variables and available binaries."""
     if os.environ.get("SLURM_JOB_ID") or os.environ.get("SLURM_CLUSTER_NAME"):

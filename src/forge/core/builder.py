@@ -171,13 +171,21 @@ def _validate_suggestion_safety(suggestion: dict[str, Any], topo: Topology) -> l
     warnings_list = []
     total_cores = suggestion.get("recommended_total_cores", topo.total_cores)
     omp_threads = suggestion.get("omp_threads_per_rank", 1)
-    mpi_ranks = suggestion.get("mpi_ranks_per_node", 1)
-    
+    mpi_ranks_raw = suggestion.get("mpi_ranks_per_node", 1)
+    # mpi_ranks_per_node may be an int (single-node view) or a list (per-node,
+    # as produced by the advisor). Normalize to a comparable scalar for checks.
+    if isinstance(mpi_ranks_raw, (list, tuple)):
+        mpi_ranks = max(mpi_ranks_raw) if mpi_ranks_raw else 1
+        invalid_ranks = any(not isinstance(r, (int, float)) or r <= 0 for r in mpi_ranks_raw)
+    else:
+        mpi_ranks = mpi_ranks_raw
+        invalid_ranks = mpi_ranks <= 0
+
     if total_cores <= 0:
         warnings_list.append("Total cores must be positive.")
     if omp_threads <= 0:
         warnings_list.append("OMP threads per rank must be positive.")
-    if mpi_ranks <= 0:
+    if invalid_ranks:
         warnings_list.append("MPI ranks per node must be positive.")
         
     # Check for oversubscription on single nodes

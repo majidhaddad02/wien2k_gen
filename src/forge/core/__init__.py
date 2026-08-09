@@ -79,6 +79,7 @@ from .pipeline import (
 from .scheduler import (
     SchedulerHints,
     _detect_scheduler,
+    apply_max_cores,
     auto_detect_memory,
     detect,
 )
@@ -135,6 +136,7 @@ __all__ = [
     "WorkflowNode",
     "WorkflowStore",
     "_detect_scheduler",
+    "apply_max_cores",
     "auto_detect_memory",
     # Builder & Pipeline
     "build_auto",

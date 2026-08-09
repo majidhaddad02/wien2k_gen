@@ -76,8 +76,8 @@ def __getattr__(name: str) -> Any:  # noqa: C901
         from .backend_manager import list_backends
         return list_backends
     if name == "get_current_backend":
-        from .backend_manager import get_backend
-        return get_backend
+        from .backend_manager import get_current_backend
+        return get_current_backend
         
     # Utils & Scratch
     if name == "setup_scratch":

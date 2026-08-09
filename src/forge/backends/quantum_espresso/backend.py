@@ -123,13 +123,15 @@ class QuantumEspressoBackend(Backend):
         NOT to the MPI launcher (see QE Doc/user_guide.tex §Parallelization).
         """
         mode = suggestion.get("mode", "mpi")
-        total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
         exec_name = suggestion.get("executable", "pw.x")
         input_file = suggestion.get("input_file", "pwscf.in")
 
         # Compute QE domain decomposition (unified with config_generator)
         cfg = self._optimize_qe_parallelization(None, suggestion)
+        # In hybrid mode total_cores includes OpenMP threads; the launcher must
+        # start exactly total_mpi_ranks processes, one per OpenMP thread group.
+        nproc = cfg["total_mpi_ranks"]
 
         # QE flags applied to the executable itself
         qe_flags = []
@@ -144,11 +146,11 @@ class QuantumEspressoBackend(Backend):
 
         # MPI launcher detection
         if os.getenv("SLURM_JOB_ID"):
-            launcher = f"srun -n {total_cores} -c {omp} --hint=nomultithread"
+            launcher = f"srun -n {nproc} -c {omp} --hint=nomultithread"
         elif os.getenv("PBS_JOBID") or os.getenv("LSB_JOBID"):
-            launcher = f"mpirun -np {total_cores}"
+            launcher = f"mpirun -np {nproc}"
         else:
-            launcher = f"mpirun -np {total_cores}"
+            launcher = f"mpirun -np {nproc}"
 
         # OpenMP & MPI env
         omp_prefix = f"OMP_NUM_THREADS={omp} " if mode == "hybrid" else ""
@@ -390,6 +392,10 @@ class QuantumEspressoBackend(Backend):
             nkpts=nkpts,
             nbnd=nbnd,
             is_hybrid=bool(is_hybrid),
+            user_npool=suggestion.get("npool"),
+            user_ndiag=suggestion.get("ndiag"),
+            user_nband=suggestion.get("nband"),
+            user_ntg=suggestion.get("ntg"),
         )
 
         warnings = list(cfg.get("warnings", []))
@@ -434,6 +440,9 @@ class QuantumEspressoBackend(Backend):
 
         # QE domain decomposition flags (passed to the executable, not the launcher)
         cfg = self._optimize_qe_parallelization(topo, suggestion)
+        # In hybrid mode the launcher must start exactly total_mpi_ranks ranks,
+        # each with omp threads, to avoid oversubscribing the allocation.
+        nproc = cfg["total_mpi_ranks"]
         qe_flags = []
         if cfg["npool"] > 1:
             qe_flags.append(f"-nk {cfg['npool']}")
@@ -499,13 +508,13 @@ class QuantumEspressoBackend(Backend):
 
 # MPI Launcher Detection
 if [ -n "$SLURM_JOB_ID" ]; then
-    EXEC_CMD="srun --mpi=pmix --hint=nomultithread --cpu-bind=core"
+    EXEC_CMD="srun --mpi=pmix -n {nproc} -c {omp} --hint=nomultithread --cpu-bind=core"
 elif [ -n "$PBS_JOBID" ]; then
-    EXEC_CMD="mpirun"
+    EXEC_CMD="mpirun -np {nproc}"
 elif [ -n "$LSB_JOBID" ]; then
-    EXEC_CMD="jsrun"
+    EXEC_CMD="jsrun -n {nproc}"
 else
-    EXEC_CMD="${{MPIRUN:-mpirun}}"
+    EXEC_CMD="${{MPIRUN:-mpirun}} -np {nproc}"
 fi
 
 # Execute Quantum ESPRESSO

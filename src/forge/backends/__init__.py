@@ -223,7 +223,12 @@ def get_backend(code: Optional[Union[BackendCode, str]] = None) -> Backend:
 
 
 def get_current_backend() -> Backend:
-    """Return the currently active backend instance."""
+    """Return the currently active backend instance.
+
+    Honors an explicit ``set_backend()`` call: if ``_current_code`` was set
+    (even when the cached instance was invalidated), recreate the instance for
+    that code instead of re-guessing from the filesystem.
+    """
     global _current_code, _cached_instance
 
     _load_backends()
@@ -232,7 +237,8 @@ def get_current_backend() -> Backend:
         if _cached_instance is not None and _current_code is not None:
             return _cached_instance
 
-        target_code = _guess_active_code()
+        # Prefer the explicitly requested backend over auto-detection.
+        target_code = _current_code if _current_code is not None else _guess_active_code()
         cls_obj = get_backend_class(target_code)
         instance = cls_obj()
         _cached_instance = instance

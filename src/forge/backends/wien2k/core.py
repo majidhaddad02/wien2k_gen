@@ -155,7 +155,7 @@ class Wien2kBackend(Backend):
             )
 
         # Memory sanity check
-        est_mem_gb = suggestion.get("estimated_memory_gb", 2.0)
+        est_mem_gb = suggestion.get("estimated_memory_gb") or 2.0
         mem_per_core_mb = (est_mem_gb * 1024) / max(1, cores)
         job_limit_mb = get_job_memory_limit_mb()
         if job_limit_mb and mem_per_core_mb > job_limit_mb * 0.9:
@@ -281,7 +281,11 @@ class Wien2kBackend(Backend):
             # (not wasted: WIEN2k can use extra ranks per k-point for ScaLAPACK)
 
         # Step 5: kpar = number of k-point parallel groups for lapw1
-        kpar = max(1, min(lapw1_cores, effective_kp))
+        # kpar must not exceed the number of nodes: each k-point group runs on
+        # its own node (WIEN2k .machines semantics). Caps kpar so the generated
+        # file never trips its own validator (kpar > node count).
+        kpar_max = num_nodes if num_nodes > 0 else lapw1_cores
+        kpar = max(1, min(lapw1_cores, effective_kp, kpar_max))
 
         # Step 6: Build reason
         reason_parts = [f"lapw0={lapw0_cores}c", f"lapw1={lapw1_cores}c", f"lapw2={lapw2_cores}c"]
@@ -433,11 +437,20 @@ class Wien2kBackend(Backend):
                     if cores_per_node[i] > 1:
                         cores_per_node[i] -= 1
 
-        is_hetero = topo.heterogeneous or (len(set(cores_per_node)) > 1)
-        if is_hetero and len(cores_per_node) > 1:
-            max_c = max(cores_per_node)
-            cores_per_node = [max(1, int(c * total_cores / max_c / len(cores_per_node)))
-                              for c in cores_per_node] if max_c > 0 else [1] * len(cores_per_node)
+        # Heterogeneous nodes: rebalance proportionally to node core counts so the
+        # total equals exactly total_cores (no cores lost to integer truncation).
+        # Uses the largest-remainder method to distribute leftover cores fairly.
+        if (topo.heterogeneous or (len(set(cores_per_node)) > 1)) and len(cores_per_node) > 1 and total_cores > 0:
+            weights = [max(c, 1) for c in cores_per_node]
+            wsum = sum(weights)
+            raw = [c * total_cores / wsum for c in weights]
+            floor = [int(r) for r in raw]
+            leftover = total_cores - sum(floor)
+            # Assign leftover cores to nodes with the largest fractional part
+            order = sorted(range(len(raw)), key=lambda i: raw[i] - floor[i], reverse=True)
+            for i in range(leftover):
+                floor[order[i % len(order)]] += 1
+            cores_per_node = floor
 
         lines = []
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
@@ -446,6 +459,7 @@ class Wien2kBackend(Backend):
         lines.append(f"# Nodes: {', '.join(nodes)} | Cores: {cores_per_node}")
         lines.append(f"# Problem: atoms={atoms} kpts={kpoints} nmat={nmat} "
                      f"soc={is_soc} hybrid={is_hybrid} spin={is_spin}")
+        is_hetero = topo.heterogeneous or (len(set(cores_per_node)) > 1)
         if is_hetero:
             lines.append("# Heterogeneous cluster — ranks scaled to core ratio")
         lines.append("")
@@ -480,7 +494,7 @@ class Wien2kBackend(Backend):
         # ── lapw1 / lapw2 lines ──
         if strat["strategy"] == "band_parallel":
             lines.append(f"# Band parallelization for hybrid functional (nmat={nmat})")
-            kpar = min(strat["bands_per_group"], kpoints if kpoints > 0 else 1)
+            kpar = min(strat["bands_per_group"], kpoints if kpoints > 0 else 1, len(nodes) if nodes else 1)
             lines.append(f"kpar: {kpar}")
             for node, cores in zip(nodes, cores_per_node):
                 ranks_on_node = max(1, cores // omp)
