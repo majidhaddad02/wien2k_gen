@@ -48,12 +48,47 @@ python_is_conda() {
   return 1
 }
 
+DEFAULT_PIP_INDEX="https://pypi.org/simple"
+PIP_MIRRORS=(
+  "https://pypi.org/simple"
+  "https://pypi.tuna.tsinghua.edu.cn/simple"
+  "https://mirrors.aliyun.com/pypi/simple"
+  "https://pypi.mirrors.ustc.edu.cn/simple"
+)
+
 sanitize_pip_env() {
   # Conda and site pip.conf often set an empty/private index, which yields:
   # "Could not find a version that satisfies the requirement setuptools (from versions: none)"
-  unset PIP_NO_INDEX PIP_FIND_LINKS PIP_EXTRA_INDEX_URL || true
+  unset PIP_NO_INDEX PIP_FIND_LINKS || true
   export PIP_DISABLE_PIP_VERSION_CHECK=1
-  export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple}"
+  export PIP_DEFAULT_TIMEOUT="${PIP_DEFAULT_TIMEOUT:-60}"
+  export PIP_INDEX_URL="${PIP_INDEX_URL:-${DEFAULT_PIP_INDEX}}"
+}
+
+pip_indexes_to_try() {
+  local seen="|"
+  local u
+  for u in "${PIP_INDEX_URL}" "${DEFAULT_PIP_INDEX}" "${PIP_MIRRORS[@]}"; do
+    [[ -n "${u}" ]] || continue
+    [[ "${seen}" == *"|${u}|"* ]] && continue
+    seen="${seen}${u}|"
+    printf '%s\n' "${u}"
+  done
+}
+
+pip_install_online() {
+  local idx
+  local last_err=1
+  sanitize_pip_env
+  while IFS= read -r idx; do
+    log "pip index: ${idx}"
+    if "${PYTHON_VENV}" -m pip install --index-url "${idx}" --timeout 60 "$@"; then
+      return 0
+    fi
+    last_err=$?
+    warn "pip failed with index ${idx}"
+  done < <(pip_indexes_to_try)
+  return "${last_err}"
 }
 
 usage() {
@@ -64,6 +99,7 @@ Options:
   --prefix=PATH     Install root (default: ~/.local/opt/forge or /opt/forge for root)
   --bin-dir=PATH    Symlink directory for CLI binaries (default: ~/.local/bin or /usr/local/bin)
   --python=PATH     Python interpreter (default: python3.12 .. python3.9, then python3)
+  --index-url=URL   pip index (default: https://pypi.org/simple)
   --online          Force online install from PyPI / current source tree
   --offline         Force offline install from ${OFFLINE_DIR_NAME}/
   --dry-run         Preview without installing
@@ -77,6 +113,7 @@ Environment variables (overridden by CLI flags):
   FORGE_INSTALL_PREFIX   Same as --prefix
   FORGE_BIN_DIR          Same as --bin-dir
   FORGE_PYTHON           Same as --python
+  PIP_INDEX_URL          Same as --index-url
   NO_COLOR               Disable colored output
 EOF
 }
@@ -91,6 +128,7 @@ MODE=""   # "", online, offline
 PREFIX_OVERRIDE=""
 BIN_DIR_OVERRIDE=""
 PYTHON_OVERRIDE="${FORGE_PYTHON:-}"
+INDEX_URL_OVERRIDE=""
 
 require_value() {
   local flag="$1"
@@ -122,6 +160,11 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       PYTHON_OVERRIDE="$2"; shift 2
       ;;
+    --index-url=*) INDEX_URL_OVERRIDE="${1#*=}"; shift ;;
+    --index-url)
+      require_value "$1" "${2:-}"
+      INDEX_URL_OVERRIDE="$2"; shift 2
+      ;;
     --help|-h)
       usage
       exit 0
@@ -131,6 +174,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ -n "${INDEX_URL_OVERRIDE}" ]]; then
+  PIP_INDEX_URL="${INDEX_URL_OVERRIDE}"
+fi
+: "${PIP_INDEX_URL:=${DEFAULT_PIP_INDEX}}"
 
 if $UNINSTALL && [[ "${MODE}" == "online" || "${MODE}" == "offline" ]]; then
   warn "--online/--offline ignored during uninstall."
@@ -565,8 +613,11 @@ fi
 # ==============================================================================
 log "Creating virtual environment at ${VENV_DIR}..."
 mkdir -p "${INSTALL_PREFIX}"
-if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}"; then
-  error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
+# --without-pip avoids contacting PyPI during venv creation (timeouts on some networks).
+if ! "${PYTHON_BIN}" -m venv --without-pip "${VENV_DIR}" 2>/dev/null; then
+  if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}"; then
+    error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
+  fi
 fi
 [[ -x "${PYTHON_VENV}" ]] || error "venv created but python missing at ${VENV_DIR}"
 
@@ -577,11 +628,22 @@ fi
 [[ -x "${PIP}" ]] || error "venv created but pip missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv"
 
 if $USE_ONLINE; then
-  log "Installing from source + PyPI..."
+  log "Installing from source + pip index..."
   sanitize_pip_env
-  "${PYTHON_VENV}" -m pip install --upgrade pip setuptools wheel --index-url https://pypi.org/simple
-  "${PYTHON_VENV}" -m pip install --index-url https://pypi.org/simple "${REPO_ROOT}"
-else
+  if ! pip_install_online --upgrade pip setuptools wheel; then
+    warn "Could not upgrade pip/setuptools from the network; continuing with venv pip."
+  fi
+  if ! pip_install_online "${REPO_ROOT}"; then
+    if [[ -n "${WHEEL_DIR:-}" ]]; then
+      warn "Online install failed; falling back to offline wheels in ${WHEEL_DIR}."
+      USE_ONLINE=false
+    else
+      error "Online install failed (PyPI unreachable). Re-run with --offline, or pass --index-url=https://pypi.tuna.tsinghua.edu.cn/simple"
+    fi
+  fi
+fi
+
+if ! $USE_ONLINE; then
   log "Installing from offline packages..."
   # Bundled ensurepip already provides pip/setuptools; do not hit PyPI.
   # --no-build-isolation avoids downloading setuptools to build the local sdist.

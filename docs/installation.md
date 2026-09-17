@@ -57,6 +57,13 @@ sudo apt-get install -y python3-venv python3-pip
 ./install.sh --yes --python=/usr/bin/python3 --prefix="$HOME/apps/forge" --bin-dir="$HOME/apps/forge/bin"
 ```
 
+If `pypi.org` times out, use a mirror:
+```bash
+./install.sh --yes --python=/usr/bin/python3 \
+  --index-url=https://pypi.tuna.tsinghua.edu.cn/simple \
+  --prefix="$HOME/apps/forge" --bin-dir="$HOME/apps/forge/bin"
+```
+
 ### Root (System-Wide) Installation
 
 ```bash
