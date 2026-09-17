@@ -64,17 +64,23 @@ format:
 # Offline Support (HPC/Cluster Friendly)
 # ==============================================================================
 download-offline: $(VENV)/bin/activate
-	@mkdir -p $(OFFLINE_DIR)
-	@$(VENV)/bin/pip download -r $(OFFLINE_DIR)/requirements-offline.txt -d $(OFFLINE_DIR)/ \
+	@mkdir -p $(OFFLINE_DIR)/packaging_offline
+	@$(VENV)/bin/pip download -r $(OFFLINE_DIR)/requirements-offline.txt \
+		-d $(OFFLINE_DIR)/packaging_offline \
 		--only-binary=:all: --python-version 3.9 --platform manylinux_2_17_x86_64
-	@echo "💾 Offline packages downloaded to $(OFFLINE_DIR)/"
+	@echo "Offline packages downloaded to $(OFFLINE_DIR)/packaging_offline/"
 
 install-offline: $(VENV)/bin/activate
-	@if [ -d "$(OFFLINE_DIR)" ] && [ "$(shell ls -A $(OFFLINE_DIR) 2>/dev/null)" ]; then \
-		$(VENV)/bin/pip install --no-index --find-links=$(OFFLINE_DIR) -e ".[dev]"; \
-		echo "✅ Offline installation complete."; \
+	@wheel_dir="$(OFFLINE_DIR)/packaging_offline"; \
+	if [ ! -d "$$wheel_dir" ] || [ -z "$$(ls -A $$wheel_dir/*.whl 2>/dev/null)" ]; then \
+		wheel_dir="$(OFFLINE_DIR)"; \
+	fi; \
+	if [ -d "$$wheel_dir" ] && [ -n "$$(ls -A $$wheel_dir/*.whl 2>/dev/null)" ]; then \
+		$(VENV)/bin/pip install --no-index --find-links=$$wheel_dir -r $(OFFLINE_DIR)/requirements-offline.txt; \
+		$(VENV)/bin/pip install --no-index --no-build-isolation --no-deps --find-links=$$wheel_dir -e .; \
+		echo "Offline installation complete."; \
 	else \
-		echo "❌ Offline directory missing or empty. Run 'make download-offline' first."; \
+		echo "Offline directory missing or empty. Run 'make download-offline' first."; \
 		exit 1; \
 	fi
 

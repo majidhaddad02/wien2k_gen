@@ -1,10 +1,15 @@
 # Core Dependencies (Pinned for Python 3.9+ & HPC Stability)
+# Bundled wheels in packaging_offline/ currently target CPython 3.9 x86_64.
+# Re-run `make download-offline` on a machine with internet to refresh for other versions.
 rich==13.7.1
 textual==0.85.2
 pyyaml==6.0.1
 typing-extensions==4.12.2
 numpy==1.24.4
 psutil==5.9.8
+# Optional (not required at runtime; omit if wheels are not bundled):
+# filelock==3.15.4
+# packaging==24.1
 
 # Transitive Dependencies (Required by rich & textual)
 markdown-it-py==3.0.0
@@ -13,3 +18,4 @@ platformdirs==4.3.6
 mdurl==0.1.2
 linkify-it-py==2.0.3
 uc-micro-py==1.0.3
+mdit-py-plugins==0.4.2
