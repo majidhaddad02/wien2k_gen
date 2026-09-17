@@ -38,6 +38,24 @@ error()   { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 
 is_tty() { [[ -t 0 && -t 1 ]]; }
 
+python_is_conda() {
+  local py="$1"
+  local prefix
+  prefix="$("${py}" -c 'import sys; print(sys.prefix)' 2>/dev/null || true)"
+  [[ -n "${prefix}" && ( -n "${CONDA_PREFIX:-}" && "${prefix}" == "${CONDA_PREFIX}"* ) ]] && return 0
+  [[ "${prefix}" == *"/miniconda"* || "${prefix}" == *"/anaconda"* || "${prefix}" == *"/miniforge"* || "${prefix}" == *"/mambaforge"* ]] && return 0
+  [[ "${prefix}" == *"/envs/"* ]] && return 0
+  return 1
+}
+
+sanitize_pip_env() {
+  # Conda and site pip.conf often set an empty/private index, which yields:
+  # "Could not find a version that satisfies the requirement setuptools (from versions: none)"
+  unset PIP_NO_INDEX PIP_FIND_LINKS PIP_EXTRA_INDEX_URL || true
+  export PIP_DISABLE_PIP_VERSION_CHECK=1
+  export PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.org/simple}"
+}
+
 usage() {
   cat <<EOF
 Usage: $0 [OPTIONS]
@@ -247,14 +265,33 @@ detect_python() {
     if ! "${PYTHON_OVERRIDE}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
       error "Python >= 3.9 is required (got ${PYTHON_OVERRIDE})."
     fi
+    if python_is_conda "${PYTHON_OVERRIDE}"; then
+      warn "Using conda Python (${PYTHON_OVERRIDE}). Prefer system Python if pip index errors appear."
+    fi
     echo "${PYTHON_OVERRIDE}"
     return
   fi
-  local c
+  local c resolved
+  # Prefer distro Python; conda (base) often ships a broken pip/ensurepip index.
+  for c in /usr/bin/python3.12 /usr/bin/python3.11 /usr/bin/python3.10 /usr/bin/python3.9 /usr/bin/python3 \
+           python3.12 python3.11 python3.10 python3.9 python3; do
+    if command -v "${c}" >/dev/null 2>&1 || [[ -x "${c}" ]]; then
+      resolved="$(command -v "${c}" 2>/dev/null || echo "${c}")"
+      if python_is_conda "${resolved}"; then
+        continue
+      fi
+      if "${resolved}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+        echo "${resolved}"
+        return
+      fi
+    fi
+  done
   for c in python3.12 python3.11 python3.10 python3.9 python3; do
     if command -v "${c}" >/dev/null 2>&1; then
-      if "${c}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
-        echo "${c}"
+      resolved="$(command -v "${c}")"
+      if "${resolved}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+        warn "Only conda/non-system Python found: ${resolved}"
+        echo "${resolved}"
         return
       fi
     fi
@@ -528,13 +565,22 @@ fi
 # ==============================================================================
 log "Creating virtual environment at ${VENV_DIR}..."
 mkdir -p "${INSTALL_PREFIX}"
-"${PYTHON_BIN}" -m venv "${VENV_DIR}"
-[[ -x "${PIP}" && -x "${PYTHON_VENV}" ]] || error "venv created but pip/python missing at ${VENV_DIR}"
+if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}"; then
+  error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
+fi
+[[ -x "${PYTHON_VENV}" ]] || error "venv created but python missing at ${VENV_DIR}"
+
+if [[ ! -x "${PIP}" ]]; then
+  warn "venv pip missing; bootstrapping with ensurepip..."
+  "${PYTHON_VENV}" -m ensurepip --upgrade >/dev/null 2>&1 || true
+fi
+[[ -x "${PIP}" ]] || error "venv created but pip missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv"
 
 if $USE_ONLINE; then
   log "Installing from source + PyPI..."
-  "${PIP}" install --upgrade pip setuptools wheel --quiet
-  "${PIP}" install "${REPO_ROOT}"
+  sanitize_pip_env
+  "${PYTHON_VENV}" -m pip install --upgrade pip setuptools wheel --index-url https://pypi.org/simple
+  "${PYTHON_VENV}" -m pip install --index-url https://pypi.org/simple "${REPO_ROOT}"
 else
   log "Installing from offline packages..."
   # Bundled ensurepip already provides pip/setuptools; do not hit PyPI.

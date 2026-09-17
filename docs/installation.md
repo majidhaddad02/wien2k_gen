@@ -49,6 +49,14 @@ Non-interactive example (HPC batch / CI):
 export PATH="$HOME/apps/forge/bin:$PATH"
 ```
 
+If the prompt shows `(base)` (conda), deactivate it first or pass system Python.
+A conda pip index often fails with `No matching distribution found for setuptools`:
+```bash
+conda deactivate
+sudo apt-get install -y python3-venv python3-pip
+./install.sh --yes --python=/usr/bin/python3 --prefix="$HOME/apps/forge" --bin-dir="$HOME/apps/forge/bin"
+```
+
 ### Root (System-Wide) Installation
 
 ```bash
