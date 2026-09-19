@@ -57,19 +57,29 @@ def _which(executable: str) -> bool:
             text=True, timeout=5
         )
         return result.returncode == 0
-    except (subprocess.SubprocessError, FileNotFoundError):
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
+
+
+def _path_exists(path: str) -> bool:
+    """Return whether *path* exists without raising on restricted sysfs nodes."""
+    try:
+        return Path(path).exists()
+    except OSError:
         return False
 
 
 def _detect_perf_tools() -> Optional[str]:
     """Detect available hardware counter tooling and return the best option."""
-    if _which("likwid-perfctr"):
-        return "likwid"
-    if _which("perf") and Path("/sys/kernel/tracing/events").exists():
-        return "perf"
-    # sysfs memory bandwidth counters are always available on modern Linux
-    if Path("/sys/devices/system/node").exists():
-        return "sysfs"
+    try:
+        if _which("likwid-perfctr"):
+            return "likwid"
+        if _which("perf") and _path_exists("/sys/kernel/tracing/events"):
+            return "perf"
+        if _path_exists("/sys/devices/system/node"):
+            return "sysfs"
+    except OSError:
+        return None
     return None
 
 
@@ -92,9 +102,13 @@ def _check_counter_access() -> bool:
     return False
 
 
-_PERF_TOOL_AVAILABLE = _detect_perf_tools()
-if _PERF_TOOL_AVAILABLE:
-    HAS_PERF_COUNTERS = _check_counter_access()
+try:
+    _PERF_TOOL_AVAILABLE = _detect_perf_tools()
+    if _PERF_TOOL_AVAILABLE:
+        HAS_PERF_COUNTERS = _check_counter_access()
+except OSError:
+    _PERF_TOOL_AVAILABLE = None
+    HAS_PERF_COUNTERS = False
 
 logger.debug(
     "Perf counters: tool=%s, access_ok=%s",
