@@ -21,6 +21,20 @@ package and its dependencies, and adds symlinks for `forge`, `forge_sbatch`,
 and `forge_wizard` into `~/.local/bin/`. The installer can be run from any
 working directory; it locates the repository from its own path.
 
+If core libraries such as NumPy, PyYAML, or Rich are already installed on
+the selected Python, the installer reuses them via `--system-site-packages`
+instead of downloading copies. Pass `--no-system-packages` to isolate the
+venv completely.
+
+If FORGE is already installed at the chosen prefix, the installer asks
+whether to **update** (keep the venv, install only missing/outdated
+packages) or **reinstall** (delete the previous tree and install from
+scratch). Non-interactive defaults:
+```bash
+./install.sh --yes --update      # keep venv, upgrade package
+./install.sh --yes --reinstall   # wipe and install from scratch
+```
+
 Verify:
 ```bash
 forge --version
@@ -35,8 +49,12 @@ forge --version
 | `--python=/path/to/python` | Python interpreter (must be 3.9+) |
 | `--online` | Force install from source + PyPI |
 | `--offline` | Force install from `offline_packages/` |
+| `--update` | Keep the existing venv; only update the package and missing deps |
+| `--reinstall` | Delete the previous install and install from scratch |
+| `--no-system-packages` | Do not reuse libraries already installed on the system Python |
 | `--dry-run` | Preview without installing |
-| `--force` / `--yes` | Non-interactive overwrite |
+| `--force` | Non-interactive reinstall of an existing prefix |
+| `--yes`, `-y` | Non-interactive; update if already installed |
 | `--skip-path` | Do not modify shell profile |
 | `--uninstall` | Remove installation |
 

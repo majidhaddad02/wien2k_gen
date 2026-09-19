@@ -102,9 +102,12 @@ Options:
   --index-url=URL   pip index (default: https://pypi.org/simple)
   --online          Force online install from PyPI / current source tree
   --offline         Force offline install from ${OFFLINE_DIR_NAME}/
+  --update          Keep an existing install and only update the package/deps
+  --reinstall       Wipe an existing install and install from scratch
+  --no-system-packages  Do not reuse packages already on the system Python
   --dry-run         Preview without installing
   --force           Skip confirmation on overwrite / uninstall
-  --yes, -y         Non-interactive; accept defaults (implies --force for overwrite)
+  --yes, -y         Non-interactive; default is update if already installed
   --skip-path       Do not modify shell profile
   --uninstall       Remove installation
   --help, -h        Show this message
@@ -124,7 +127,10 @@ DRY_RUN=false
 FORCE=false
 YES=false
 SKIP_PATH=false
+NO_SYSTEM_PACKAGES=false
 MODE=""   # "", online, offline
+EXISTING_ACTION=""  # "", update, reinstall
+INSTALL_MODE="fresh"  # fresh, update, reinstall
 PREFIX_OVERRIDE=""
 BIN_DIR_OVERRIDE=""
 PYTHON_OVERRIDE="${FORGE_PYTHON:-}"
@@ -141,10 +147,13 @@ while [[ $# -gt 0 ]]; do
     --uninstall) UNINSTALL=true; shift ;;
     --dry-run)   DRY_RUN=true; shift ;;
     --force)     FORCE=true; shift ;;
-    --yes|-y)    YES=true; FORCE=true; shift ;;
+    --yes|-y)    YES=true; shift ;;
     --skip-path) SKIP_PATH=true; shift ;;
     --online)    MODE="online"; shift ;;
     --offline)   MODE="offline"; shift ;;
+    --update)    EXISTING_ACTION="update"; shift ;;
+    --reinstall) EXISTING_ACTION="reinstall"; shift ;;
+    --no-system-packages) NO_SYSTEM_PACKAGES=true; shift ;;
     --prefix=*)  PREFIX_OVERRIDE="${1#*=}"; shift ;;
     --prefix)
       require_value "$1" "${2:-}"
@@ -299,6 +308,102 @@ confirm() {
   else
     read -rp "${prompt} [y/N]: " ans || true
     [[ "${ans}" =~ ^[Yy]$ ]]
+  fi
+}
+
+choose_existing_action() {
+  if [[ -n "${EXISTING_ACTION}" ]]; then
+    printf '%s\n' "${EXISTING_ACTION}"
+    return
+  fi
+  if $FORCE; then
+    printf '%s\n' "reinstall"
+    return
+  fi
+  if $YES; then
+    printf '%s\n' "update"
+    return
+  fi
+  if ! is_tty; then
+    error "Existing installation found at ${INSTALL_PREFIX}. Re-run with --update, --reinstall, or --yes."
+  fi
+  echo
+  warn "FORGE is already installed at ${INSTALL_PREFIX}"
+  echo "  [1] Update     keep venv; install only missing/outdated packages (default)"
+  echo "  [2] Reinstall  delete the previous install and install from scratch"
+  echo "  [3] Cancel"
+  local ans
+  read -rp "Choose [1/2/3]: " ans || true
+  case "${ans}" in
+    2|r|R|reinstall) printf '%s\n' "reinstall" ;;
+    3|n|N|c|C|q|Q)   printf '%s\n' "cancel" ;;
+    *)               printf '%s\n' "update" ;;
+  esac
+}
+
+list_satisfied_deps() {
+  local py="$1"
+  "${py}" - <<'PY' 2>/dev/null || true
+import importlib.metadata as md
+
+need = {
+    "rich": "13.0",
+    "textual": "0.40",
+    "PyYAML": "6.0",
+    "typing_extensions": "4.5",
+    "numpy": "1.24",
+    "psutil": "5.9",
+    "filelock": "3.12",
+    "packaging": "23.0",
+}
+
+def ver_tuple(s):
+    parts = []
+    for p in s.split("."):
+        n = ""
+        for ch in p:
+            if ch.isdigit():
+                n += ch
+            else:
+                break
+        parts.append(int(n or 0))
+    return tuple(parts)
+
+found = []
+missing = []
+for name, minv in need.items():
+    try:
+        cur = md.version(name)
+    except Exception:
+        missing.append(name)
+        continue
+    if ver_tuple(cur) >= ver_tuple(minv):
+        found.append(f"{name}=={cur}")
+    else:
+        missing.append(f"{name}=={cur}(<{minv})")
+print("FOUND:" + ",".join(found))
+print("MISSING:" + ",".join(missing))
+PY
+}
+
+USE_SYSTEM_SITE=false
+SATISFIED_DEPS=""
+
+inspect_host_packages() {
+  $NO_SYSTEM_PACKAGES && return 0
+  local report found missing
+  report="$(list_satisfied_deps "${PYTHON_BIN}")"
+  found="$(printf '%s\n' "${report}" | awk -F: '/^FOUND:/{print substr($0,7)}')"
+  missing="$(printf '%s\n' "${report}" | awk -F: '/^MISSING:/{print substr($0,9)}')"
+  if [[ -n "${found}" ]]; then
+    SATISFIED_DEPS="${found}"
+    USE_SYSTEM_SITE=true
+    log "Reusing already-installed packages: ${found//,/, }"
+  else
+    log "No reusable host packages found for core dependencies."
+  fi
+  if [[ -n "${missing}" ]]; then
+    log "Will install/upgrade: ${missing//,/, }"
   fi
 }
 
@@ -521,22 +626,30 @@ fi
 # ==============================================================================
 if [[ -d "${INSTALL_PREFIX}" ]]; then
   if is_forge_install "${INSTALL_PREFIX}" || [[ -d "${VENV_DIR}" ]]; then
-    warn "Previous installation detected at ${INSTALL_PREFIX}."
-    if ! $DRY_RUN; then
-      confirm "Overwrite and proceed?" || { log "Installation cancelled."; exit 0; }
-      log "Cleaning previous installation..."
-      rm -rf "${INSTALL_PREFIX}"
-      for bin in "${BINARIES[@]}"; do
-        rm -f "${BIN_LINK_DIR}/${bin}" 2>/dev/null || true
-      done
-      if [[ -n "${PROFILE_FILE}" ]]; then
-        remove_profile_block "${PROFILE_FILE}"
+    INSTALL_MODE="$(choose_existing_action)"
+    if [[ "${INSTALL_MODE}" == "cancel" ]]; then
+      log "Installation cancelled."
+      exit 0
+    fi
+    if [[ "${INSTALL_MODE}" == "reinstall" ]]; then
+      if $DRY_RUN; then
+        log "DRY-RUN: would wipe ${INSTALL_PREFIX} and reinstall"
+      else
+        log "Removing previous installation at ${INSTALL_PREFIX}..."
+        if is_unsafe_prefix "${INSTALL_PREFIX}"; then
+          error "Refusing to remove unsafe path: ${INSTALL_PREFIX}"
+        fi
+        rm -rf "${INSTALL_PREFIX}"
+        for bin in "${BINARIES[@]}"; do
+          rm -f "${BIN_LINK_DIR}/${bin}" 2>/dev/null || true
+        done
       fi
     else
-      log "DRY-RUN: would replace ${INSTALL_PREFIX}"
+      log "Updating existing installation (venv kept)."
     fi
-  elif $FORCE; then
-    warn "Overwriting non-FORGE path ${INSTALL_PREFIX} because --force was set."
+  elif $FORCE || $YES; then
+    warn "Overwriting non-FORGE path ${INSTALL_PREFIX} because --force/--yes was set."
+    INSTALL_MODE="reinstall"
     if ! $DRY_RUN; then
       rm -rf "${INSTALL_PREFIX}"
     fi
@@ -544,6 +657,8 @@ if [[ -d "${INSTALL_PREFIX}" ]]; then
     error "Refusing to overwrite ${INSTALL_PREFIX} (not a FORGE install). Re-run with --force after confirming the path."
   fi
 fi
+
+inspect_host_packages
 
 # ==============================================================================
 # 5. Internet / offline decision
@@ -587,18 +702,20 @@ if ! $USE_ONLINE; then
 fi
 
 if $DRY_RUN; then
+  log "DRY-RUN mode: ${INSTALL_MODE}"
+  if $USE_SYSTEM_SITE; then
+    log "DRY-RUN: venv --system-site-packages (reuse host packages)"
+  fi
   if $USE_ONLINE; then
-    log "DRY-RUN: ${PYTHON_BIN} -m venv ${VENV_DIR}"
-    log "DRY-RUN: pip install --upgrade pip setuptools wheel"
-    log "DRY-RUN: pip install '${REPO_ROOT}'"
-  else
-    log "DRY-RUN: ${PYTHON_BIN} -m venv ${VENV_DIR}"
-    if [[ -f "${OFFLINE_DIR}/requirements-offline.txt" ]]; then
-      log "DRY-RUN: pip install --no-index --find-links='${WHEEL_DIR}' -r '${OFFLINE_DIR}/requirements-offline.txt'"
+    if [[ "${INSTALL_MODE}" == "update" && -x "${PYTHON_VENV}" ]]; then
+      log "DRY-RUN: pip install --upgrade '${REPO_ROOT}'"
     else
-      log "DRY-RUN: pip install --no-index --find-links='${WHEEL_DIR}' <compatible wheels>"
+      log "DRY-RUN: ${PYTHON_BIN} -m venv ${VENV_DIR}"
+      log "DRY-RUN: pip install --upgrade pip setuptools wheel"
+      log "DRY-RUN: pip install '${REPO_ROOT}'"
     fi
-    log "DRY-RUN: pip install --no-index --no-build-isolation --no-deps --find-links='${WHEEL_DIR}' '${REPO_ROOT}'"
+  else
+    log "DRY-RUN: pip install --no-index --no-build-isolation --upgrade --find-links='${WHEEL_DIR}' '${REPO_ROOT}'"
   fi
   log "DRY-RUN: symlink binaries into ${BIN_LINK_DIR}"
   if ! $SKIP_PATH && [[ -n "${PROFILE_FILE}" ]]; then
@@ -611,21 +728,41 @@ fi
 # ==============================================================================
 # 6. Installation (uses venv, not --prefix)
 # ==============================================================================
-log "Creating virtual environment at ${VENV_DIR}..."
-mkdir -p "${INSTALL_PREFIX}"
-# --without-pip avoids contacting PyPI during venv creation (timeouts on some networks).
-if ! "${PYTHON_BIN}" -m venv --without-pip "${VENV_DIR}" 2>/dev/null; then
-  if ! "${PYTHON_BIN}" -m venv "${VENV_DIR}"; then
-    error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
+ensure_venv() {
+  mkdir -p "${INSTALL_PREFIX}"
+  if [[ -x "${PYTHON_VENV}" && "${INSTALL_MODE}" == "update" ]]; then
+    log "Reusing existing virtual environment at ${VENV_DIR}."
+  else
+    log "Creating virtual environment at ${VENV_DIR}..."
+    local venv_flags=()
+    $USE_SYSTEM_SITE && venv_flags+=(--system-site-packages)
+    # --without-pip avoids contacting PyPI during venv creation (timeouts on some networks).
+    if ! "${PYTHON_BIN}" -m venv --without-pip "${venv_flags[@]}" "${VENV_DIR}" 2>/dev/null; then
+      if ! "${PYTHON_BIN}" -m venv "${venv_flags[@]}" "${VENV_DIR}"; then
+        error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
+      fi
+    fi
   fi
-fi
-[[ -x "${PYTHON_VENV}" ]] || error "venv created but python missing at ${VENV_DIR}"
+  [[ -x "${PYTHON_VENV}" ]] || error "venv created but python missing at ${VENV_DIR}"
+  if [[ ! -x "${PIP}" ]]; then
+    warn "venv pip missing; bootstrapping with ensurepip..."
+    "${PYTHON_VENV}" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  fi
+  [[ -x "${PIP}" ]] || error "venv created but pip missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv"
+  if $USE_SYSTEM_SITE; then
+    cfg="${VENV_DIR}/pyvenv.cfg"
+    if [[ -f "${cfg}" ]] && ! grep -qiE '^include-system-site-packages[[:space:]]*=[[:space:]]*true' "${cfg}"; then
+      if grep -qiE '^include-system-site-packages' "${cfg}"; then
+        sed -i 's/^include-system-site-packages.*/include-system-site-packages = true/' "${cfg}"
+      else
+        echo "include-system-site-packages = true" >> "${cfg}"
+      fi
+      log "Enabled system-site-packages so host libraries are reused."
+    fi
+  fi
+}
 
-if [[ ! -x "${PIP}" ]]; then
-  warn "venv pip missing; bootstrapping with ensurepip..."
-  "${PYTHON_VENV}" -m ensurepip --upgrade >/dev/null 2>&1 || true
-fi
-[[ -x "${PIP}" ]] || error "venv created but pip missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv"
+ensure_venv
 
 if $USE_ONLINE; then
   log "Installing from source + pip index..."
@@ -633,7 +770,7 @@ if $USE_ONLINE; then
   if ! pip_install_online --upgrade pip setuptools wheel; then
     warn "Could not upgrade pip/setuptools from the network; continuing with venv pip."
   fi
-  if ! pip_install_online "${REPO_ROOT}"; then
+  if ! pip_install_online --upgrade "${REPO_ROOT}"; then
     if [[ -n "${WHEEL_DIR:-}" ]]; then
       warn "Online install failed; falling back to offline wheels in ${WHEEL_DIR}."
       USE_ONLINE=false
@@ -647,19 +784,22 @@ if ! $USE_ONLINE; then
   log "Installing from offline packages..."
   # Bundled ensurepip already provides pip/setuptools; do not hit PyPI.
   # --no-build-isolation avoids downloading setuptools to build the local sdist.
-  # Install via requirements so pip selects wheels compatible with this Python.
   req_file="${OFFLINE_DIR}/requirements-offline.txt"
-  if [[ -f "${req_file}" ]] && "${PIP}" install --no-index --find-links="${WHEEL_DIR}" -r "${req_file}"; then
-    :
-  else
-    warn "Full offline requirements install failed; installing available compatible wheels."
-    if ! "${PIP}" install --no-index --find-links="${WHEEL_DIR}" \
-      rich textual pyyaml typing-extensions numpy psutil \
-      markdown-it-py pygments platformdirs mdurl linkify-it-py uc-micro-py; then
-      error "Offline dependency install failed for Python ${PY_VERSION}. Bundled wheels target CPython 3.9 x86_64."
+  if [[ "${INSTALL_MODE}" != "update" ]]; then
+    if [[ -f "${req_file}" ]] && "${PIP}" install --no-index --find-links="${WHEEL_DIR}" -r "${req_file}"; then
+      :
+    else
+      warn "Full offline requirements install failed; installing available compatible wheels."
+      if ! "${PIP}" install --no-index --find-links="${WHEEL_DIR}" \
+        rich textual pyyaml typing-extensions numpy psutil \
+        markdown-it-py pygments platformdirs mdurl linkify-it-py uc-micro-py; then
+        error "Offline dependency install failed for Python ${PY_VERSION}. Bundled wheels target CPython 3.9 x86_64."
+      fi
     fi
+  else
+    log "Update mode: skipping reinstall of already-present offline wheels."
   fi
-  "${PIP}" install --no-index --no-build-isolation --no-deps --find-links="${WHEEL_DIR}" "${REPO_ROOT}"
+  "${PIP}" install --no-index --no-build-isolation --no-deps --upgrade --find-links="${WHEEL_DIR}" "${REPO_ROOT}"
 fi
 
 printf '%s\n' "version=${APP_VERSION}" "prefix=${INSTALL_PREFIX}" > "${INSTALL_PREFIX}/${INSTALL_MARKER}"
