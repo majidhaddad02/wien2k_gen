@@ -274,56 +274,51 @@ def detect_problem_size() -> dict[str, Any]:  # noqa: C901
         except Exception as e:
             logger.warning(f"Failed to parse .struct file: {e}")
 
-    # 2. Extract k-points from .klist
-    # Format: first line is k-point count, or count non-empty lines minus header
+    # 2. Extract k-points from .klist by counting k-point lines (not the first token)
     klist_files = list(Path(".").glob("*.klist*"))
     if klist_files:
         try:
-            content = klist_files[0].read_text(encoding="utf-8", errors="replace")
-            lines = [line.strip() for line in content.splitlines() if line.strip()
-                     and not line.strip().startswith("#")]
-            # First line typically contains k-point count or header
-            first_line = lines[0] if lines else ""
-            parts = first_line.split()
-            if parts and parts[0].isdigit():
-                result["kpoints"] = int(parts[0])
-            elif len(lines) > 1:
-                # Fallback: count data lines (each k-point has weight + coordinates)
-                result["kpoints"] = len(lines)
+            from ...core.case_parser import CaseFileParser as _CFP
+            result["kpoints"] = int(_CFP.parse_klist(klist_files[0]).get("kpoints", 0) or 0)
         except Exception as e:
             logger.debug(f"Could not parse kpoints from .klist: {e}")
 
-    # 3. Extract nmat from .scf file (exact value from SCF run)
-    scf_files = list(Path(".").glob("*.scf"))
-    if scf_files:
+    # 3. NMAT: .output1 (NMAT:=) then .scf, then RKMAX+RMT estimate, then .in2
+    for out1 in list(Path(".").glob("*.output1*"))[:1]:
         try:
-            content = scf_files[0].read_text(encoding="utf-8", errors="replace")
-            match = re.search(r':NMAT\s+(\d+)', content)
+            content = out1.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r'NMAT\s*:?=\s*(\d+)', content, re.IGNORECASE)
+            if not match:
+                match = re.search(r'NMAT\s*:?\s*=?\s*(\d+)', content, re.IGNORECASE)
             if match:
                 result["nmat"] = int(match.group(1))
         except Exception as e:
-            logger.debug(f"Could not parse nmat from .scf: {e}")
+            logger.debug(f"Could not parse nmat from .output1: {e}")
 
-    # 3b. Estimate nmat from .in2 FFT grid (fallback when .scf doesn't exist)
     if result["nmat"] == 0:
-        in2_files = list(Path(".").glob("*.in2*"))
-        if in2_files:
+        scf_files = list(Path(".").glob("*.scf"))
+        if scf_files:
             try:
-                content = in2_files[0].read_text(encoding="utf-8", errors="replace")
-                # .in2 line 3: NX NY NZ enhancement_factor iprint
-                for line in content.splitlines():
-                    stripped = line.strip()
-                    parts = stripped.split()
-                    if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
-                        nx, ny, nz = int(parts[0]), int(parts[1]), int(parts[2])
-                        # nmat ≈ (FFT grid total) / fudge_factor
-                        # For lapw1, nmat = G_max sphere within FFT box
-                        fft_total = nx * ny * nz
-                        estimated_nmat = int((fft_total ** (1.0 / 3.0)) * 1.1)
-                        result["nmat"] = max(100, estimated_nmat)
-                        break
+                content = scf_files[0].read_text(encoding="utf-8", errors="replace")
+                match = re.search(r'NMAT\s*:?\s*=?\s*(\d+)', content, re.IGNORECASE)
+                if match:
+                    result["nmat"] = int(match.group(1))
             except Exception as e:
-                logger.debug(f"Could not estimate nmat from .in2: {e}")
+                logger.debug(f"Could not parse nmat from .scf: {e}")
+
+    in2_nmat = 0
+    in2_files = list(Path(".").glob("*.in2*"))
+    if in2_files:
+        try:
+            content = in2_files[0].read_text(encoding="utf-8", errors="replace")
+            for line in content.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 3 and all(p.isdigit() for p in parts[:3]):
+                    nx, ny, nz = int(parts[0]), int(parts[1]), int(parts[2])
+                    in2_nmat = max(100, int(nx * ny * nz * 0.12))
+                    break
+        except Exception as e:
+            logger.debug(f"Could not estimate nmat from .in2: {e}")
 
     # 4. Extract nbands from .in1 file
     # .in1 format:
@@ -373,16 +368,45 @@ def detect_problem_size() -> dict[str, Any]:  # noqa: C901
             break
     result["is_hybrid"] = hybrid_detected
 
-    # 7. Extract RKMAX from .in0 file
-    in0_files = list(Path(".").glob("*.in0"))
-    if in0_files:
+    # 7. RKMAX from .in1 line 2; .in0 only if .in1 has no RKMAX
+    rkmax_from_in1 = False
+    in1_files = list(Path(".").glob("*.in1*"))
+    if in1_files:
         try:
-            content = in0_files[0].read_text(encoding="utf-8", errors="replace")
-            match = re.search(r'RKMAX\s*=\s*([\d.]+)', content)
-            if match:
-                result["rkmax"] = float(match.group(1))
+            from ...core.case_parser import CaseFileParser as _CFP
+            i1 = _CFP.parse_in1(in1_files[0])
+            if i1.get("rkmax_found"):
+                result["rkmax"] = float(i1.get("rkmax", 7.0) or 7.0)
+                rkmax_from_in1 = True
         except Exception as e:
-            logger.debug(f"Could not parse RKMAX from .in0: {e}")
+            logger.debug(f"Could not parse RKMAX from .in1: {e}")
+    if not rkmax_from_in1:
+        in0_files = list(Path(".").glob("*.in0"))
+        if in0_files:
+            try:
+                content = in0_files[0].read_text(encoding="utf-8", errors="replace")
+                match = re.search(r'RKMAX\s*=\s*([\d.]+)', content, re.IGNORECASE)
+                if match:
+                    result["rkmax"] = float(match.group(1))
+            except Exception as e:
+                logger.debug(f"Could not parse RKMAX from .in0: {e}")
+
+    if result["nmat"] == 0:
+        try:
+            from ...core.case_parser import CaseFileParser as _CFP
+            rmts: list[float] = []
+            volume = 0.0
+            struct_files = list(Path(".").glob("*.struct"))
+            if struct_files:
+                st = _CFP.parse_struct(struct_files[0])
+                rmts = list(st.get("rmts") or [])
+                volume = float(st.get("volume_bohr3", 0.0) or 0.0)
+            if rkmax_from_in1 or rmts:
+                result["nmat"] = _CFP.estimate_nmat(float(result["rkmax"]), rmts, volume)
+        except Exception as e:
+            logger.debug(f"Could not estimate nmat from RKMAX/RMT: {e}")
+    if result["nmat"] == 0:
+        result["nmat"] = in2_nmat
 
     # 8. Estimate complexity
     result["complexity"] = result["atoms"] / 50.0
@@ -423,7 +447,9 @@ def detect_wien2k_flags() -> Wien2kFlags:  # noqa: C901
     if inst_files:
         try:
             content = inst_files[0].read_text(encoding="utf-8", errors="replace")
-            flags.is_spin_polarized = "SPIN" in content.upper()
+            flags.is_spin_polarized = bool(
+                re.search(r'(?m)^\s*SPIN\b', content, re.IGNORECASE)
+            )
         except Exception:
             logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
 
@@ -446,16 +472,13 @@ def detect_wien2k_flags() -> Wien2kFlags:  # noqa: C901
     if list(Path(".").glob("*.ineece")):
         flags.is_eece = True
 
-    wienroot = os.environ.get("WIENROOT")
-    if wienroot:
-        version_file = Path(wienroot, "VERSION")
-        if version_file.exists():
-            try:
-                ver_str = version_file.read_text().strip().split()[0]
-                major_minor = ".".join(ver_str.split(".")[:2]) if "." in ver_str else ver_str
-                flags.wien2k_version = major_minor
-            except Exception:
-                logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
+    try:
+        from ...core.case_parser import detect_wien2k_version as _detect_ver
+        ver_str = _detect_ver()
+        if ver_str and ver_str != "unknown":
+            flags.wien2k_version = ".".join(ver_str.split(".")[:2]) if "." in ver_str else ver_str
+    except Exception:
+        logger.debug("Suppressed exception in detect_wien2k_flags()", exc_info=True)
 
     return flags
 

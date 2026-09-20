@@ -9,6 +9,7 @@ from forge.core.case_parser import (
     CaseFileParser,
     LDAUData,
     Vector,
+    detect_wien2k_version,
     parse_case_directory,
     try_float,
 )
@@ -294,6 +295,19 @@ def test_parse_klist_fallback() -> None:
         assert r["kpoints"] == 2
 
 
+def test_parse_klist_counts_data_lines_not_first_index() -> None:
+    content = """          1    0    0    1     1.0
+          2    0    1    1     1.0
+          3    1    0    1     1.0
+          4    1    1    1     1.0
+END
+"""
+    with tempfile.TemporaryDirectory() as d:
+        path = _write(Path(d) / "test.klist", content)
+        r = CaseFileParser.parse_klist(path)
+        assert r["kpoints"] == 4
+
+
 # ============================================================
 # case.in0 parsing
 # ============================================================
@@ -382,7 +396,7 @@ def test_parse_all_complete() -> None:
         assert data.atoms == 8
         assert data.nmat == 2567
         assert data.nbands == 123
-        assert data.rkmax == 8.0  # .in0 takes precedence
+        assert data.rkmax == 7.0
         assert data.fft_nx == 120
         assert data.fft_ny == 120
         assert data.fft_nz == 120
@@ -428,3 +442,48 @@ def test_ldau_data_defaults() -> None:
     assert ldau.u_ry == []
     assert ldau.double_counting == "AMF"
     assert ldau.file_present is False
+
+
+def test_parse_output1_nmat() -> None:
+    content = " NMAT:=   4321\n other stuff\n"
+    with tempfile.TemporaryDirectory() as d:
+        path = _write(Path(d) / "test.output1", content)
+        r = CaseFileParser.parse_output1(path)
+        assert r["nmat"] == 4321
+
+
+def test_nmat_prefers_output1_over_scf() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        case_dir = Path(d) / "TiO2"
+        case_dir.mkdir()
+        _write(case_dir / "TiO2.struct", STRUCT_CONTENT)
+        _write(case_dir / "TiO2.scf", SCF_CONTENT)
+        _write(case_dir / "TiO2.output1", "NMAT:=  9999\n")
+        data = CaseFileParser(case_dir).parse_all()
+        assert data.nmat == 9999
+
+
+def test_rkmax_from_in1_not_overridden_by_in0() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        case_dir = Path(d) / "TiO2"
+        case_dir.mkdir()
+        _write(case_dir / "TiO2.struct", STRUCT_CONTENT)
+        _write(case_dir / "TiO2.in1", "WFFIL\n8.50    10    4    (R-MT*K-MAX\n")
+        _write(case_dir / "TiO2.in0", "TOT\nRKMAX=7.0\n")
+        data = CaseFileParser(case_dir).parse_all()
+        assert data.rkmax == 8.5
+
+
+def test_detect_spin_ignores_spinorbit_substring() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        path = _write(Path(d) / "test.inst", "Na\nSPINORBIT\n")
+        assert CaseFileParser.detect_spin(path) is False
+
+
+def test_detect_wien2k_version_uses_wien2k_version_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _write(root / "WIEN2K_VERSION", "24.1\n")
+        monkeypatch.setenv("WIENROOT", str(root))
+        monkeypatch.delenv("WIEN_VERSION", raising=False)
+        assert detect_wien2k_version() == "24.1"

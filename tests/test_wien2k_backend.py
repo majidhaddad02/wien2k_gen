@@ -808,8 +808,9 @@ class TestDetectWien2kFlags:
     def test_version_from_wienroot(self, tmp_path, monkeypatch):
         wienroot = tmp_path / "wien2k"
         wienroot.mkdir()
-        (wienroot / "VERSION").write_text("24.1 release\n")
+        (wienroot / "WIEN2K_VERSION").write_text("24.1 release\n")
         monkeypatch.setenv("WIENROOT", str(wienroot))
+        monkeypatch.delenv("WIEN_VERSION", raising=False)
         monkeypatch.chdir(tmp_path)
         flags = detect_wien2k_flags()
         assert flags.wien2k_version == "24.1"
@@ -877,6 +878,20 @@ class TestDetectProblemSizeLegacy:
         monkeypatch.chdir(tmp_path)
         result = detect_problem_size()
         assert result["rkmax"] == 7.0
+
+    def test_rkmax_from_in1_not_in0(self, tmp_path, monkeypatch):
+        write_in0(tmp_path)
+        write_in1(tmp_path)
+        monkeypatch.chdir(tmp_path)
+        result = detect_problem_size()
+        assert result["rkmax"] == 8.0
+
+    def test_nmat_from_output1(self, tmp_path, monkeypatch):
+        write_scf(tmp_path)
+        (tmp_path / "case.output1").write_text("NMAT:=  4321\n")
+        monkeypatch.chdir(tmp_path)
+        result = detect_problem_size()
+        assert result["nmat"] == 4321
 
     def test_soc_from_inso(self, tmp_path, monkeypatch):
         write_inso(tmp_path)

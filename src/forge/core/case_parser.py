@@ -5,13 +5,14 @@ Extracts physical parameters from all WIEN2k input files needed for
 memory estimation, parallelization strategy selection, and resource planning.
 
 Parsed files and their key contributions:
-    case.in1   → nbands (TOT/WFFIL), GMAX, RKMAX, LMAX
+    case.in1   → nbands (TOT/WFFIL), GMAX, RKMAX (line 2), LMAX
     case.in2   → FFT grid (nx, ny, nz), GMAX, TETRA flag
     case.inm   → LDA+U: U, J, double-counting per atom
-    case.in0   → RKMAX, HYBR (hybrid functional flag)
-    case.scf   → NMAT (exact basis set size), Fermi energy, SCF iterations
-    case.struct → atoms, volume, lattice vectors, spacegroup
-    case.klist  → kpoints, k-point type
+    case.in0   → HYBR (hybrid functional flag); RKMAX only if .in1 is missing
+    case.output1 → NMAT (exact basis set size)
+    case.scf   → NMAT fallback, Fermi energy, SCF iterations
+    case.struct → atoms, volume, lattice vectors, spacegroup, RMTs
+    case.klist  → kpoints (count of k-point lines)
 
 References:
     Blaha et al. (2020) J. Chem. Phys. 152, 074101
@@ -139,6 +140,7 @@ class CaseFileParser:
         result: dict[str, Any] = {
             "nbands": None, "rkmax": 7.0, "lmax": 10,
             "v_nmt": 4.0, "gmax": 12.0, "format_type": "unknown",
+            "rkmax_found": False,
         }
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -181,6 +183,7 @@ class CaseFileParser:
                         result["rkmax"] = rk
                         result["lmax"] = lm
                         result["v_nmt"] = vn
+                        result["rkmax_found"] = True
                         rkmax_lmax_found = True
                         break
                 except (ValueError, IndexError):
@@ -285,7 +288,7 @@ class CaseFileParser:
 
         if result["fft_nx"] > 0:
             fft_total = result["fft_nx"] * result["fft_ny"] * result["fft_nz"]
-            result["nmat_estimated"] = max(100, int(fft_total ** (1.0 / 3.0) * 1.1))
+            result["nmat_estimated"] = max(100, int(fft_total * 0.12))
 
         return result
 
@@ -407,8 +410,7 @@ class CaseFileParser:
         except Exception:
             return result
 
-        # :NMAT
-        m = re.search(r':NMAT\s*:?\s*(\d+)', content)
+        m = re.search(r'NMAT\s*:?\s*=?\s*(\d+)', content, re.IGNORECASE)
         if m:
             result["nmat"] = int(m.group(1))
 
@@ -440,7 +442,7 @@ class CaseFileParser:
         result: dict[str, Any] = {
             "atoms": 0, "atoms_inequiv": 0,
             "volume_bohr3": 0.0, "lattice_vectors": [],
-            "spacegroup": "",
+            "spacegroup": "", "rmts": [],
         }
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
@@ -466,6 +468,8 @@ class CaseFileParser:
             else:
                 atom_pat = re.compile(r'^\s*ATOM\s*[-\d]+:', re.IGNORECASE)
                 result["atoms"] = sum(1 for ln in lines if atom_pat.match(ln))
+
+        result["rmts"] = [float(v) for v in re.findall(r'RMT\s*=\s*([\d.]+)', content, re.IGNORECASE)]
 
         # Spacegroup
         m = re.search(r'(\d+)\s+(I|P|F|C|R|A|B)[-\w]*\s*(?:RELA|NONE)?', content)
@@ -509,30 +513,85 @@ class CaseFileParser:
 
         return result
 
+    @staticmethod
+    def parse_output1(filepath: Path) -> dict[str, Any]:
+        """Parse NMAT from case.output1 (lapw1 stdout). Typical token: NMAT:=  1234."""
+        result: dict[str, Any] = {"nmat": 0}
+        try:
+            content = filepath.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return result
+        m = re.search(r'NMAT\s*:?=\s*(\d+)', content, re.IGNORECASE)
+        if not m:
+            m = re.search(r'NMAT\s*:?\s*=?\s*(\d+)', content, re.IGNORECASE)
+        if m:
+            result["nmat"] = int(m.group(1))
+        return result
+
+    @staticmethod
+    def estimate_nmat(rkmax: float, rmts: list[float], volume_bohr3: float = 0.0) -> int:
+        """Estimate basis size from RKMAX, muffin-tin radii, and cell volume."""
+        if rkmax <= 0:
+            return 0
+        positive = [r for r in rmts if r > 0]
+        rmt_min = min(positive) if positive else 2.0
+        kmax = rkmax / rmt_min
+        if volume_bohr3 > 0:
+            nmat = int(volume_bohr3 * (kmax ** 3) / (6.0 * math.pi ** 2))
+        else:
+            nmat = int(40.0 * (rkmax ** 3) * max(1, len(positive)))
+        return max(100, nmat)
+
     # ------------------------------------------------------------------
     # case.klist
     # ------------------------------------------------------------------
 
     @staticmethod
     def parse_klist(filepath: Path) -> dict[str, Any]:
+        """Count k-points as data lines in case.klist.
+
+        WIEN2k .klist lines look like::
+
+            k1 k2 k3  weight  [id]
+            END
+
+        The first token of line 1 is a k-index (often 1), not the mesh size.
+        """
         result: dict[str, int] = {"kpoints": 0}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return result
 
-        lines = [ln.strip() for ln in content.splitlines()
-                 if ln.strip() and not ln.strip().startswith("#")]
-
-        if not lines:
-            return result
-
-        parts = lines[0].split()
-        if parts and parts[0].isdigit():
-            result["kpoints"] = int(parts[0])
-        elif len(lines) >= 1:
-            result["kpoints"] = len(lines)
-
+        count = 0
+        for raw in content.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            upper = line.upper()
+            if upper.startswith("END") or upper.startswith("K-LIST") or upper.startswith("KLIST"):
+                break
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            parsed: list[float] = []
+            for p in parts[:4]:
+                val = try_float(p)
+                if val is None:
+                    break
+                parsed.append(val)
+            if len(parsed) >= 3:
+                count += 1
+        if count == 0:
+            for raw in content.splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) == 1 and parts[0].isdigit():
+                    count = int(parts[0])
+                break
+        result["kpoints"] = count
         return result
 
     # ------------------------------------------------------------------
@@ -541,13 +600,13 @@ class CaseFileParser:
 
     @staticmethod
     def parse_in0(filepath: Path) -> dict[str, Any]:
-        result: dict[str, Any] = {"rkmax": 7.0, "is_hybrid": False}
+        result: dict[str, Any] = {"rkmax": None, "is_hybrid": False}
         try:
             content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return result
 
-        m = re.search(r'RKMAX\s*=\s*([\d.]+)', content)
+        m = re.search(r'RKMAX\s*=\s*([\d.]+)', content, re.IGNORECASE)
         if m:
             result["rkmax"] = float(m.group(1))
 
@@ -562,11 +621,15 @@ class CaseFileParser:
 
     @staticmethod
     def detect_spin(filepath: Path) -> bool:
-        """Check if case.inst contains SPIN keyword (spin-polarized calculation)."""
+        """Detect spin polarization from case.inst.
+
+        Require a standalone SPIN token (not a substring of e.g. SPINORBIT).
+        """
         try:
-            return "SPIN" in filepath.read_text(encoding="utf-8", errors="replace").upper()
+            content = filepath.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return False
+        return bool(re.search(r'(?m)^\s*SPIN\b', content, re.IGNORECASE))
 
     @staticmethod
     def file_exists(case_dir: Path, pattern: str) -> bool:
@@ -579,8 +642,10 @@ class CaseFileParser:
     def parse_all(self) -> CaseData:  # noqa: C901
         """Parse all available case.* files and return a complete CaseData."""
         data = CaseData(case_name=self.case_name)
+        rmts: list[float] = []
+        rkmax_from_in1 = False
+        nmat_from_in2 = 0
 
-        # .struct
         r = self._read_optional("*.struct")
         if r is not None:
             s = self.parse_struct(r[0])
@@ -588,23 +653,26 @@ class CaseFileParser:
             data.atoms_inequiv = int(s.get("atoms_inequiv", 0) or 0)
             data.volume_bohr3 = float(s.get("volume_bohr3", 0.0) or 0.0)
             data.lattice_vectors = s.get("lattice_vectors", []) or []
+            rmts = list(s.get("rmts") or [])
 
-        # .klist
         r = self._read_optional("*.klist*")
         if r is not None:
             k = self.parse_klist(r[0])
             data.kpoints = k.get("kpoints", 0)
 
-        # .scf
+        r = self._read_optional("*.output1*")
+        if r is not None:
+            data.nmat = int(self.parse_output1(r[0]).get("nmat", 0) or 0)
+
         r = self._read_optional("*.scf")
         if r is not None:
             s = self.parse_scf(r[0])
-            data.nmat = int(s.get("nmat", 0) or 0)
+            if data.nmat == 0:
+                data.nmat = int(s.get("nmat", 0) or 0)
             data.scf_iterations = int(s.get("scf_iterations", 0) or 0)
             data.fermi_energy_ry = float(s.get("fermi_energy_ry", 0.0) or 0.0)
             data.total_energy_ry = float(s.get("total_energy_ry", 0.0) or 0.0)
 
-        # .in2
         r = self._read_optional("*.in2*")
         if r is not None:
             i2 = self.parse_in2(r[0])
@@ -612,74 +680,66 @@ class CaseFileParser:
             data.fft_ny = int(i2.get("fft_ny", 0) or 0)
             data.fft_nz = int(i2.get("fft_nz", 0) or 0)
             data.gmax = float(i2.get("gmax", 12.0) or 12.0)
-            if data.nmat == 0:
-                data.nmat = int(i2.get("nmat_estimated", 0) or 0)
+            nmat_from_in2 = int(i2.get("nmat_estimated", 0) or 0)
 
-        # .in1
         r = self._read_optional("*.in1*")
         if r is not None:
             i1 = self.parse_in1(r[0])
             data.nbands = int(i1.get("nbands", None) or 0) if i1.get("nbands") else None
-            data.rkmax = float(i1.get("rkmax", 7.0) or 7.0)
+            if i1.get("rkmax_found"):
+                data.rkmax = float(i1.get("rkmax", 7.0) or 7.0)
+                rkmax_from_in1 = True
             data.lmax = int(i1.get("lmax", 10) or 10)
             data.v_nmt = float(i1.get("v_nmt", 4.0) or 4.0)
             gmax1 = i1.get("gmax", 12.0)
             if isinstance(gmax1, (int, float)) and (gmax1 or 12.0) > data.gmax:
                 data.gmax = float(gmax1)
 
-        # .in0 / .in0_st / .in0_grr
         for pat in ["*.in0", "*.in0_st", "*.in0_grr"]:
             r = self._read_optional(pat)
             if r is not None:
                 i0 = self.parse_in0(r[0])
-                if not data.rkmax or data.rkmax == 7.0:
-                    data.rkmax = float(i0.get("rkmax", 7.0) or 7.0)
+                if not rkmax_from_in1:
+                    i0_rk = i0.get("rkmax")
+                    if i0_rk is not None:
+                        data.rkmax = float(i0_rk)
                 if i0.get("is_hybrid"):
                     data.is_hybrid = True
 
-        # .inc (hybrid functional)
         r = self._read_optional("*.inc")
         if r is not None and re.search(r'\bHYBR', r[1], re.IGNORECASE):
             data.is_hybrid = True
 
-        # .inst (spin polarization)
         r = self._read_optional("*.inst")
         if r is not None:
             data.is_spin_polarized = self.detect_spin(r[0])
 
-        # .inso
         data.is_soc = self.file_exists(self.case_dir, "*.inso")
 
-        # .inorb → LDA+U
         if self.file_exists(self.case_dir, "*.inorb"):
             data.is_lda_u = True
 
-        # .inm → LDA+U parameters
         r = self._read_optional("*.inm")
         if r is not None:
             data.ldau = self.parse_inm(r[0])
             if data.ldau.file_present:
                 data.is_lda_u = True
 
-        # .ineece
         data.is_eece = self.file_exists(self.case_dir, "*.ineece")
 
-        # Forces: detected via .in2 TOT/FOR flag or presence of -fc flag files
         if self.file_exists(self.case_dir, "*.in2"):
             r = self._read_optional("*.in2*")
             if r is not None and "FOR" in r[1].upper():
                 data.has_forces = True
 
-        # WIEN2k version
-        import os
-        wienroot = os.environ.get("WIENROOT")
-        if wienroot:
-            version_file = Path(wienroot, "VERSION")
-            if version_file.exists():
-                with contextlib.suppress(Exception):
-                    data.wien2k_version = version_file.read_text().strip().split()[0]
+        if data.nmat == 0 and (rkmax_from_in1 or rmts):
+            data.nmat = self.estimate_nmat(data.rkmax, rmts, data.volume_bohr3)
+        if data.nmat == 0:
+            data.nmat = nmat_from_in2
 
-        # nbands fallback
+        version = detect_wien2k_version()
+        data.wien2k_version = "" if version == "unknown" else version
+
         if data.nbands is None and data.nmat > 0:
             data.nbands = max(10, data.nmat // 2)
 
@@ -692,54 +752,63 @@ def parse_case_directory(path: Path | None = None) -> CaseData:
 
 
 def detect_wien2k_version() -> str:  # noqa: C901
-    """Detect WIEN2k version from WIENROOT environment and installed files.
+    """Detect WIEN2k version from WIENROOT, siteconfig_lapw, or WIEN2K_VERSION.
 
-    WIEN2k version history and key changes:
-      19.x — ELPA support introduced, band parallelization improvements
-      21.x — Improved hybrid functionals, GPU experimental support
-      23.x — GPU acceleration (experimental), improved SOC performance
-      24.x — Enhanced fine_grain parallelization, better NUMA support
-
-    Returns version string like "24.1" or "unknown".
+    Resolution order:
+      1. WIEN_VERSION environment variable
+      2. Parse siteconfig_lapw for WIEN2K_VERSION
+      3. WIEN2K_VERSION file in WIENROOT (not $WIENROOT/VERSION)
+      4. run_lapw / siteconfig_lapw -v
     """
+    import shutil
     import subprocess as _sp
 
+    ver = os.environ.get("WIEN_VERSION")
+    if ver:
+        return ver
+
     wienroot = os.environ.get("WIENROOT", "")
-    if not wienroot:
-        return "unknown"
+    root_path = Path(wienroot) if wienroot else None
 
-    candidates = [
-        Path(wienroot) / "VERSION",
-        Path(wienroot) / "WIEN2k_VERSION",
-        Path(wienroot) / "version.txt",
-    ]
-    for vf in candidates:
-        if vf.exists():
-            content = vf.read_text().strip()
-            m = re.search(r'(\d+\.\d+)', content)
-            if m:
-                return m.group(1)
-
-    try:
-        result = _sp.run(
-            ["x_lapw", "--version"], capture_output=True, text=True, timeout=5,
-        )
-        m = re.search(r'(\d+\.\d+)', result.stdout + result.stderr)
-        if m:
-            return m.group(1)
-    except Exception:
-        logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
-
-    try:
-        lv = Path(wienroot) / "SRC_lapw1" / "lapw1.F"
-        if lv.exists():
-            content = lv.read_text()
-            for line in content.split('\n')[:20]:
-                m = re.search(r'version.*?(\d+\.\d+)', line, re.IGNORECASE)
+    if root_path is not None:
+        siteconfig = root_path / "siteconfig_lapw"
+        if siteconfig.exists():
+            try:
+                text = siteconfig.read_text(encoding="utf-8", errors="replace")
+                m = re.search(
+                    r"WIEN2K[_ ]*VERSION\s*[:=]\s*[\"']?(\d+(?:\.\d+)?)",
+                    text,
+                    re.IGNORECASE,
+                )
                 if m:
                     return m.group(1)
-    except Exception:
-        logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
+            except Exception:
+                logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
+
+        version_file = root_path / "WIEN2K_VERSION"
+        if version_file.exists():
+            try:
+                text = version_file.read_text(encoding="utf-8", errors="replace").strip()
+                m = re.search(r"(\d+(?:\.\d+)?)", text)
+                if m:
+                    return m.group(1)
+            except Exception:
+                logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
+
+    for binary in ("run_lapw", "siteconfig_lapw"):
+        exe = shutil.which(binary)
+        if not exe:
+            continue
+        try:
+            result = _sp.run(
+                [exe, "-v"], capture_output=True, text=True, timeout=10,
+            )
+            for line in (result.stdout + result.stderr).splitlines():
+                m = re.search(r"version\s+(\d+(?:\.\d+)?)", line, re.IGNORECASE)
+                if m:
+                    return m.group(1)
+        except Exception:
+            logger.debug("Suppressed exception in detect_wien2k_version()", exc_info=True)
 
     return "unknown"
 
