@@ -1,19 +1,57 @@
 # forge_sbatch completion for bash
+# Works with or without the bash-completion package.
 
 _forge_sbatch() {
-    local cur prev words cword
-    _init_completion -n || return
-    local cmd="${words[1]}"
+    local cur prev words cword cmd skip i w
+    COMPREPLY=()
+
+    if declare -F _init_completion >/dev/null 2>&1; then
+        _init_completion || return
+    else
+        words=("${COMP_WORDS[@]}")
+        cword=${COMP_CWORD}
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
     local subcmds="generate validate preview submit"
     local global_opts="--verbose -v --quiet -q --json --backend --config --log-file --help"
 
-    if [[ $cword -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
-        return
-    fi
+    skip=0
+    cmd=""
+    for ((i=1; i<cword; i++)); do
+        w="${words[i]}"
+        if (( skip )); then
+            skip=0
+            continue
+        fi
+        case "$w" in
+            --config|--backend|--log-file)
+                skip=1
+                ;;
+            --config=*|--backend=*|--log-file=*|-v|-vv|-vvv|-q|--verbose|--quiet|--json|--help)
+                ;;
+            -*)
+                ;;
+            *)
+                cmd="$w"
+                break
+                ;;
+        esac
+    done
 
-    if [[ $cword -eq 2 && ! " $subcmds " == *" $prev "* ]]; then
-        COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
+    if [[ -z "$cmd" ]]; then
+        case "$prev" in
+            --config|--log-file)
+                COMPREPLY=( $(compgen -f -- "$cur") )
+                return
+                ;;
+            --backend)
+                COMPREPLY=( $(compgen -W "wien2k qe vasp cp2k" -- "$cur") )
+                return
+                ;;
+        esac
+        COMPREPLY=( $(compgen -W "$subcmds $global_opts" -- "$cur") )
         return
     fi
 
@@ -36,7 +74,7 @@ _forge_sbatch() {
             ;;
         validate)
             local sub_opts="--strict --highlight"
-            if [[ $cword -eq 2 ]]; then
+            if [[ "$prev" == "$cmd" ]]; then
                 COMPREPLY=( $(compgen -f -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$sub_opts $global_opts" -- "$cur") )
@@ -44,7 +82,7 @@ _forge_sbatch() {
             ;;
         preview)
             local sub_opts="--highlight"
-            if [[ $cword -eq 2 ]]; then
+            if [[ "$prev" == "$cmd" ]]; then
                 COMPREPLY=( $(compgen -f -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$sub_opts $global_opts" -- "$cur") )
@@ -52,7 +90,7 @@ _forge_sbatch() {
             ;;
         submit)
             local sub_opts="--dry-run --watch"
-            if [[ $cword -eq 2 ]]; then
+            if [[ "$prev" == "$cmd" ]]; then
                 COMPREPLY=( $(compgen -f -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$sub_opts $global_opts" -- "$cur") )
@@ -64,4 +102,4 @@ _forge_sbatch() {
     esac
 }
 
-complete -F _forge_sbatch forge_sbatch
+complete -o bashdefault -o default -F _forge_sbatch forge_sbatch

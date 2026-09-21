@@ -5,5 +5,3 @@ _forge_wizard() {
         '--help[Show help]' \
         '--version[Show version]'
 }
-
-_forge_wizard

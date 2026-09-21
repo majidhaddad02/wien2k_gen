@@ -100,7 +100,9 @@ install-completions:
 	@cp $(COMPLETIONS_DIR)/forge.zsh ~/.local/share/zsh/site-functions/_forge 2>/dev/null || true
 	@cp $(COMPLETIONS_DIR)/forge_sbatch.zsh ~/.local/share/zsh/site-functions/_forge_sbatch 2>/dev/null || true
 	@cp $(COMPLETIONS_DIR)/forge_wizard.zsh ~/.local/share/zsh/site-functions/_forge_wizard 2>/dev/null || true
-	@echo "🔗 Shell completions installed. Restart your shell or run: source ~/.bashrc"
+	@echo "Shell completions copied to ~/.local/share."
+	@echo "Prefer ./install.sh so PATH and Tab completion are enabled in ~/.bashrc and ~/.zshrc."
+	@echo "Dev fallback: source completions/forge.bash  (bash) or add ~/.local/share/zsh/site-functions to fpath (zsh)."
 
 docker:
 	@docker build --no-cache -t $(APP_NAME):latest -f Dockerfile .

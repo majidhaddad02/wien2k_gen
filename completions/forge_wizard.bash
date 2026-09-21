@@ -1,13 +1,10 @@
 # forge_wizard completion for bash
 
 _forge_wizard() {
-    local cur prev opts
+    local cur
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="--help --version"
-
-    COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
-    return 0
+    COMPREPLY=($(compgen -W "--help --version" -- "$cur"))
 }
-complete -F _forge_wizard forge_wizard
+
+complete -o bashdefault -o default -F _forge_wizard forge_wizard

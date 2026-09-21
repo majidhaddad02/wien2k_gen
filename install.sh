@@ -500,20 +500,66 @@ remove_profile_block() {
   cat "${tmp}" > "${f}"
 }
 
+write_env_script() {
+  local env_file="$1"
+  local path_dir="$2"
+  local bash_comp_dir="$3"
+  local zsh_comp_dir="$4"
+  mkdir -p "$(dirname "${env_file}")"
+  cat > "${env_file}" <<EOF
+# ${APP_NAME} v${APP_VERSION} — PATH and Tab completion (sourced from the shell profile)
+export PATH="${path_dir}:\${PATH}"
+if [ -n "\${BASH_VERSION:-}" ]; then
+  [ -f "${bash_comp_dir}/forge" ] && . "${bash_comp_dir}/forge"
+  [ -f "${bash_comp_dir}/forge_sbatch" ] && . "${bash_comp_dir}/forge_sbatch"
+  [ -f "${bash_comp_dir}/forge_wizard" ] && . "${bash_comp_dir}/forge_wizard"
+fi
+if [ -n "\${ZSH_VERSION:-}" ]; then
+  fpath=("${zsh_comp_dir}" \${fpath})
+  if ! typeset -f compdef >/dev/null 2>&1; then
+    autoload -Uz compinit
+    compinit -u
+  fi
+  [ -f "${zsh_comp_dir}/_forge" ] && . "${zsh_comp_dir}/_forge"
+  [ -f "${zsh_comp_dir}/_forge_sbatch" ] && . "${zsh_comp_dir}/_forge_sbatch"
+  [ -f "${zsh_comp_dir}/_forge_wizard" ] && . "${zsh_comp_dir}/_forge_wizard"
+  if typeset -f compdef >/dev/null 2>&1; then
+    compdef _forge forge 2>/dev/null || true
+    compdef _forge_sbatch forge_sbatch 2>/dev/null || true
+    compdef _forge_wizard forge_wizard 2>/dev/null || true
+  fi
+fi
+EOF
+}
+
 write_profile_block() {
   local f="$1"
-  local path_dir="$2"
-  [[ -n "${f}" ]] || return 0
+  local env_file="$2"
+  [[ -n "${f}" && -n "${env_file}" ]] || return 0
   mkdir -p "$(dirname "${f}")"
   touch "${f}"
   remove_profile_block "${f}"
   {
     echo ""
     echo "${MARKER_BEGIN}"
-    echo "# ${APP_NAME} v${APP_VERSION} environment"
-    echo "export PATH=\"${path_dir}:\${PATH}\""
+    echo "# ${APP_NAME} v${APP_VERSION} environment (PATH + Tab completion)"
+    echo ". \"${env_file}\""
     echo "${MARKER_END}"
   } >> "${f}"
+}
+
+install_user_profiles() {
+  local env_file="$1"
+  local f
+  for f in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+    write_profile_block "${f}" "${env_file}"
+  done
+  if [[ -f "${HOME}/.bash_profile" ]]; then
+    write_profile_block "${HOME}/.bash_profile" "${env_file}"
+  fi
+  if [[ -f "${HOME}/.zprofile" ]]; then
+    write_profile_block "${HOME}/.zprofile" "${env_file}"
+  fi
 }
 
 print_plan() {
@@ -569,24 +615,30 @@ do_uninstall() {
     fi
   done
 
-  if [[ "$(id -u)" -eq 0 && -f "/etc/profile.d/${APP_NAME}.sh" ]]; then
-    if $DRY_RUN; then
-      log "DRY-RUN: would remove /etc/profile.d/${APP_NAME}.sh"
-    else
-      rm -f "/etc/profile.d/${APP_NAME}.sh"
+  local pf
+  if [[ "$(id -u)" -eq 0 ]]; then
+    pf="/etc/profile.d/${APP_NAME}.sh"
+    if [[ -f "${pf}" ]]; then
+      if $DRY_RUN; then
+        log "DRY-RUN: would remove ${pf}"
+      else
+        rm -f "${pf}"
+      fi
     fi
-  elif [[ -n "${PROFILE_FILE}" && -f "${PROFILE_FILE}" ]]; then
-    if $DRY_RUN; then
-      log "DRY-RUN: would remove PATH block from ${PROFILE_FILE}"
-    else
-      remove_profile_block "${PROFILE_FILE}"
-    fi
+  else
+    for pf in "${HOME}/.bashrc" "${HOME}/.zshrc" "${HOME}/.bash_profile" "${HOME}/.zprofile"; do
+      if [[ -f "${pf}" ]]; then
+        if $DRY_RUN; then
+          log "DRY-RUN: would remove PATH/completion block from ${pf}"
+        else
+          remove_profile_block "${pf}"
+        fi
+      fi
+    done
   fi
 
   success "${APP_NAME} uninstalled."
-  if [[ -n "${PROFILE_FILE}" ]]; then
-    log "Restart the shell or run: source ${PROFILE_FILE}"
-  fi
+  log "Open a new terminal (or source ~/.bashrc / ~/.zshrc) to drop PATH."
 }
 
 if $UNINSTALL; then
@@ -718,8 +770,9 @@ if $DRY_RUN; then
     log "DRY-RUN: pip install --no-index --no-build-isolation --upgrade --find-links='${WHEEL_DIR}' '${REPO_ROOT}'"
   fi
   log "DRY-RUN: symlink binaries into ${BIN_LINK_DIR}"
-  if ! $SKIP_PATH && [[ -n "${PROFILE_FILE}" ]]; then
-    log "DRY-RUN: add PATH to ${PROFILE_FILE}"
+  log "DRY-RUN: install Tab completions into ${INSTALL_PREFIX}/share/"
+  if ! $SKIP_PATH; then
+    log "DRY-RUN: write ${INSTALL_PREFIX}/env.sh and enable Tab completion in ~/.bashrc and ~/.zshrc"
   fi
   success "Dry-run completed."
   exit 0
@@ -819,40 +872,46 @@ for bin in "${BINARIES[@]}"; do
   fi
 done
 
-if $SKIP_PATH; then
-  log "Skipping PATH profile modification (--skip-path)."
-elif [[ -z "${PROFILE_FILE}" ]]; then
-  warn "Unsupported shell (${SHELL:-unknown}). Add this to PATH manually:"
-  warn "  export PATH=\"${BIN_LINK_DIR}:\$PATH\""
-elif [[ "$(id -u)" -eq 0 ]]; then
-  mkdir -p "$(dirname "${PROFILE_FILE}")"
-  cat > "${PROFILE_FILE}" <<EOF
-${MARKER_BEGIN}
-# ${APP_NAME} v${APP_VERSION} environment
-export PATH="${BIN_LINK_DIR}:\${PATH}"
-${MARKER_END}
-EOF
-  log "Wrote ${PROFILE_FILE}"
-else
-  case ":${PATH}:" in
-    *":${BIN_LINK_DIR}:"*)
-      log "PATH already contains ${BIN_LINK_DIR}."
-      ;;
-  esac
-  write_profile_block "${PROFILE_FILE}" "${BIN_LINK_DIR}"
-  log "Added PATH to ${PROFILE_FILE}. Run: source ${PROFILE_FILE}"
+# Shell completions. Always install next to the prefix so custom --prefix
+# installs still get Tab completion; also copy to conventional user/system dirs.
+COMPLETIONS_SRC="${REPO_ROOT}/completions"
+BASH_COMP_DIR="${INSTALL_PREFIX}/share/bash-completion/completions"
+ZSH_COMP_DIR="${INSTALL_PREFIX}/share/zsh/site-functions"
+install_completion_files() {
+  local dest_bash="$1"
+  local dest_zsh="$2"
+  [[ -d "${COMPLETIONS_SRC}" ]] || return 0
+  mkdir -p "${dest_bash}" "${dest_zsh}" 2>/dev/null || return 0
+  cp "${COMPLETIONS_SRC}/forge.bash" "${dest_bash}/forge" 2>/dev/null || true
+  cp "${COMPLETIONS_SRC}/forge_sbatch.bash" "${dest_bash}/forge_sbatch" 2>/dev/null || true
+  cp "${COMPLETIONS_SRC}/forge_wizard.bash" "${dest_bash}/forge_wizard" 2>/dev/null || true
+  cp "${COMPLETIONS_SRC}/forge.zsh" "${dest_zsh}/_forge" 2>/dev/null || true
+  cp "${COMPLETIONS_SRC}/forge_sbatch.zsh" "${dest_zsh}/_forge_sbatch" 2>/dev/null || true
+  cp "${COMPLETIONS_SRC}/forge_wizard.zsh" "${dest_zsh}/_forge_wizard" 2>/dev/null || true
+}
+if [[ -d "${COMPLETIONS_SRC}" ]]; then
+  install_completion_files "${BASH_COMP_DIR}" "${ZSH_COMP_DIR}"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    install_completion_files "/usr/share/bash-completion/completions" "/usr/share/zsh/site-functions"
+  else
+    install_completion_files "${HOME}/.local/share/bash-completion/completions" "${HOME}/.local/share/zsh/site-functions"
+  fi
+  log "Installed shell completions (bash + zsh)."
 fi
 
-# Optional shell completions (best-effort, never fail the install).
-COMPLETIONS_SRC="${REPO_ROOT}/completions"
-if [[ -d "${COMPLETIONS_SRC}" ]] && [[ "$(id -u)" -ne 0 ]]; then
-  mkdir -p "${HOME}/.local/share/bash-completion/completions" "${HOME}/.local/share/zsh/site-functions" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge.bash" "${HOME}/.local/share/bash-completion/completions/forge" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge_sbatch.bash" "${HOME}/.local/share/bash-completion/completions/forge_sbatch" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge_wizard.bash" "${HOME}/.local/share/bash-completion/completions/forge_wizard" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge.zsh" "${HOME}/.local/share/zsh/site-functions/_forge" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge_sbatch.zsh" "${HOME}/.local/share/zsh/site-functions/_forge_sbatch" 2>/dev/null || true
-  cp "${COMPLETIONS_SRC}/forge_wizard.zsh" "${HOME}/.local/share/zsh/site-functions/_forge_wizard" 2>/dev/null || true
+ENV_FILE="${INSTALL_PREFIX}/env.sh"
+write_env_script "${ENV_FILE}" "${BIN_LINK_DIR}" "${BASH_COMP_DIR}" "${ZSH_COMP_DIR}"
+
+if $SKIP_PATH; then
+  log "Skipping PATH profile modification (--skip-path)."
+  log "Tab completion is available after: . ${ENV_FILE}"
+elif [[ "$(id -u)" -eq 0 ]]; then
+  mkdir -p "$(dirname "${PROFILE_FILE}")"
+  write_profile_block "${PROFILE_FILE}" "${ENV_FILE}"
+  log "Wrote ${PROFILE_FILE} (PATH + Tab completion)."
+else
+  install_user_profiles "${ENV_FILE}"
+  log "Enabled PATH and Tab completion in ~/.bashrc and ~/.zshrc."
 fi
 
 # ==============================================================================
@@ -884,11 +943,8 @@ else
 fi
 
 success "Installation completed successfully."
-log "Next steps:"
-if $SKIP_PATH || [[ -z "${PROFILE_FILE}" ]]; then
-  log "  1. export PATH=\"${BIN_LINK_DIR}:\$PATH\""
-else
-  log "  1. source ${PROFILE_FILE}"
+log "Open a new terminal. Then: ${APP_NAME} --help"
+log "Tab completion is enabled for ${APP_NAME}, forge_sbatch, and forge_wizard."
+if $SKIP_PATH; then
+  log "PATH was not modified. Use: . ${ENV_FILE}"
 fi
-log "  2. ${APP_NAME} --help"
-log "  3. ${APP_NAME} tui"

@@ -160,6 +160,22 @@ singularity exec --bind $(pwd):/work forge.sif forge generate
 | `numpy` | Roofline model calculations |
 | `psutil` | Enhanced process monitoring |
 
+## Shell Tab Completion
+
+The installer writes `$prefix/env.sh` (PATH + Tab completion) and appends a
+marked block to `~/.bashrc` and `~/.zshrc`. Completions do not require the
+`bash-completion` package. Open a new terminal after install:
+
+```bash
+forge <Tab>           # subcommands: generate, submit, hardware, ...
+forge generate --<Tab>
+forge_sbatch <Tab>
+```
+
+Same session (no new terminal): `source ~/.bashrc` or `source ~/.zshrc`.
+If Tab still does nothing, source `$prefix/env.sh` (default
+`~/.local/opt/forge/env.sh`).
+
 ## Verifying Installation
 
 ```bash
