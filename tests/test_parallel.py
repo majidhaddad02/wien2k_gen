@@ -650,36 +650,27 @@ class TestDetectNumaTopology:
 # ---------------------------------------------------------------------------
 
 class TestCalculateKpointWeights:
-    def test_file_not_found_fallback(self, tmp_path):
-        os.chdir(tmp_path)
-        try:
-            w = calculate_kpoint_weights("nonexistent")
-            assert w == [1.0]
-        finally:
-            os.chdir("/workspace")
+    def test_file_not_found_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        w = calculate_kpoint_weights("nonexistent")
+        assert w == [1.0]
 
-    def test_valid_klist(self, tmp_path):
-        os.chdir(tmp_path)
+    def test_valid_klist(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
         klist = tmp_path / "test.klist"
         klist.write_text("4\n0.0 0.0 0.0 2.0\n0.5 0.0 0.0 2.0\n0.0 0.5 0.0 4.0\n0.0 0.0 0.5 4.0\n")
-        try:
-            w = calculate_kpoint_weights("test")
-            assert len(w) == 4
-            assert abs(sum(w) - 1.0) < 1e-9
-        finally:
-            os.chdir("/workspace")
+        w = calculate_kpoint_weights("test")
+        assert len(w) == 4
+        assert abs(sum(w) - 1.0) < 1e-9
 
-    def test_klist_with_case_subdir(self, tmp_path):
-        os.chdir(tmp_path)
+    def test_klist_with_case_subdir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
         sub = tmp_path / "case"
         sub.mkdir()
         klist = sub / "case.klist"
         klist.write_text("2\n0.0 0.0 0.0 1.0\n0.0 0.5 0.0 1.0\n")
-        try:
-            w = calculate_kpoint_weights("case")
-            assert len(w) == 2
-        finally:
-            os.chdir("/workspace")
+        w = calculate_kpoint_weights("case")
+        assert len(w) == 2
 
 
 # ---------------------------------------------------------------------------

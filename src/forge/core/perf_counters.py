@@ -65,18 +65,13 @@ def _detect_perf_tools() -> Optional[str]:
     """Detect available hardware counter tooling and return the best option."""
     if _which("likwid-perfctr"):
         return "likwid"
-    try:
-        _tracing_ok = Path("/sys/kernel/tracing/events").exists()
-    except (PermissionError, OSError):
-        _tracing_ok = False
-    if _which("perf") and _tracing_ok:
+    if _which("perf"):
         return "perf"
     try:
-        _numa_ok = Path("/sys/devices/system/node").exists()
+        if Path("/sys/devices/system/node").exists():
+            return "sysfs"
     except (PermissionError, OSError):
-        _numa_ok = False
-    if _numa_ok:
-        return "sysfs"
+        logger.debug("Suppressed exception in _detect_perf_tools()", exc_info=True)
     return None
 
 
@@ -84,7 +79,6 @@ def _check_counter_access() -> bool:
     """Verify that the user has permission to read hardware counters."""
     try:
         if _PERF_TOOL_AVAILABLE == "perf":
-            # Check if unprivileged perf access is allowed
             paranoid = Path("/proc/sys/kernel/perf_event_paranoid").read_text().strip()
             return int(paranoid) < 2
         if _PERF_TOOL_AVAILABLE == "likwid":
@@ -94,7 +88,10 @@ def _check_counter_access() -> bool:
                 text=True, timeout=15
             )
             return result.returncode == 0 and bool(result.stdout.strip())
-    except (PermissionError, subprocess.SubprocessError, FileNotFoundError, OSError):
+        if _PERF_TOOL_AVAILABLE == "sysfs":
+            node = Path("/sys/devices/system/node")
+            return node.is_dir() and os.access(node, os.R_OK)
+    except (PermissionError, subprocess.SubprocessError, FileNotFoundError, OSError, ValueError):
         logger.debug("Suppressed exception in _check_counter_access()", exc_info=True)
     return False
 
@@ -102,7 +99,7 @@ def _check_counter_access() -> bool:
 try:
     _PERF_TOOL_AVAILABLE = _detect_perf_tools()
     if _PERF_TOOL_AVAILABLE:
-        HAS_PERF_COUNTERS = _check_counter_access()
+        HAS_PERF_COUNTERS = bool(_check_counter_access())
 except OSError:
     _PERF_TOOL_AVAILABLE = None
     HAS_PERF_COUNTERS = False
@@ -225,17 +222,19 @@ class PerfCounterCache:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
+                    instance = super().__new__(cls)
+                    instance._initialized = False
+                    cls._instance = instance
         return cls._instance
 
     def __init__(self) -> None:
-        if self._initialized:
-            return
-        self._cache: dict[str, Any] = {}
-        self._fingerprint = _hardware_fingerprint()
-        self._load()
-        self._initialized = True
+        with self._lock:
+            if self._initialized:
+                return
+            self._cache: dict[str, Any] = {}
+            self._fingerprint = _hardware_fingerprint()
+            self._load()
+            self._initialized = True
 
     def _load(self) -> None:
         """Load cache from disk, discarding entries with mismatched fingerprint."""
@@ -431,46 +430,67 @@ def _measure_memory_bandwidth_perf(sample_sec: float = 3.0) -> Optional[float]:
     return round(bw_gb_s, 2)
 
 
-def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> float:
+def _read_numa_traffic_pages(node_dir: Path) -> Optional[int]:
+    """Return local+remote NUMA page hits from numastat, or None."""
+    numastat = node_dir / "numastat"
+    if not numastat.exists():
+        return None
+    hits = 0
+    found = False
+    try:
+        for line in numastat.read_text().splitlines():
+            parts = line.split()
+            if len(parts) != 2:
+                continue
+            if parts[0] in ("numa_hit", "numa_miss"):
+                hits += int(parts[1])
+                found = True
+    except (OSError, ValueError):
+        logger.debug("Suppressed exception in _read_numa_traffic_pages()", exc_info=True)
+        return None
+    return hits if found else None
+
+
+def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> Optional[float]:
     """
-    Estimate NUMA-local memory bandwidth from sysfs node meminfo counters.
-    Takes two snapshots with a delay and computes delta.
+    Estimate NUMA memory traffic from sysfs numastat page counters.
+    meminfo is a capacity snapshot, not a bandwidth counter, so it is not used.
+    Returns GB/s or None when traffic cannot be measured.
     """
-    snapshot_before: dict[int, int] = {}
-    snapshot_after: dict[int, int] = {}
     node_paths = sorted(Path("/sys/devices/system/node").glob("node*"))
+    if not node_paths:
+        return None
 
     def _read_snapshot() -> dict[int, int]:
         snap: dict[int, int] = {}
         for node_dir in node_paths:
-            meminfo = node_dir / "meminfo"
-            if not meminfo.exists():
-                continue
             try:
                 nid = int(node_dir.name.replace("node", ""))
-                total_mem = 0
-                for line in meminfo.read_text().splitlines():
-                    parts = line.split()
-                    if len(parts) >= 4 and "MemTotal" not in line:
-                        with contextlib.suppress(ValueError):
-                            total_mem += int(parts[-2])
-                snap[nid] = total_mem
-            except (OSError, ValueError):
-                logger.debug("Suppressed exception in _read_snapshot()", exc_info=True)
+            except ValueError:
+                continue
+            pages = _read_numa_traffic_pages(node_dir)
+            if pages is not None:
+                snap[nid] = pages
         return snap
 
     snapshot_before = _read_snapshot()
+    if not snapshot_before:
+        return None
     time.sleep(sample_sec)
     snapshot_after = _read_snapshot()
 
     total_delta = 0
-    for nid in snapshot_before:
-        delta = snapshot_after.get(nid, 0) - snapshot_before.get(nid, 0)
+    for nid, before in snapshot_before.items():
+        delta = snapshot_after.get(nid, before) - before
         if delta > 0:
             total_delta += delta
 
-    bw_gb_s = (total_delta / 1024.0) / sample_sec  # kB -> MB -> GB
-    return round(max(bw_gb_s, 5.0), 2)  # floor of 5 GB/s to prevent absurdly low values
+    if total_delta <= 0:
+        return None
+
+    page_size = os.sysconf("SC_PAGE_SIZE") or 4096
+    bw_gb_s = (total_delta * page_size) / sample_sec / 1e9
+    return round(bw_gb_s, 2)
 
 
 def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
@@ -517,7 +537,8 @@ def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
     if bw is None and PerfCounterInterface.is_sysfs_available():
         try:
             bw = _measure_memory_bandwidth_sysfs()
-            tool_used = "sysfs"
+            if bw is not None:
+                tool_used = "sysfs"
         except Exception as e:
             logger.debug("sysfs bandwidth measurement failed: %s", e)
 
@@ -567,13 +588,14 @@ def _measure_peak_flops_perf(sample_sec: float = 3.0) -> Optional[float]:
     Estimate peak FP64 FLOPS from perf stat fp_arith counters.
     Returns GFLOPS or None on failure.
     """
-    event = "fp_arith_inst_retired.256b_packed_double"
-    cmd = ["perf", "stat", "-e", event, "-a", "--", "sleep", str(sample_sec)]
+    packed_event = "fp_arith_inst_retired.256b_packed_double"
+    scalar_event = "fp_arith_inst_retired.scalar_double"
+    ops_per_instr = 4
+    cmd = ["perf", "stat", "-e", packed_event, "-a", "--", "sleep", str(sample_sec)]
     output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
     if not output:
-        # Try Intel event name
-        event = "fp_arith_inst_retired.scalar_double"
-        cmd = ["perf", "stat", "-e", event, "-a", "--", "sleep", str(sample_sec)]
+        ops_per_instr = 1
+        cmd = ["perf", "stat", "-e", scalar_event, "-a", "--", "sleep", str(sample_sec)]
         output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
         if not output:
             return None
@@ -588,7 +610,7 @@ def _measure_peak_flops_perf(sample_sec: float = 3.0) -> Optional[float]:
     if count == 0:
         return None
 
-    ops = count * 4  # Each 256-bit packed double instr = 4 FP64 ops (FMA pairs)
+    ops = count * ops_per_instr
     gflops = ops / sample_sec / 1e9
 
     return round(gflops, 2)
