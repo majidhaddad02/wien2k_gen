@@ -63,18 +63,19 @@ def _which(executable: str) -> bool:
 
 def _detect_perf_tools() -> Optional[str]:
     """Detect available hardware counter tooling and return the best option."""
-
-    def _safe_exists(path: str) -> bool:
-        with contextlib.suppress(PermissionError, OSError):
-            return Path(path).exists()
-        return False
-
     if _which("likwid-perfctr"):
         return "likwid"
-    if _which("perf") and _safe_exists("/sys/kernel/tracing/events"):
+    try:
+        _tracing_ok = Path("/sys/kernel/tracing/events").exists()
+    except (PermissionError, OSError):
+        _tracing_ok = False
+    if _which("perf") and _tracing_ok:
         return "perf"
-    # sysfs memory bandwidth counters are always available on modern Linux
-    if _safe_exists("/sys/devices/system/node"):
+    try:
+        _numa_ok = Path("/sys/devices/system/node").exists()
+    except (PermissionError, OSError):
+        _numa_ok = False
+    if _numa_ok:
         return "sysfs"
     return None
 
