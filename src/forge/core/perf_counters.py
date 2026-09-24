@@ -65,8 +65,12 @@ def _detect_perf_tools() -> Optional[str]:
     """Detect available hardware counter tooling and return the best option."""
     if _which("likwid-perfctr"):
         return "likwid"
-    if _which("perf") and Path("/sys/kernel/tracing/events").exists():
-        return "perf"
+    try:
+        _tracing_ok = Path("/sys/kernel/tracing/events").exists()
+    except (PermissionError, OSError):
+        _tracing_ok = False
+    if _which("perf") and _tracing_ok:
+
     # sysfs memory bandwidth counters are always available on modern Linux
     if Path("/sys/devices/system/node").exists():
         return "sysfs"
