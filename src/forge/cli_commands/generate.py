@@ -58,6 +58,16 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="After auto-generation, open .machines in $EDITOR for manual review/edit",
     )
+    p.add_argument(
+        "--ignore-saturation",
+        action="store_true",
+        help="Do not clamp auto-detected cores to Amdahl max_efficient_cores",
+    )
+    p.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Invalidate cached hardware roofline and re-measure before generating",
+    )
 
 
 def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
@@ -66,6 +76,11 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
     from ..core.hardware import get_physical_cores
     from ..core.pipeline import run_pipeline
     from ..core.scheduler import detect as detect_topology
+
+    if getattr(args, "recalibrate", False):
+        from ..core.perf_counters import _CALIBRATION_NOTICE, invalidate_perf_cache
+        invalidate_perf_cache()
+        console.print(f"[dim]{_CALIBRATION_NOTICE}[/dim]")
 
     max_cores = args.max_cores
     if args.reserve_os_cores is not None:
@@ -105,11 +120,13 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
         except ImportError as e:
             console.print(f"[yellow]GPU backend not available: {e}[/yellow]")
 
+    explicit_cores = args.cores is not None
     result = run_pipeline(
         topo=topo,
-        user_suggestion=suggestion,
+        user_suggestion=suggestion if suggestion else None,
         dry_run=args.dry_run,
         export_path=args.export,
+        respect_saturation_limit=not explicit_cores and not args.ignore_saturation,
     )
 
     if getattr(args, "json_output", False):
@@ -121,14 +138,16 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
             table.add_column("Parameter", style="cyan", no_wrap=True)
             table.add_column("Value", style="green")
 
-            table.add_row("Mode", str(suggestion.get("mode", "auto")))
-            table.add_row("Total Cores", str(suggestion.get("recommended_total_cores", topo.total_cores)))
+            sug = result.suggestion
+            sug_dict: dict[str, Any] = sug.to_dict() if sug is not None and hasattr(sug, "to_dict") else (suggestion or {})
+            table.add_row("Mode", str(sug_dict.get("mode", "auto")))
+            table.add_row("Total Cores", str(sug_dict.get("recommended_total_cores", topo.total_cores)))
 
-            max_eff = suggestion.get("max_efficient_cores")
+            max_eff = sug_dict.get("max_efficient_cores")
             if max_eff:
                 table.add_row("Max Efficient Cores", f"[yellow]{max_eff}[/yellow]")
 
-            sat_data: dict[str, Any] = suggestion.get("saturation_data", {})
+            sat_data: dict[str, Any] = sug_dict.get("saturation_data") or {}
             if sat_data:
                 eff = sat_data.get("efficiency_pct")
                 if eff is not None:

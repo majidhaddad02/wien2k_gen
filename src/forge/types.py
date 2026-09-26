@@ -143,6 +143,8 @@ class ResourceSuggestion:
     reason: str = ""
     confidence: float = 1.0
     estimated_memory_gb: Optional[float] = None
+    max_efficient_cores: Optional[int] = None
+    saturation_data: Optional[dict[str, Any]] = None
     lapw0_cfg: StageConfig = field(default_factory=StageConfig)
     lapw1_cfg: StageConfig = field(default_factory=StageConfig)
     lapw2_cfg: StageConfig = field(default_factory=StageConfig)

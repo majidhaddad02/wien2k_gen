@@ -25,6 +25,7 @@ _forge() {
         'advise:Get intelligent optimization advice (Roofline, Amdahl, NUMA)'
         'history:Query execution history database'
         'analyze-bands:Extract band structure and DOS data'
+        'calibrate:Re-measure and cache hardware roofline'
     )
 
     cmd=""
@@ -87,7 +88,9 @@ _forge() {
                 '(-S --scheduler)'{-S,--scheduler}'=[Target scheduler]:scheduler:(slurm pbs lsf sge auto)' \
                 '--gpu[Enable GPU-aware configuration]' \
                 '--gpu-mixed-precision[Enable FP32/FP16 mixed precision]' \
-                '--manual[Open .machines in editor for manual review]'
+                '--manual[Open .machines in editor for manual review]' \
+                '--ignore-saturation[Do not clamp cores to Amdahl max_efficient_cores]' \
+                '--recalibrate[Invalidate cached hardware roofline and re-measure]'
             ;;
         submit)
             _arguments \
@@ -196,7 +199,9 @@ _forge() {
                 '--cores=[Target total cores]' \
                 '--target=[Optimization goal]:target:(time energy cost balanced)' \
                 '--plain[Show advice in simple language (non-expert mode)]' \
-                '--json[Export advice as JSON]'
+                '--json[Export advice as JSON]' \
+                '--ignore-saturation[Do not recommend capping cores at Amdahl max_efficient_cores]' \
+                '--recalibrate[Invalidate cached hardware roofline and re-measure]'
             ;;
         history)
             _arguments \
@@ -213,6 +218,10 @@ _forge() {
                 '--case=[Case name]' \
                 '--output=[Output file for band data (JSON)]:_files' \
                 '--dos[Also parse DOS data]'
+            ;;
+        calibrate)
+            _arguments \
+                '--json[Print measured roofline data as JSON]'
             ;;
     esac
 }

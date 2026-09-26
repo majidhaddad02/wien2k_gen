@@ -238,7 +238,8 @@ def run_pipeline(  # noqa: C901
     dry_run: bool = False,
     export_path: Optional[str] = None,
     operation_id: Optional[str] = None,
-    user_suggestion: Optional[Union[dict[str, Any], ResourceSuggestion]] = None
+    user_suggestion: Optional[Union[dict[str, Any], ResourceSuggestion]] = None,
+    respect_saturation_limit: bool = True,
 ) -> PipelineResult:
     """
     Execute the full configuration generation pipeline: Detect -> Advise -> Validate -> Build -> Export.
@@ -276,20 +277,25 @@ def run_pipeline(  # noqa: C901
             
         # Step 2: Resource Suggestion
         logger.info(f"[{op_id}] Generating resource suggestion...")
-        if user_suggestion:
-            # Normalize user suggestion
-            if isinstance(user_suggestion, dict):
-                sug_obj = ResourceSuggestion(**user_suggestion)
-            elif isinstance(user_suggestion, ResourceSuggestion):
-                sug_obj = user_suggestion
-            else:
-                raise TypeError("Invalid user_suggestion type.")
-        else:
+        extra_meta: dict[str, Any] = {}
+        overrides: dict[str, Any] = {}
+        sug_obj: Optional[ResourceSuggestion] = None
+        if isinstance(user_suggestion, ResourceSuggestion):
+            sug_obj = user_suggestion
+        elif isinstance(user_suggestion, dict):
+            valid_fields = set(ResourceSuggestion.__dataclass_fields__)
+            overrides = {k: v for k, v in user_suggestion.items() if k in valid_fields}
+            extra_meta = {k: v for k, v in user_suggestion.items() if k not in valid_fields}
+        elif user_suggestion is not None:
+            raise TypeError("Invalid user_suggestion type.")
+
+        if sug_obj is None:
             from ..optimizer.advisor import suggest_optimal_resources as _advisor
-            raw_suggestion = _advisor(topo)
-            # The advisor returns its own ResourceSuggestion dataclass which is
-            # not the forge.types class; normalize through to_dict() and filter
-            # to the canonical fields so the result is never silently dropped.
+            raw_suggestion = _advisor(
+                topo,
+                user_max_cores=overrides.get("recommended_total_cores"),
+                respect_saturation_limit=respect_saturation_limit,
+            )
             raw_dict = {}
             if isinstance(raw_suggestion, dict):
                 raw_dict = raw_suggestion
@@ -297,6 +303,9 @@ def run_pipeline(  # noqa: C901
                 raw_dict = raw_suggestion.to_dict()
             valid_fields = set(ResourceSuggestion.__dataclass_fields__)
             sug_obj = ResourceSuggestion(**{k: v for k, v in raw_dict.items() if k in valid_fields})
+            for key, value in overrides.items():
+                if key != "recommended_total_cores":
+                    setattr(sug_obj, key, value)
                 
         logger.info(f"[{op_id}] Suggestion: {sug_obj.recommended_total_cores} cores, Mode: {sug_obj.mode}")
         
@@ -305,6 +314,9 @@ def run_pipeline(  # noqa: C901
         checks = preflight_check(topo, sug_obj, prob_size)
         
         warnings_list = [c for c in checks if not c.startswith("ERROR:")]
+        for w in getattr(sug_obj, "warnings", None) or []:
+            if w not in warnings_list:
+                warnings_list.append(w)
         errors = [c.replace("ERROR: ", "") for c in checks if c.startswith("ERROR:")]
         
         if warnings_list:
@@ -314,10 +326,16 @@ def run_pipeline(  # noqa: C901
         if errors:
             raise ValueError(f"Preflight errors detected: {'; '.join(errors)}")
             
+        suggestion_payload = {
+            **sug_obj.to_dict(),
+            **extra_meta,
+            "respect_saturation_limit": respect_saturation_limit,
+        }
+
         # Step 4: Build / Dry-Run
         if dry_run:
             logger.info(f"[{op_id}] Dry-run mode: Generating config string...")
-            content = backend.generate_input(topo, sug_obj.to_dict())
+            content = backend.generate_input(topo, suggestion_payload)
             logger.info(f"[{op_id}] Dry-run successful. Config preview:")
             for line in content.splitlines()[:5]:
                 logger.info(f"  {line}")
@@ -326,14 +344,14 @@ def run_pipeline(  # noqa: C901
                 suggestion=sug_obj,
                 dry_run_content=content,
                 warnings=warnings_list,
-                metadata={"mode": "dry_run"}
+                metadata={"mode": "dry_run", **extra_meta}
             )
             
         # Call the centralized builder
         logger.info(f"[{op_id}] Building configuration files...")
         build_result = build_auto(
             topo=topo,
-            suggestion=sug_obj,
+            suggestion=suggestion_payload,
             backup=True,
             validate=True
         )
@@ -383,7 +401,10 @@ def run_pipeline(  # noqa: C901
             suggestion=sug_obj,
             config_path=str(machines_path) if machines_path else None,
             warnings=warnings_list,
-            metadata={"build_result": build_result.to_dict() if hasattr(build_result, 'to_dict') else {}}
+            metadata={
+                "build_result": build_result.to_dict() if hasattr(build_result, "to_dict") else {},
+                **extra_meta,
+            }
         )
         
     except Exception as e:

@@ -15,6 +15,23 @@ from ...logging_config import get_logger
 logger = get_logger(__name__)
 
 
+def load_struct_geometry(case_dir: Path | None = None) -> tuple[list[float], float]:
+    """Return ``(rmts, volume_bohr3)`` from the first ``*.struct`` in ``case_dir``."""
+    root = Path(case_dir) if case_dir is not None else Path(".")
+    struct_files = list(root.glob("*.struct"))
+    if not struct_files:
+        return [], 0.0
+    try:
+        from ...core.case_parser import CaseFileParser as _CFP
+        st = _CFP.parse_struct(struct_files[0])
+        rmts = list(st.get("rmts") or [])
+        volume = float(st.get("volume_bohr3", 0.0) or 0.0)
+        return rmts, volume
+    except Exception:
+        logger.debug("Suppressed exception in load_struct_geometry()", exc_info=True)
+        return [], 0.0
+
+
 class DayfileResult(TypedDict, total=False):
     """Structured output for dayfile parsing."""
     exists: bool
@@ -394,13 +411,7 @@ def detect_problem_size() -> dict[str, Any]:  # noqa: C901
     if result["nmat"] == 0:
         try:
             from ...core.case_parser import CaseFileParser as _CFP
-            rmts: list[float] = []
-            volume = 0.0
-            struct_files = list(Path(".").glob("*.struct"))
-            if struct_files:
-                st = _CFP.parse_struct(struct_files[0])
-                rmts = list(st.get("rmts") or [])
-                volume = float(st.get("volume_bohr3", 0.0) or 0.0)
+            rmts, volume = load_struct_geometry()
             if rkmax_from_in1 or rmts:
                 result["nmat"] = _CFP.estimate_nmat(float(result["rkmax"]), rmts, volume)
         except Exception as e:

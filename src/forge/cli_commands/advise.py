@@ -15,8 +15,20 @@ from .base import register_command
 logger = get_logger(__name__)
 
 
+def _normalize_amdahl(amdahl, ignore_saturation=False):
+    data = {
+        **amdahl,
+        "saturation_cores": amdahl["max_efficient_cores"],
+        "efficiency_pct": amdahl["efficiency_at_cores"],
+    }
+    if ignore_saturation:
+        data["saturation_warnings"] = []
+    return data
+
+
 def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
-                       peak_gflops, numa_nodes, topo, target):
+                       peak_gflops, numa_nodes, topo, target,
+                       ignore_saturation=False):
     from ..optimizer.advisor import (
         estimate_amdahl_saturation,
         roofline_crossover_analysis,
@@ -25,7 +37,10 @@ def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
         {"mem_bw_gb_s": mem_bw, "arch": arch, "peak_fp64_gflops": peak_gflops},
         oi=0.15, target_backend="wien2k_lapw1",
     )
-    amdahl = estimate_amdahl_saturation(kpoints, nmat, atoms, cores)
+    amdahl = _normalize_amdahl(
+        estimate_amdahl_saturation(kpoints, nmat, atoms, cores),
+        ignore_saturation=ignore_saturation,
+    )
 
     return {
         "hardware": {
@@ -45,11 +60,13 @@ def _build_advice_dict(nmat, kpoints, atoms, cores, arch, mem_bw,
             "suggestion": roofline["suggestion"],
         },
         "amdahl": amdahl,
+        "ignore_saturation": ignore_saturation,
     }
 
 
 def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
-                       peak_gflops, numa_nodes, topo, target):
+                       peak_gflops, numa_nodes, topo, target,
+                       ignore_saturation=False):
     console = get_console()
     import os as _os
 
@@ -62,7 +79,10 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
         {"mem_bw_gb_s": mem_bw, "arch": arch, "peak_fp64_gflops": peak_gflops},
         oi=0.15, target_backend="wien2k_lapw1",
     )
-    amdahl = estimate_amdahl_saturation(kpoints, nmat, atoms, cores)
+    amdahl = _normalize_amdahl(
+        estimate_amdahl_saturation(kpoints, nmat, atoms, cores),
+        ignore_saturation=ignore_saturation,
+    )
 
     console.print(Panel(
         f"[cyan bold]WIEN2k Optimization Advisor[/]\n"
@@ -77,8 +97,12 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
         label = "Memory Bandwidth"
         msg = "LAPW1 is memory-hungry \u2014 extra MPI ranks won't help, use OpenMP instead"
         bottleneck = (f"[red]{label}[/]", "red", msg)
-    elif isinstance(amdahl, dict) and amdahl.get("saturation_cores", cores) < max(cores * 0.6, 1):
-        sat = amdahl["saturation_cores"]
+    elif (
+        not ignore_saturation
+        and isinstance(amdahl, dict)
+        and amdahl.get("max_efficient_cores", cores) < max(cores * 0.6, 1)
+    ):
+        sat = amdahl["max_efficient_cores"]
         label = "Amdahl Saturation"
         msg = f"More than {sat} cores won't improve performance (Amdahl's Law)"
         bottleneck = (f"[yellow]{label}[/]", "yellow", msg)
@@ -108,8 +132,8 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
     )
 
     if isinstance(amdahl, dict):
-        sat_cores = amdahl.get("saturation_cores", cores)
-        eff = amdahl.get("efficiency_pct", 100.0)
+        sat_cores = amdahl.get("max_efficient_cores", cores)
+        eff = amdahl.get("efficiency_at_cores", 100.0)
         table.add_row(
             "Amdahl Saturation",
             str(sat_cores),
@@ -144,7 +168,7 @@ def _print_advice_rich(nmat, kpoints, atoms, cores, arch, mem_bw,
                 "One MPI rank per NUMA node",
                 "HIGH")
             counter += 1
-    elif sat_cores < cores * 0.7:
+    elif sat_cores < cores * 0.7 and not ignore_saturation:
         rec_table.add_row(str(counter),
             f"Limit to {sat_cores} cores",
             "Amdahl's Law \u2014 more is wasted",
@@ -177,6 +201,16 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--kpoints", type=int, default=None, help="Override k-point count")
     p.add_argument("--cores", type=int, default=None, help="Target total cores")
     p.add_argument("--target", type=str, choices=["time", "energy", "cost", "balanced"], default="time", help="Optimization goal (default: time)")
+    p.add_argument(
+        "--ignore-saturation",
+        action="store_true",
+        help="Do not recommend capping cores at Amdahl max_efficient_cores",
+    )
+    p.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Invalidate cached hardware roofline and re-measure before advising",
+    )
     p.add_argument("--json", action="store_true", help="Export advice as JSON")
 
 
@@ -192,6 +226,11 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     )
 
     target = getattr(args, "target", "time")
+
+    if getattr(args, "recalibrate", False):
+        from ..core.perf_counters import _CALIBRATION_NOTICE, invalidate_perf_cache
+        invalidate_perf_cache()
+        console.print(f"[dim]{_CALIBRATION_NOTICE}[/dim]")
 
     case_path = Path(args.case)
     case_data = None
@@ -219,12 +258,15 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
     from ..core.scheduler import detect as detect_topology
     topo = detect_topology(max_cores=cores)
 
+    ignore_saturation = bool(getattr(args, "ignore_saturation", False))
+
     if getattr(args, "json", False):
         import json as _json
         result = _build_advice_dict(
             nmat=nmat, kpoints=kpoints, atoms=atoms, cores=cores,
             arch=arch, mem_bw=mem_bw, peak_gflops=peak_gflops,
             numa_nodes=numa_nodes, topo=topo, target=target,
+            ignore_saturation=ignore_saturation,
         )
         console.print_json(_json.dumps(result))
         return result
@@ -233,6 +275,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         nmat=nmat, kpoints=kpoints, atoms=atoms, cores=cores,
         arch=arch, mem_bw=mem_bw, peak_gflops=peak_gflops,
         numa_nodes=numa_nodes, topo=topo, target=target,
+        ignore_saturation=ignore_saturation,
     )
 
     return {"status": "advice_displayed"}

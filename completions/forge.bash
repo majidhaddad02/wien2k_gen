@@ -14,7 +14,7 @@ _forge() {
         prev="${COMP_WORDS[COMP_CWORD-1]}"
     fi
 
-    local subcmds="generate submit benchmark diagnostics hardware analyze tui monitor run workflow diagnose optimize screen predict converge advise history analyze-bands"
+    local subcmds="generate submit benchmark diagnostics hardware analyze tui monitor run workflow diagnose optimize screen predict converge advise history analyze-bands calibrate"
     local global_opts="--verbose -v --quiet -q --json --config --backend --log-file --version --plain --no-color --help"
 
     skip=0
@@ -57,7 +57,7 @@ _forge() {
 
     case "$cmd" in
         generate)
-            local opts="--nodes --cores --omp --mode --target --max-cores --reserve-os-cores --memory-limit --dry-run --export --overwrite --scheduler -S --gpu --gpu-mixed-precision --manual"
+            local opts="--nodes --cores --omp --mode --target --max-cores --reserve-os-cores --memory-limit --dry-run --export --overwrite --scheduler -S --gpu --gpu-mixed-precision --manual --ignore-saturation --recalibrate"
             if [[ "$prev" == "--mode" ]]; then COMPREPLY=( $(compgen -W "mpi hybrid kpoint" -- "$cur") )
             elif [[ "$prev" == "--target" ]]; then COMPREPLY=( $(compgen -W "time memory balanced cost" -- "$cur") )
             elif [[ "$prev" == "--scheduler" || "$prev" == "-S" ]]; then COMPREPLY=( $(compgen -W "slurm pbs lsf sge auto" -- "$cur") )
@@ -152,7 +152,7 @@ _forge() {
             fi
             ;;
         advise)
-            local opts="--case --nmat --kpoints --cores --target --plain --json"
+            local opts="--case --nmat --kpoints --cores --target --plain --json --ignore-saturation --recalibrate"
             if [[ "$prev" == "--target" ]]; then COMPREPLY=( $(compgen -W "time energy cost balanced" -- "$cur") )
             else COMPREPLY=( $(compgen -W "$opts $global_opts" -- "$cur") )
             fi
@@ -170,6 +170,10 @@ _forge() {
             if [[ "$prev" == "--output" ]]; then COMPREPLY=( $(compgen -f -- "$cur") )
             else COMPREPLY=( $(compgen -W "$opts $global_opts" -- "$cur") )
             fi
+            ;;
+        calibrate)
+            local opts="--json"
+            COMPREPLY=( $(compgen -W "$opts $global_opts" -- "$cur") )
             ;;
         *)
             COMPREPLY=( $(compgen -W "$global_opts" -- "$cur") )

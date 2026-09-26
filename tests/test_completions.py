@@ -26,7 +26,7 @@ printf '%s\\n' "${{COMPREPLY[@]}}"
 
 def test_forge_completes_subcommands() -> None:
     reply = _complete(BASH_FORGE, ["forge", ""], "_forge")
-    for cmd in ("generate", "submit", "hardware", "analyze-bands", "history"):
+    for cmd in ("generate", "submit", "hardware", "analyze-bands", "history", "calibrate"):
         assert cmd in reply
 
 
@@ -38,6 +38,12 @@ def test_forge_prefix_generate() -> None:
 def test_forge_generate_mode_values() -> None:
     reply = _complete(BASH_FORGE, ["forge", "generate", "--mode", ""], "_forge")
     assert set(reply) == {"mpi", "hybrid", "kpoint"}
+
+
+def test_forge_generate_recalibrate_flag() -> None:
+    reply = _complete(BASH_FORGE, ["forge", "generate", "--"], "_forge")
+    assert "--recalibrate" in reply
+    assert "--ignore-saturation" in reply
 
 
 def test_forge_skips_global_flags_to_find_command() -> None:

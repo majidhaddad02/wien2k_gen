@@ -5,6 +5,7 @@ memory/time estimation, and edge-case resilience.
 
 Uses mock-driven execution to isolate advisor logic from hardware/filesystem dependencies.
 """
+from contextlib import ExitStack, contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -348,3 +349,196 @@ class TestHyperthreadingAwareness:
         topo = Topology(nodes=["n1"], cores_per_node=[64])
         result = suggest_optimal_resources(topo)
         assert result.confidence_score < 1.0
+
+
+@contextmanager
+def _hw_patches(**overrides):
+    """Patch advisor hardware probes so allocation tests are deterministic."""
+    defaults = {
+        "get_memory_bandwidth_gb_s": 200.0,
+        "calculate_peak_fp64_gflops": 800.0,
+        "get_fma_units_per_core": 2,
+        "get_cpu_architecture": "xeon",
+        "get_total_mem_kb": 256 * 1024 * 1024,
+        "get_physical_cores": 100,
+        "is_hyperthreading_active": False,
+        "get_job_memory_limit_mb": None,
+        "check_elpa_available": False,
+        "check_mkl_available": False,
+        "get_numa_node_count": 2,
+        "get_scratch_filesystem_type": "tmpfs",
+        "get_cpu_frequency_info": {"base": 2000.0},
+    }
+    defaults.update(overrides)
+    with ExitStack() as stack:
+        for name, value in defaults.items():
+            stack.enter_context(patch(f"forge.optimizer.advisor.{name}", return_value=value))
+        stack.enter_context(
+            patch(
+                "forge.optimizer.advisor.estimate_max_kp_cores_roofline",
+                side_effect=lambda nmat, mem_bw, arch, cores, **kw: cores,
+            )
+        )
+        yield
+
+
+class TestAmdahlCoreAllocation:
+    """Amdahl max_efficient_cores must constrain kpoint/hybrid auto-allocation.
+
+    Previously estimate_amdahl_saturation() only appended warnings after
+    ranks were chosen, so .machines could still request all topology cores.
+    """
+
+    def test_small_problem_auto_clamps_to_max_efficient(self):
+        """ClH3-like: few atoms, high serial fraction, many idle cores.
+
+        Expectation changed from allocating all 100 topology cores to
+        clamping at Amdahl max_efficient_cores when --cores is omitted.
+        """
+        backend = _setup_mock_backend(nmat=4320, nkpt=525, atoms=8, nbands=200)
+        topo = Topology(nodes=["n1"], cores_per_node=[100], env_type="slurm")
+        with patch("forge.optimizer.advisor._get_current_backend", return_value=backend):
+            with _hw_patches():
+                result = suggest_optimal_resources(topo, respect_saturation_limit=True)
+        assert result.mode in ("kpoint", "hybrid")
+        max_eff = result.saturation_data["max_efficient_cores"]
+        assert result.recommended_total_cores <= max_eff
+        assert result.recommended_total_cores < 100
+        assert any("Capped at" in w and "--ignore-saturation" in w for w in result.warnings)
+        assert not any(w.startswith("SEVERE SATURATION") for w in result.warnings)
+
+    def test_explicit_cores_bypass_clamp(self):
+        """Explicit --cores N must not be silently reduced by Amdahl.
+
+        Other hard caps (nk, topology) still apply; N=48 is below nk=525
+        and below the 100-core machine.
+        """
+        backend = _setup_mock_backend(nmat=4320, nkpt=525, atoms=8, nbands=200)
+        topo = Topology(nodes=["n1"], cores_per_node=[100], env_type="slurm")
+        with patch("forge.optimizer.advisor._get_current_backend", return_value=backend):
+            with _hw_patches():
+                result = suggest_optimal_resources(
+                    topo,
+                    user_max_cores=48,
+                    respect_saturation_limit=False,
+                )
+        assert result.recommended_total_cores == 48
+        assert not any("Capped at" in w for w in result.warnings)
+
+    def test_ignore_saturation_bypasses_auto_clamp(self):
+        """--ignore-saturation keeps topology-derived cores on auto-detect."""
+        backend = _setup_mock_backend(nmat=4320, nkpt=525, atoms=8, nbands=200)
+        topo = Topology(nodes=["n1"], cores_per_node=[100], env_type="slurm")
+        with patch("forge.optimizer.advisor._get_current_backend", return_value=backend):
+            with _hw_patches():
+                result = suggest_optimal_resources(topo, respect_saturation_limit=False)
+        assert result.recommended_total_cores > result.saturation_data["max_efficient_cores"]
+        assert not any("Capped at" in w for w in result.warnings)
+
+    def test_large_system_not_unnecessarily_restricted(self):
+        """TiO2-like large cell: low serial fraction, clamp must not bite.
+
+        Single-node nmat>20000 and atoms=150 yield s≈0.01 so
+        max_efficient_cores covers the 64-core topology.
+        """
+        backend = _setup_mock_backend(nmat=25000, nkpt=64, atoms=150, nbands=2000)
+        topo = Topology(nodes=["n1"], cores_per_node=[64], env_type="slurm")
+        with patch("forge.optimizer.advisor._get_current_backend", return_value=backend):
+            with _hw_patches(get_physical_cores=64, check_elpa_available=True):
+                result = suggest_optimal_resources(topo, respect_saturation_limit=True)
+        max_eff = result.saturation_data["max_efficient_cores"]
+        assert max_eff >= 32
+        assert result.recommended_total_cores >= min(32, max_eff)
+        assert not any("Capped at" in w for w in result.warnings)
+
+    def test_mpi_mode_is_not_clamped(self):
+        """Dense MPI on large nmat keeps topology cores (no Amdahl clamp)."""
+        backend = _setup_mock_backend(nmat=20000, nkpt=2, atoms=80, nbands=1500)
+        topo = Topology(nodes=["n1"], cores_per_node=[64], env_type="slurm")
+        with patch("forge.optimizer.advisor._get_current_backend", return_value=backend):
+            with _hw_patches(get_physical_cores=64, check_elpa_available=True):
+                result = suggest_optimal_resources(topo, respect_saturation_limit=True)
+        assert result.mode == "mpi"
+        assert result.recommended_total_cores == 64
+        assert not any("Capped at" in w for w in result.warnings)
+
+
+class TestPipelineSuggestionMerge:
+    """CLI flags must not skip advisor or crash on extra GPU keys."""
+
+    def test_partial_cli_suggestion_still_runs_advisor(self):
+        from forge.core.pipeline import run_pipeline
+        from forge.types import ResourceSuggestion as TypesSuggestion
+
+        backend = MagicMock()
+        backend.detect_problem_size.return_value = {
+            "atoms": 8, "kpoints": 16, "nmat": 1200, "nbands": 80,
+        }
+        backend.generate_input.return_value = "# machines\n"
+
+        advisor_result = MagicMock()
+        advisor_result.to_dict.return_value = {
+            "mode": "hybrid",
+            "recommended_total_cores": 8,
+            "omp_threads_per_rank": 2,
+            "mpi_ranks_per_node": 4,
+            "cores_per_node": [8],
+            "warnings": ["advisor-ran"],
+            "reason": "auto",
+            "confidence": 0.9,
+        }
+
+        topo = Topology(nodes=["n1"], cores_per_node=[16], env_type="local")
+        with patch("forge.core.pipeline._get_current_backend", return_value=backend):
+            with patch("forge.optimizer.advisor.suggest_optimal_resources", return_value=advisor_result) as mock_adv:
+                with patch("forge.core.pipeline.preflight_check", return_value=[]):
+                    result = run_pipeline(
+                        topo,
+                        dry_run=True,
+                        user_suggestion={"mode": "kpoint", "omp_threads_per_rank": 4},
+                    )
+        mock_adv.assert_called_once()
+        assert result.success
+        assert isinstance(result.suggestion, TypesSuggestion)
+        assert result.suggestion.mode == "kpoint"
+        assert result.suggestion.omp_threads_per_rank == 4
+        assert result.suggestion.recommended_total_cores == 8
+        payload = backend.generate_input.call_args[0][1]
+        assert payload["mode"] == "kpoint"
+        assert payload["omp_threads_per_rank"] == 4
+
+    def test_gpu_extra_keys_do_not_typeerror_and_reach_generate(self):
+        from forge.core.pipeline import run_pipeline
+
+        backend = MagicMock()
+        backend.detect_problem_size.return_value = {"atoms": 8, "kpoints": 8, "nmat": 500}
+        backend.generate_input.return_value = "gpu: tesla\n"
+
+        advisor_result = MagicMock()
+        advisor_result.to_dict.return_value = {
+            "mode": "mpi",
+            "recommended_total_cores": 4,
+            "omp_threads_per_rank": 1,
+            "mpi_ranks_per_node": 4,
+            "cores_per_node": [4],
+            "warnings": [],
+            "reason": "auto",
+        }
+        gpu_rec = {"use_gpu": True, "gpu_count": 1}
+        topo = Topology(nodes=["n1"], cores_per_node=[8], env_type="local")
+        with patch("forge.core.pipeline._get_current_backend", return_value=backend):
+            with patch("forge.optimizer.advisor.suggest_optimal_resources", return_value=advisor_result):
+                with patch("forge.core.pipeline.preflight_check", return_value=[]):
+                    result = run_pipeline(
+                        topo,
+                        dry_run=True,
+                        user_suggestion={
+                            "gpu_recommendation": gpu_rec,
+                            "mixed_precision": {"fp32": True},
+                        },
+                    )
+        assert result.success
+        assert result.metadata.get("gpu_recommendation") == gpu_rec
+        payload = backend.generate_input.call_args[0][1]
+        assert payload["gpu_recommendation"] == gpu_rec
+        assert payload["mixed_precision"] == {"fp32": True}

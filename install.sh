@@ -781,27 +781,57 @@ fi
 # ==============================================================================
 # 6. Installation (uses venv, not --prefix)
 # ==============================================================================
+venv_has_pip() {
+  [[ -x "${PYTHON_VENV}" ]] || return 1
+  "${PYTHON_VENV}" -m pip --version >/dev/null 2>&1
+}
+
+bootstrap_venv_pip() {
+  sanitize_pip_env
+  if venv_has_pip; then
+    return 0
+  fi
+  warn "venv pip missing; bootstrapping with ensurepip..."
+  local err=""
+  err="$("${PYTHON_VENV}" -m ensurepip --default-pip 2>&1)" || true
+  if venv_has_pip; then
+    return 0
+  fi
+  if [[ -n "${err}" ]]; then
+    warn "ensurepip: ${err}"
+  fi
+  local get_pip
+  get_pip="$(mktemp "${TMPDIR:-/tmp}/forge-get-pip.XXXXXX.py")"
+  if command -v curl >/dev/null 2>&1 && curl -fsSL --max-time 30 https://bootstrap.pypa.io/get-pip.py -o "${get_pip}"; then
+    warn "Installing pip via get-pip.py..."
+    if "${PYTHON_VENV}" "${get_pip}" --disable-pip-version-check; then
+      venv_has_pip && return 0
+    fi
+  fi
+  return 1
+}
+
 ensure_venv() {
   mkdir -p "${INSTALL_PREFIX}"
+  unset PYTHONHOME || true
   if [[ -x "${PYTHON_VENV}" && "${INSTALL_MODE}" == "update" ]]; then
     log "Reusing existing virtual environment at ${VENV_DIR}."
   else
     log "Creating virtual environment at ${VENV_DIR}..."
     local venv_flags=()
     $USE_SYSTEM_SITE && venv_flags+=(--system-site-packages)
-    # --without-pip avoids contacting PyPI during venv creation (timeouts on some networks).
-    if ! "${PYTHON_BIN}" -m venv --without-pip "${venv_flags[@]}" "${VENV_DIR}" 2>/dev/null; then
-      if ! "${PYTHON_BIN}" -m venv "${venv_flags[@]}" "${VENV_DIR}"; then
-        error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python3-pip"
-      fi
+    if "${PYTHON_BIN}" -m venv "${venv_flags[@]}" "${VENV_DIR}"; then
+      :
+    elif "${PYTHON_BIN}" -m venv --without-pip "${venv_flags[@]}" "${VENV_DIR}"; then
+      warn "Created venv without pip; will bootstrap pip next."
+    else
+      error "Failed to create venv with ${PYTHON_BIN}. On Ubuntu: sudo apt-get install -y python3-venv python${PY_VERSION}-venv python3-pip"
     fi
   fi
   [[ -x "${PYTHON_VENV}" ]] || error "venv created but python missing at ${VENV_DIR}"
-  if [[ ! -x "${PIP}" ]]; then
-    warn "venv pip missing; bootstrapping with ensurepip..."
-    "${PYTHON_VENV}" -m ensurepip --upgrade >/dev/null 2>&1 || true
+  if ! bootstrap_venv_pip; then
+    error "venv pip is missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv python${PY_VERSION}-venv python3-pip"
   fi
-  [[ -x "${PIP}" ]] || error "venv created but pip missing at ${VENV_DIR}. On Ubuntu: sudo apt-get install -y python3-venv"
   if $USE_SYSTEM_SITE; then
     cfg="${VENV_DIR}/pyvenv.cfg"
     if [[ -f "${cfg}" ]] && ! grep -qiE '^include-system-site-packages[[:space:]]*=[[:space:]]*true' "${cfg}"; then

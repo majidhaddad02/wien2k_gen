@@ -4,10 +4,15 @@ Provides ACTUAL measured (not estimated) memory bandwidth and FLOPS
 using Linux perf subsystem, likwid-perfctr, and sysfs NUMA counters.
 Includes thread-safe disk caching with hardware fingerprint invalidation.
 
+Measurements are load-driven: a STREAM triad, FP64 FMA loop, or sized
+cache kernel runs during the sample window. Idle ``perf stat -- sleep``
+or likwid ``-S`` samples of ambient activity are not used as the primary
+result because they return near-zero on a typical CLI machine.
+
 Measurement methods (in priority order):
-1. likwid-perfctr CLI — FLOPS, bandwidth, cache misses
-2. perf stat (Linux perf subsystem)
-3. /sys/devices/system/node/node*/meminfo for NUMA-local bandwidth
+1. likwid-perfctr CLI — FLOPS, bandwidth, cache misses (with synthetic load)
+2. perf stat (Linux perf subsystem, with synthetic load)
+3. /sys/devices/system/node/node*/numastat for NUMA-local bandwidth (with load)
 4. Theoretical peak x efficiency factor fallback
 
 All documentation and inline comments are in English per project standards.
@@ -42,7 +47,22 @@ _PERF_TOOL_AVAILABLE: Optional[str] = None
 
 _CACHE_DIR = Path.home() / ".forge"
 _PERF_CACHE_FILE = _CACHE_DIR / "perf_cache.json"
-_CACHE_TTL_SECONDS: int = 300  # 5 minutes
+_CACHE_TTL_SECONDS: int = 7 * 24 * 3600  # 7 days; fingerprint still invalidates
+_CALIBRATION_NOTICE = (
+    "Calibrating hardware profile — this happens once per machine and is cached at "
+    "~/.forge/perf_cache.json; re-run with --recalibrate to refresh"
+)
+
+
+def _cache_ttl_seconds() -> int:
+    """Return cache TTL. Override with FORGE_PERF_CACHE_TTL_SECONDS."""
+    raw = os.environ.get("FORGE_PERF_CACHE_TTL_SECONDS", "")
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            logger.debug("Invalid FORGE_PERF_CACHE_TTL_SECONDS=%r; using default", raw)
+    return _CACHE_TTL_SECONDS
 
 # =============================================================================
 # Tool Detection (executed at module import)
@@ -126,6 +146,247 @@ def _run_cmd_safe(cmd: list[str], timeout: int = 30) -> Optional[str]:
     except (subprocess.SubprocessError, OSError, FileNotFoundError):
         logger.debug("Command failed or not found: %s", " ".join(cmd))
         return None
+
+
+# =============================================================================
+# Load-driven synthetic kernels (STREAM / FMA / cache)
+# =============================================================================
+# Idle `perf stat -- sleep` / likwid `-S` / sysfs snapshots measure ambient
+# machine noise, which is near-zero on a typical CLI run and poisons the
+# roofline. These kernels generate real memory/FP traffic during the sample
+# window. Bytes-moved (or FLOPs) / elapsed-time is the primary metric;
+# hardware counters, when present, are a cross-check only.
+# src/forge/benchmark/synthetic.py models DFT wall-time, not STREAM/FMA, so
+# the kernels live here.
+
+_STREAM_MAX_PER_ARRAY = 128 * 1024 * 1024
+_STREAM_MIN_PER_ARRAY = 32 * 1024 * 1024
+
+
+def _parse_size_to_bytes(text: str) -> Optional[int]:
+    raw = text.strip().upper().replace("IB", "B").replace("I", "")
+    match = re.match(r"^(\d+)\s*([KMG])?B?$", raw)
+    if not match:
+        return None
+    value = int(match.group(1))
+    unit = match.group(2)
+    if unit == "K":
+        value *= 1024
+    elif unit == "M":
+        value *= 1024 * 1024
+    elif unit == "G":
+        value *= 1024 * 1024 * 1024
+    return value
+
+
+def _cache_level_size_bytes(level: int) -> Optional[int]:
+    """Return data-cache size for *level* (1/2/3) from sysfs, or None."""
+    base = Path("/sys/devices/system/cpu/cpu0/cache")
+    if not base.is_dir():
+        return None
+    for idx in sorted(base.glob("index*")):
+        try:
+            lv = int((idx / "level").read_text().strip())
+            if lv != level:
+                continue
+            typ = (idx / "type").read_text().strip().lower()
+            if level == 1 and typ == "instruction":
+                continue
+            parsed = _parse_size_to_bytes((idx / "size").read_text())
+            if parsed:
+                return parsed
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def _stream_array_bytes() -> int:
+    llc = _cache_level_size_bytes(3) or 32 * 1024 * 1024
+    return int(min(max(4 * llc, _STREAM_MIN_PER_ARRAY), _STREAM_MAX_PER_ARRAY))
+
+
+def _run_stream_kernel(duration: float, nbytes: Optional[int] = None) -> dict[str, float]:
+    """STREAM triad ``c[i] = a[i] + scale*b[i]`` for *duration* seconds.
+
+    Working set is larger than LLC so traffic goes to DRAM. Returns
+    ``bw_gb_s``, ``bytes_moved``, ``elapsed``. Load-driven: this is the
+    actual bytes/time, not an idle counter sample.
+    """
+    duration = max(0.05, float(duration))
+    nbytes = int(nbytes) if nbytes else _stream_array_bytes()
+    n = max(1024, nbytes // 8)
+    try:
+        import numpy as np
+        a = np.empty(n, dtype=np.float64)
+        b = np.empty(n, dtype=np.float64)
+        c = np.empty(n, dtype=np.float64)
+        a.fill(1.0)
+        b.fill(2.0)
+        scale = np.float64(1.0001)
+        t0 = time.perf_counter()
+        iters = 0
+        while time.perf_counter() - t0 < duration:
+            np.multiply(b, scale, out=c)
+            np.add(a, c, out=c)
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+    except Exception:
+        logger.debug("numpy STREAM unavailable; using array.array fallback", exc_info=True)
+        import array as _array
+        n = min(n, 2 * 1024 * 1024)
+        a = _array.array("d", [1.0]) * n
+        b = _array.array("d", [2.0]) * n
+        c = _array.array("d", [0.0]) * n
+        scale = 1.0001
+        t0 = time.perf_counter()
+        iters = 0
+        while time.perf_counter() - t0 < duration:
+            for i in range(n):
+                c[i] = a[i] + scale * b[i]
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+    bytes_moved = float(iters * n * 8 * 3)
+    bw_gb_s = bytes_moved / elapsed / 1e9
+    return {"bw_gb_s": round(bw_gb_s, 2), "bytes_moved": bytes_moved, "elapsed": elapsed}
+
+
+def _run_fma_kernel(duration: float) -> dict[str, float]:
+    """Tight FP64 FMA loop on L1-resident data for *duration* seconds.
+
+    Load-driven: hardware FP counters are sampled against real arithmetic,
+    not an idle ``sleep``. Returns ``gflops``, ``flops``, ``elapsed``.
+    """
+    duration = max(0.05, float(duration))
+    try:
+        import numpy as np
+        n = 4096
+        x = np.ones(n, dtype=np.float64)
+        y = np.full(n, 1.0000001, dtype=np.float64)
+        s = np.float64(1.0000000001)
+        t0 = time.perf_counter()
+        iters = 0
+        while time.perf_counter() - t0 < duration:
+            x = x * s + y
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+        flops = float(iters * n * 2)
+    except Exception:
+        logger.debug("numpy FMA unavailable; using scalar fallback", exc_info=True)
+        x = y = 1.0000001
+        t0 = time.perf_counter()
+        iters = 0
+        while time.perf_counter() - t0 < duration:
+            x = x * 1.0000000001 + y
+            y = y * 1.0000000001 + x
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+        flops = float(iters * 4)
+    gflops = flops / elapsed / 1e9
+    return {"gflops": round(gflops, 2), "flops": flops, "elapsed": elapsed}
+
+
+def _run_cache_kernel(duration: float, nbytes: int) -> dict[str, float]:
+    """Sequential read/write of a *nbytes* working set for cache bandwidth."""
+    duration = max(0.05, float(duration))
+    n = max(64, int(nbytes) // 8)
+    try:
+        import numpy as np
+        a = np.empty(n, dtype=np.float64)
+        a.fill(1.0)
+        t0 = time.perf_counter()
+        iters = 0
+        acc = 0.0
+        while time.perf_counter() - t0 < duration:
+            acc += float(a.sum())
+            a += 0.0
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+        bytes_moved = float(iters * n * 8 * 2)
+    except Exception:
+        import array as _array
+        n = min(n, 256 * 1024)
+        a = _array.array("d", [1.0]) * n
+        t0 = time.perf_counter()
+        iters = 0
+        acc = 0.0
+        while time.perf_counter() - t0 < duration:
+            acc += sum(a)
+            iters += 1
+        elapsed = max(time.perf_counter() - t0, 1e-9)
+        bytes_moved = float(iters * n * 8)
+    return {
+        "bw_gb_s": round(bytes_moved / elapsed / 1e9, 2),
+        "bytes_moved": bytes_moved,
+        "elapsed": elapsed,
+        "acc": acc,
+    }
+
+
+def _run_cache_hierarchy_kernel(duration: float) -> dict[str, float]:
+    """L1/L2/L3-sized access loops, split across *duration*."""
+    slice_t = max(0.05, float(duration) / 3.0)
+    l1 = _cache_level_size_bytes(1) or 32 * 1024
+    l2 = _cache_level_size_bytes(2) or 256 * 1024
+    l3 = _cache_level_size_bytes(3) or 8 * 1024 * 1024
+    r1 = _run_cache_kernel(slice_t, max(4096, l1 // 2))
+    r2 = _run_cache_kernel(slice_t, max(l1 * 2, min(l2 // 2, 512 * 1024)))
+    r3 = _run_cache_kernel(slice_t, max(l2 * 2, min(l3 // 2, 4 * 1024 * 1024)))
+    return {
+        "l1": r1["bw_gb_s"],
+        "l2": r2["bw_gb_s"],
+        "l3": r3["bw_gb_s"],
+        "elapsed": r1["elapsed"] + r2["elapsed"] + r3["elapsed"],
+    }
+
+
+def _start_load_thread(fn, *args, **kwargs):
+    """Run *fn* on a daemon thread; returns (thread, result_dict)."""
+    result: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            got = fn(*args, **kwargs) or {}
+            if isinstance(got, dict):
+                result.update(got)
+        except Exception:
+            logger.debug("Synthetic load kernel failed", exc_info=True)
+
+    thread = threading.Thread(target=_runner, name="forge-perf-load", daemon=True)
+    thread.start()
+    return thread, result
+
+
+def _join_load_thread(thread: threading.Thread, timeout: float) -> None:
+    thread.join(timeout=max(0.1, timeout))
+
+
+def _prefer_kernel_metric(
+    kernel: Optional[float],
+    counter: Optional[float],
+    label: str,
+) -> Optional[float]:
+    """Combine load-driven kernel timing with hardware-counter cross-check.
+
+    Hardware counters sampled during a real kernel are preferred for FLOPS
+    (Python cannot approach peak FP64). For bandwidth, STREAM bytes/time is
+    the primary signal; counters only fill in if the kernel result is missing.
+    """
+    if label == "gflops":
+        if counter is not None and counter > 0:
+            if kernel is not None and kernel > 0:
+                logger.debug("Load-driven %s: kernel=%.3f counters=%.3f", label, kernel, counter)
+            return round(float(counter), 2)
+        if kernel is not None and kernel > 0:
+            return round(float(kernel), 2)
+        return None
+    if kernel is not None and kernel > 0:
+        if counter is not None and counter > 0:
+            logger.debug("Load-driven %s: kernel=%.3f counters=%.3f", label, kernel, counter)
+        return round(float(kernel), 2)
+    if counter is not None and counter > 0:
+        return round(float(counter), 2)
+    return None
+
 
 # =============================================================================
 # Hardware Fingerprint for Cache Invalidation
@@ -211,8 +472,9 @@ class PerfCounterCache:
 
     Cached at ``~/.forge/perf_cache.json`` with:
     - Hardware fingerprint hash for invalidation when hardware changes
-    - Configurable TTL (default 5 minutes) per measurement key
+    - Configurable TTL (default 7 days, ``FORGE_PERF_CACHE_TTL_SECONDS``) per key
     - Atomic write via temporary file + rename
+    Fingerprint mismatch always discards the cache, independent of TTL.
     """
 
     _lock = threading.Lock()
@@ -269,7 +531,7 @@ class PerfCounterCache:
             if entry is None:
                 return None
             ts = entry.get("_ts", 0)
-            if time.time() - ts > _CACHE_TTL_SECONDS:
+            if time.time() - ts > _cache_ttl_seconds():
                 return None
             return entry.get("_data")
 
@@ -363,71 +625,78 @@ def calculations_from_cpu_frequency() -> dict[str, float]:
 def _measure_memory_bandwidth_likwid(sample_sec: float = 2.0) -> Optional[float]:
     """
     Measure sustained memory bandwidth using likwid-perfctr MEM group.
+
+    Load-driven: a STREAM triad kernel runs concurrently so likwid samples
+    DRAM traffic rather than idle/ambient counters. Kernel bytes/time is
+    preferred; likwid is a cross-check.
     Returns GB/s or None on failure.
     """
-    cmd = ["likwid-perfctr", "-C", "0", "-g", "MEM", "-m", "-O", "-S", str(sample_sec)]
-    output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
-    if not output:
-        return None
+    thread, load = _start_load_thread(_run_stream_kernel, sample_sec)
+    output = None
+    try:
+        cmd = ["likwid-perfctr", "-C", "0", "-g", "MEM", "-m", "-O", "-S", str(sample_sec)]
+        output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    finally:
+        _join_load_thread(thread, sample_sec + 5)
 
-    # Parse likwid CSV/table output — look for "Memory bandwidth [GB/s]" lines
     total = 0.0
-    for line in output.split("\n"):
-        match = re.search(r"Memory bandwidth\s+\[GB/s\]\s+([\d.]+)", line, re.IGNORECASE)
-        if match:
-            total += float(match.group(1))
-        match = re.search(r"L3 memory bandwidth\s+\[GB/s\]\s+([\d.]+)", line, re.IGNORECASE)
-        if match:
-            total += float(match.group(1))
+    if output:
+        for line in output.split("\n"):
+            match = re.search(r"Memory bandwidth\s+\[GB/s\]\s+([\d.]+)", line, re.IGNORECASE)
+            if match:
+                total += float(match.group(1))
+            match = re.search(r"L3 memory bandwidth\s+\[GB/s\]\s+([\d.]+)", line, re.IGNORECASE)
+            if match:
+                total += float(match.group(1))
+        if total <= 0:
+            for line in output.split("\n"):
+                parts = line.strip().split(",")
+                for part in parts:
+                    part = part.strip()
+                    if part and re.match(r"^[\d.]+$", part):
+                        total += float(part)
 
-    if total > 0:
-        return round(total, 2)
-
-    # Alternative: sum all bandwidth counters
-    bw_sum = 0.0
-    for line in output.split("\n"):
-        parts = line.strip().split(",")
-        for part in parts:
-            part = part.strip()
-            if part and re.match(r"^[\d.]+$", part):
-                bw_sum += float(part)
-
-    return round(bw_sum, 2) if bw_sum > 0 else None
+    counter_bw = round(total, 2) if total > 0 else None
+    return _prefer_kernel_metric(load.get("bw_gb_s"), counter_bw, "mem_bw")
 
 
 def _measure_memory_bandwidth_perf(sample_sec: float = 3.0) -> Optional[float]:
     """
-    Estimate memory bandwidth from perf stat cache-miss metrics.
+    Measure memory bandwidth with a STREAM triad under ``perf stat``.
+
+    Load-driven: idle ``perf stat -- sleep`` samples ambient noise and
+    usually returns None or a near-zero value. The STREAM kernel runs on a
+    background thread for the sample window; bytes-moved/elapsed is the
+    primary result, with cache-miss counters as a cross-check.
     Returns GB/s estimate or None on failure.
     """
-    cmd = [
-        "perf", "stat",
-        "-e", "cycles,instructions,cache-references,cache-misses",
-        "-a", "--", "sleep", str(sample_sec)
-    ]
-    output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
-    if not output:
-        return None
+    thread, load = _start_load_thread(_run_stream_kernel, sample_sec)
+    output = None
+    try:
+        cmd = [
+            "perf", "stat",
+            "-e", "cycles,instructions,cache-references,cache-misses",
+            "-a", "--", "sleep", str(sample_sec)
+        ]
+        output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    finally:
+        _join_load_thread(thread, sample_sec + 5)
 
-    cache_misses = 0
-    cycles = 0
-    for line in output.split("\n"):
-        match = re.search(r"([\d.,]+)\s+cache-misses", line)
-        if match:
-            cache_misses = int(match.group(1).replace(",", "").replace(".", ""))
-        match = re.search(r"([\d.,]+)\s+cycles", line)
-        if match:
-            cycles = int(match.group(1).replace(",", "").replace(".", ""))
+    counter_bw = None
+    if output:
+        cache_misses = 0
+        cycles = 0
+        for line in output.split("\n"):
+            match = re.search(r"([\d.,]+)\s+cache-misses", line)
+            if match:
+                cache_misses = int(match.group(1).replace(",", "").replace(".", ""))
+            match = re.search(r"([\d.,]+)\s+cycles", line)
+            if match:
+                cycles = int(match.group(1).replace(",", "").replace(".", ""))
+        if cache_misses > 0 and cycles > 0:
+            counter_bw = round((cache_misses * 64.0) / sample_sec / 1e9, 2)
 
-    if cache_misses == 0 or cycles == 0:
-        return None
-
-    # Estimate: each cache miss ~64 bytes fetched from DRAM
-    bytes_fetched = cache_misses * 64.0
-    elapsed = sample_sec
-    bw_gb_s = bytes_fetched / elapsed / 1e9
-
-    return round(bw_gb_s, 2)
+    return _prefer_kernel_metric(load.get("bw_gb_s"), counter_bw, "mem_bw")
 
 
 def _read_numa_traffic_pages(node_dir: Path) -> Optional[int]:
@@ -454,7 +723,11 @@ def _read_numa_traffic_pages(node_dir: Path) -> Optional[int]:
 def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> Optional[float]:
     """
     Estimate NUMA memory traffic from sysfs numastat page counters.
-    meminfo is a capacity snapshot, not a bandwidth counter, so it is not used.
+
+    Load-driven: a STREAM triad runs between the before/after snapshots so
+    the delta is traffic we generated, not ambient NUMA activity from
+    unrelated processes. Kernel bytes/time is preferred; numastat is a
+    cross-check. meminfo is a capacity snapshot, not a bandwidth counter.
     Returns GB/s or None when traffic cannot be measured.
     """
     node_paths = sorted(Path("/sys/devices/system/node").glob("node*"))
@@ -476,7 +749,7 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> Optional[float]:
     snapshot_before = _read_snapshot()
     if not snapshot_before:
         return None
-    time.sleep(sample_sec)
+    load = _run_stream_kernel(sample_sec)
     snapshot_after = _read_snapshot()
 
     total_delta = 0
@@ -485,12 +758,12 @@ def _measure_memory_bandwidth_sysfs(sample_sec: float = 3.0) -> Optional[float]:
         if delta > 0:
             total_delta += delta
 
-    if total_delta <= 0:
-        return None
+    counter_bw = None
+    if total_delta > 0:
+        page_size = os.sysconf("SC_PAGE_SIZE") or 4096
+        counter_bw = round((total_delta * page_size) / sample_sec / 1e9, 2)
 
-    page_size = os.sysconf("SC_PAGE_SIZE") or 4096
-    bw_gb_s = (total_delta * page_size) / sample_sec / 1e9
-    return round(bw_gb_s, 2)
+    return _prefer_kernel_metric(load.get("bw_gb_s"), counter_bw, "mem_bw")
 
 
 def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
@@ -506,7 +779,7 @@ def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
     Parameters
     ----------
     use_cache : bool
-        If True (default), cache the result in PerfCounterCache for 5 min.
+        If True (default), cache the result in PerfCounterCache (7-day TTL).
 
     Returns
     -------
@@ -561,59 +834,69 @@ def measure_memory_bandwidth(use_cache: bool = True) -> float:  # noqa: C901
 def _measure_peak_flops_likwid(sample_sec: float = 2.0) -> Optional[float]:
     """
     Measure peak FP64 FLOPS using likwid-perfctr FLOPS_DP group.
+
+    Load-driven: an FP64 FMA kernel runs concurrently so FLOPS_DP samples
+    real arithmetic, not idle core 0. Kernel FLOPs/time is preferred.
     Returns GFLOPS or None on failure.
     """
-    cmd = ["likwid-perfctr", "-C", "0", "-g", "FLOPS_DP", "-m", "-O", "-S", str(sample_sec)]
-    output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
-    if not output:
-        return None
+    thread, load = _start_load_thread(_run_fma_kernel, sample_sec)
+    output = None
+    try:
+        cmd = ["likwid-perfctr", "-C", "0", "-g", "FLOPS_DP", "-m", "-O", "-S", str(sample_sec)]
+        output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    finally:
+        _join_load_thread(thread, sample_sec + 5)
 
     total = 0.0
-    for line in output.split("\n"):
-        match = re.search(r"(?:DP|FP64)\s+\[?M?FLOPS/s\]?\s+([\d.]+)", line, re.IGNORECASE)
-        if match:
-            total += float(match.group(1))
-        match = re.search(r"([\d.]+)\s+(?:M?FLOPS/s)", line)
-        if match and "DP" in line:
-            total += float(match.group(1))
-
-    if total > 0:
-        return round(total, 2)
-
-    return None
+    if output:
+        for line in output.split("\n"):
+            match = re.search(r"(?:DP|FP64)\s+\[?M?FLOPS/s\]?\s+([\d.]+)", line, re.IGNORECASE)
+            if match:
+                total += float(match.group(1))
+            match = re.search(r"([\d.]+)\s+(?:M?FLOPS/s)", line)
+            if match and "DP" in line:
+                total += float(match.group(1))
+    counter_gflops = round(total, 2) if total > 0 else None
+    return _prefer_kernel_metric(load.get("gflops"), counter_gflops, "gflops")
 
 
 def _measure_peak_flops_perf(sample_sec: float = 3.0) -> Optional[float]:
     """
-    Estimate peak FP64 FLOPS from perf stat fp_arith counters.
+    Measure peak FP64 FLOPS from perf stat fp_arith counters.
+
+    Load-driven: a tight FMA loop runs during the sample window. Idle
+    ``perf stat -- sleep`` would count near-zero ``fp_arith_inst_retired``.
+    Hardware counters sampled during the kernel are preferred for FLOPS;
+    the Python FMA loop is a fallback when counters are unavailable.
     Returns GFLOPS or None on failure.
     """
+    thread, load = _start_load_thread(_run_fma_kernel, sample_sec)
     packed_event = "fp_arith_inst_retired.256b_packed_double"
     scalar_event = "fp_arith_inst_retired.scalar_double"
     ops_per_instr = 4
-    cmd = ["perf", "stat", "-e", packed_event, "-a", "--", "sleep", str(sample_sec)]
-    output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
-    if not output:
-        ops_per_instr = 1
-        cmd = ["perf", "stat", "-e", scalar_event, "-a", "--", "sleep", str(sample_sec)]
+    output = None
+    try:
+        cmd = ["perf", "stat", "-e", packed_event, "-a", "--", "sleep", str(sample_sec)]
         output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
         if not output:
-            return None
+            ops_per_instr = 1
+            cmd = ["perf", "stat", "-e", scalar_event, "-a", "--", "sleep", str(sample_sec)]
+            output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    finally:
+        _join_load_thread(thread, sample_sec + 5)
 
-    count = 0
-    for line in output.split("\n"):
-        match = re.search(r"([\d.,]+)\s+fp_arith", line)
-        if match:
-            count = int(match.group(1).replace(",", "").replace(".", ""))
-            break
+    counter_gflops = None
+    if output:
+        count = 0
+        for line in output.split("\n"):
+            match = re.search(r"([\d.,]+)\s+fp_arith", line)
+            if match:
+                count = int(match.group(1).replace(",", "").replace(".", ""))
+                break
+        if count > 0:
+            counter_gflops = round((count * ops_per_instr) / sample_sec / 1e9, 2)
 
-    if count == 0:
-        return None
-
-    ops = count * ops_per_instr
-    gflops = ops / sample_sec / 1e9
-
-    return round(gflops, 2)
+    return _prefer_kernel_metric(load.get("gflops"), counter_gflops, "gflops")
 
 
 def calculate_peak_fp64_gflops_fallback() -> float:
@@ -637,7 +920,7 @@ def measure_peak_flops(use_cache: bool = True) -> float:
     Parameters
     ----------
     use_cache : bool
-        If True (default), cache the result in PerfCounterCache for 5 min.
+        If True (default), cache the result in PerfCounterCache (7-day TTL).
 
     Returns
     -------
@@ -699,17 +982,32 @@ def _parse_likwid_cache_bw(output: str) -> dict[str, float]:
 def _perf_cache_events(sample_sec: float = 2.0) -> dict[str, float]:
     """
     Estimate L1/L2/L3 cache bandwidth from perf stat cache counters.
+
+    Load-driven: sized L1/L2/L3 access loops run during the sample window
+    so cache events are from a real working set, not idle sleep.
+    Kernel bandwidth is preferred; counters fill any missing levels.
     Returns dict with keys "l1", "l2", "l3" in GB/s.
     """
     result: dict[str, float] = {}
+    thread, load = _start_load_thread(_run_cache_hierarchy_kernel, sample_sec)
     events = [
         "L1-dcache-loads",
         "L1-dcache-load-misses",
         "LLC-loads",
         "LLC-load-misses",
     ]
-    cmd = ["perf", "stat", "-e", ",".join(events), "-a", "--", "sleep", str(sample_sec)]
-    output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    output = None
+    try:
+        cmd = ["perf", "stat", "-e", ",".join(events), "-a", "--", "sleep", str(sample_sec)]
+        output = _run_cmd_safe(cmd, timeout=int(sample_sec) + 15)
+    finally:
+        _join_load_thread(thread, sample_sec + 5)
+
+    for key in ("l1", "l2", "l3"):
+        val = load.get(key)
+        if isinstance(val, (int, float)) and val > 0:
+            result[key] = round(float(val), 2)
+
     if not output:
         return result
 
@@ -725,20 +1023,15 @@ def _perf_cache_events(sample_sec: float = 2.0) -> dict[str, float]:
             if match:
                 loads[key] = int(match.group(1).replace(",", "").replace(".", ""))
 
-    # L1 bandwidth: L1 hits x cache line size (64B)
     l1_hits = max(0, loads["L1"] - loads["L1_misses"])
     l1_accesses = loads["L1"]
     if l1_accesses > 0:
-        result["l1"] = round((l1_accesses * 64.0) / sample_sec / 1e9, 2)
-        result["l1_hit"] = round((l1_hits * 64.0) / sample_sec / 1e9, 2)
-
-    # L2: approximated by L1 misses (assume all L1 misses go to L2)
+        result.setdefault("l1", round((l1_accesses * 64.0) / sample_sec / 1e9, 2))
+        result.setdefault("l1_hit", round((l1_hits * 64.0) / sample_sec / 1e9, 2))
     if loads["L1_misses"] > 0:
-        result["l2"] = round((loads["L1_misses"] * 64.0) / sample_sec / 1e9, 2)
-
-    # L3/LLC bandwidth
+        result.setdefault("l2", round((loads["L1_misses"] * 64.0) / sample_sec / 1e9, 2))
     if loads["LLC"] > 0:
-        result["l3"] = round((loads["LLC"] * 64.0) / sample_sec / 1e9, 2)
+        result.setdefault("l3", round((loads["LLC"] * 64.0) / sample_sec / 1e9, 2))
 
     return result
 
@@ -754,7 +1047,7 @@ def measure_cache_bandwidth(use_cache: bool = True) -> dict[str, float]:
     Parameters
     ----------
     use_cache : bool
-        If True (default), cache the result in PerfCounterCache for 5 min.
+        If True (default), cache the result in PerfCounterCache (7-day TTL).
 
     Returns
     -------
@@ -773,13 +1066,21 @@ def measure_cache_bandwidth(use_cache: bool = True) -> dict[str, float]:
     tool_used = "none"
 
     if PerfCounterInterface.is_likwid_available():
-        cmd = ["likwid-perfctr", "-C", "0", "-g", "MEM_DP", "-m", "-O", "-S", "2"]
-        output = _run_cmd_safe(cmd, timeout=20)
-        if output:
-            parsed = _parse_likwid_cache_bw(output)
-            if parsed:
-                result = parsed
-                tool_used = "likwid"
+        thread, load = _start_load_thread(_run_cache_hierarchy_kernel, 2.0)
+        output = None
+        try:
+            cmd = ["likwid-perfctr", "-C", "0", "-g", "MEM_DP", "-m", "-O", "-S", "2"]
+            output = _run_cmd_safe(cmd, timeout=20)
+        finally:
+            _join_load_thread(thread, 7.0)
+        parsed = _parse_likwid_cache_bw(output) if output else {}
+        for key in ("l1", "l2", "l3"):
+            kbw = load.get(key)
+            if isinstance(kbw, (int, float)) and kbw > 0:
+                parsed[key] = round(float(kbw), 2)
+        if parsed:
+            result = parsed
+            tool_used = "likwid"
 
     if not result and PerfCounterInterface.is_perf_available():
         result = _perf_cache_events()
@@ -810,7 +1111,7 @@ def measure_cache_bandwidth(use_cache: bool = True) -> dict[str, float]:
 def get_real_roofline_data(use_cache: bool = True) -> dict[str, Any]:
     """
     Combine measured peak FLOPS and sustained memory bandwidth into a single
-    roofline data dict. Cached for 5 minutes by default.
+    roofline data dict. Cached for 7 days by default (fingerprint-invalidated).
 
     Returns
     -------
@@ -826,6 +1127,7 @@ def get_real_roofline_data(use_cache: bool = True) -> dict[str, Any]:
             logger.debug("Returning cached roofline data")
             return cached
 
+    maybe_notify_calibration(cached=False)
     peak = measure_peak_flops(use_cache=False)
     bw = measure_memory_bandwidth(use_cache=False)
 
@@ -856,12 +1158,25 @@ def get_real_roofline_data(use_cache: bool = True) -> dict[str, Any]:
 # Explicit Public API Declaration
 # =============================================================================
 
+def maybe_notify_calibration(cached: bool) -> None:
+    """Log the one-shot calibration notice when a fresh measurement will run."""
+    if not cached:
+        logger.info(_CALIBRATION_NOTICE)
+
+
+def invalidate_perf_cache() -> None:
+    """Clear ~/.forge/perf_cache.json so the next measurement is fresh."""
+    PerfCounterCache().invalidate()
+
+
 __all__ = [
     "HAS_PERF_COUNTERS",
     "PerfCounterCache",
     "PerfCounterInterface",
+    "_CALIBRATION_NOTICE",
     "calculations_from_cpu_frequency",
     "get_real_roofline_data",
+    "invalidate_perf_cache",
     "measure_cache_bandwidth",
     "measure_memory_bandwidth",
     "measure_peak_flops",

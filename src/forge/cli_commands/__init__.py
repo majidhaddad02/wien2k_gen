@@ -15,6 +15,7 @@ from . import (
     analyze,
     analyze_bands,
     benchmark,
+    calibrate,
     converge,
     diagnose,
     diagnostics,
@@ -57,6 +58,7 @@ _ALL_MODULES = (
     converge,
     history,
     analyze_bands,
+    calibrate,
 )
 
 __all__ = [

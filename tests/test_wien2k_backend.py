@@ -3,7 +3,10 @@ Comprehensive tests for WIEN2k backend (core.py) and parsers (parsers.py).
 Focuses on pure functions, file-based parsing with tmp_path, and minimal mocking.
 """
 
+import logging
+import re
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -968,47 +971,107 @@ class TestEstimateKpointDensity:
 # Tests: auto_rkmax
 # =============================================================================
 
+_RMTS = [2.0, 2.0]
+_VOLUME = 800.0
+
+
+@contextmanager
+def _auto_rkmax_env(backend, params, density=None):
+    dens = density or {"nkpt_est": max(1, int(params.get("kpoints") or 8))}
+    with patch.object(backend, "_detect_problem_size", return_value=params), \
+         patch.object(backend, "estimate_kpoint_density", return_value=dens), \
+         patch("forge.backends.wien2k.core.load_struct_geometry", return_value=(_RMTS, _VOLUME)):
+        yield
+
+
 class TestAutoRKMax:
     def test_returns_float_in_range(self, backend):
-        with patch.object(backend, "_detect_problem_size") as mock_detect, \
-             patch.object(backend, "estimate_kpoint_density") as mock_density:
-            mock_detect.return_value = {"atoms": 10, "nmat": 500, "kpoints": 8}
-            mock_density.return_value = {"nkpt_est": 8}
+        params = {"atoms": 10, "nmat": 500, "kpoints": 8, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params):
             result = backend.auto_rkmax(64, 64.0)
             assert 5.0 <= result <= 10.0
             assert isinstance(result, float)
 
     def test_clamped_to_min(self, backend):
-        with patch.object(backend, "_detect_problem_size") as mock_detect, \
-             patch.object(backend, "estimate_kpoint_density") as mock_density:
-            mock_detect.return_value = {"atoms": 200, "nmat": 20000, "kpoints": 64}
-            mock_density.return_value = {"nkpt_est": 64}
-            result = backend.auto_rkmax(2, 0.001)  # tiny memory → clamps to 5.0
+        """Tiny total RAM still returns the WIEN2k floor 5.0 (not below).
+
+        Expectation changed from the old RKmax² closed form: the new search
+        uses nmat² memory so 0.001 GB overflows even at 5.0 and logs a warning.
+        """
+        params = {"atoms": 200, "nmat": 20000, "kpoints": 64, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params):
+            result = backend.auto_rkmax(2, 0.001)
             assert result == 5.0
 
     def test_zero_kpoints_fallback(self, backend):
-        with patch.object(backend, "_detect_problem_size") as mock_detect, \
-             patch.object(backend, "estimate_kpoint_density") as mock_density:
-            mock_detect.return_value = {"atoms": 10, "nmat": 500, "kpoints": 0}
-            mock_density.return_value = {"nkpt_est": 16}
+        params = {"atoms": 10, "nmat": 500, "kpoints": 0, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params, {"nkpt_est": 16}):
             result = backend.auto_rkmax(64, 64.0)
             assert 5.0 <= result <= 10.0
 
     def test_zero_nmat_fallback(self, backend):
-        with patch.object(backend, "_detect_problem_size") as mock_detect, \
-             patch.object(backend, "estimate_kpoint_density") as mock_density:
-            mock_detect.return_value = {"atoms": 10, "nmat": 0, "kpoints": 8}
-            mock_density.return_value = {"nkpt_est": 8}
+        params = {"atoms": 10, "nmat": 0, "kpoints": 8, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params):
             result = backend.auto_rkmax(64, 64.0)
             assert 5.0 <= result <= 10.0
 
     def test_rounds_to_2_decimals(self, backend):
-        with patch.object(backend, "_detect_problem_size") as mock_detect, \
-             patch.object(backend, "estimate_kpoint_density") as mock_density:
-            mock_detect.return_value = {"atoms": 10, "nmat": 500, "kpoints": 8}
-            mock_density.return_value = {"nkpt_est": 8}
+        params = {"atoms": 10, "nmat": 500, "kpoints": 8, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params):
             result = backend.auto_rkmax(64, 64.0)
             assert result == round(result, 2)
+
+    def test_memory_follows_rkmax_sixth_not_square(self, backend):
+        """Fixed struct: RKmax=8 vs 4 memory ratio is ~RKmax⁶, not ~RKmax².
+
+        Uses a large cell so nmat² Hamiltonian terms dominate the 256 MB
+        per-rank overhead in ``_estimate_memory_per_core``.
+        """
+        from forge.core.case_parser import CaseFileParser
+
+        volume = 25000.0
+        nmat4 = CaseFileParser.estimate_nmat(4.0, _RMTS, volume)
+        nmat8 = CaseFileParser.estimate_nmat(8.0, _RMTS, volume)
+        mem4 = backend._estimate_memory_per_core(nmat4, 8, False, False)
+        mem8 = backend._estimate_memory_per_core(nmat8, 8, False, False)
+        ratio = mem8 / mem4
+        assert 20.0 <= ratio <= 80.0, f"expected ~64x (RKmax^6), got {ratio:.1f}x"
+
+    def test_uses_current_rkmax_as_nmat_reference(self, backend):
+        """Detected nmat is scaled from params['rkmax'], not hardcoded 7.0."""
+        common = {
+            "atoms": 10, "kpoints": 8, "is_soc": False, "is_hybrid": False,
+        }
+        nmat_at_6 = 1000
+        nmat_at_9 = int(round(1000 * (9.0 / 6.0) ** 3))
+        pred_from_6 = backend._predict_nmat_for_rkmax(
+            7.5, 6.0, nmat_at_6, _RMTS, _VOLUME
+        )
+        pred_from_9 = backend._predict_nmat_for_rkmax(
+            7.5, 9.0, nmat_at_9, _RMTS, _VOLUME
+        )
+        assert pred_from_6 == pred_from_9
+        # Same candidate, different reference rkmax without scaling the measured
+        # nmat would disagree; the wrong hardcoded-7 path would too.
+        naive_from_7 = backend._predict_nmat_for_rkmax(
+            7.5, 7.0, nmat_at_6, _RMTS, _VOLUME
+        )
+        assert naive_from_7 != pred_from_6
+
+        params_hi = {**common, "rkmax": 9.0, "nmat": nmat_at_9}
+        params_lo = {**common, "rkmax": 6.0, "nmat": nmat_at_6}
+        with _auto_rkmax_env(backend, params_hi):
+            rec_hi = backend.auto_rkmax(8, 32.0)
+        with _auto_rkmax_env(backend, params_lo):
+            rec_lo = backend.auto_rkmax(8, 32.0)
+        assert rec_hi == rec_lo
+
+    def test_tiny_budget_returns_floor_and_warns(self, backend, caplog):
+        params = {"atoms": 50, "nmat": 8000, "kpoints": 16, "rkmax": 7.0}
+        with _auto_rkmax_env(backend, params), caplog.at_level(logging.WARNING):
+            result = backend.auto_rkmax(16, 0.01)
+        assert result == 5.0
+        assert any("may not fit" in rec.message for rec in caplog.records)
 
 
 # =============================================================================
@@ -1082,6 +1145,46 @@ class TestSmartAllocateCores:
             mode="mpi", num_nodes=2,
         )
         assert len(result["reason"]) > 0
+
+    def test_kpoint_clamps_to_provided_max_efficient(self, backend):
+        result = backend._smart_allocate_cores(
+            total_cores=100, kpoints=525, atoms=8, nmat=4320,
+            mode="kpoint", num_nodes=1, max_efficient_cores=12,
+            respect_saturation_limit=True,
+        )
+        used = result["lapw0_cores"] + result["lapw1_cores"] + result["lapw2_cores"]
+        assert used <= 12
+        assert result["max_efficient_cores"] == 12
+        assert any("Capped at" in w for w in result["saturation_warnings"])
+        assert "[amdahl:max_eff=12]" in result["reason"]
+
+    def test_explicit_cores_skip_clamp(self, backend):
+        result = backend._smart_allocate_cores(
+            total_cores=48, kpoints=525, atoms=8, nmat=4320,
+            mode="kpoint", num_nodes=1, max_efficient_cores=12,
+            respect_saturation_limit=False,
+        )
+        used = result["lapw0_cores"] + result["lapw1_cores"] + result["lapw2_cores"]
+        assert used > 12
+        assert not any("Capped at" in w for w in result["saturation_warnings"])
+
+    def test_mpi_mode_is_not_clamped(self, backend):
+        result = backend._smart_allocate_cores(
+            total_cores=64, kpoints=2, atoms=80, nmat=20000,
+            mode="mpi", num_nodes=1, max_efficient_cores=8,
+            respect_saturation_limit=True,
+        )
+        used = result["lapw0_cores"] + result["lapw1_cores"] + result["lapw2_cores"]
+        assert used > 8
+
+    def test_fallback_without_upstream_cap_still_clamps(self, backend):
+        result = backend._smart_allocate_cores(
+            total_cores=100, kpoints=4, atoms=2, nmat=100,
+            mode="kpoint", num_nodes=1,
+        )
+        used = result["lapw0_cores"] + result["lapw1_cores"] + result["lapw2_cores"]
+        assert used <= result["max_efficient_cores"]
+        assert used < 100
 
 
 # =============================================================================
@@ -1216,6 +1319,120 @@ class TestGenerateInput:
             content = backend.generate_input(simple_topo, sug)
         # omp_global appears in fine_grain_elpa strategy
         assert "omp_global" in content
+
+
+def _rank_core_entries(content: str) -> list[tuple[str, str, int]]:
+    """Parse (kind, host, cores) from 1:/lapw1:/lapw2: rank lines."""
+    entries = []
+    for line in content.splitlines():
+        m = re.match(r"^(1|lapw1|lapw2):\s+(\S+):(\d+)\s*$", line.strip())
+        if m:
+            entries.append((m.group(1), m.group(2), int(m.group(3))))
+    return entries
+
+
+def _header_total_cores(content: str) -> int:
+    m = re.search(r"Total cores\s*=\s*(\d+)", content)
+    assert m, "missing Total cores header"
+    return int(m.group(1))
+
+
+class TestMachinesZeroCoreAndOmpRemainder:
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_hetero_small_budget_drops_nodes_not_zero_ranks(self, _elpa, backend):
+        topo = Topology(
+            nodes=[f"n{i:02d}" for i in range(8)],
+            cores_per_node=[32, 28, 24, 20, 16, 12, 8, 4],
+            env_type="slurm",
+        )
+        sug = {
+            "mode": "kpoint",
+            "recommended_total_cores": 5,
+            "omp_threads_per_rank": 1,
+            "granularity": 1,
+            "max_efficient_cores": 5,
+            "respect_saturation_limit": False,
+        }
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10, "kpoints": 16, "nmat": 800,
+                "is_soc": False, "is_hybrid": False, "is_spin_polarized": False,
+            }
+            content = backend.generate_input(topo, sug)
+        assert not any(line.strip().endswith(":0") for line in content.splitlines())
+        ones = [e for e in _rank_core_entries(content) if e[0] == "1"]
+        assert ones
+        assert all(cores > 0 for _, _, cores in ones)
+        assert sum(cores for _, _, cores in ones) == 5
+        assert "excluded: 0 cores after rebalancing" in content
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_enough_cores_keeps_every_node(self, _elpa, backend):
+        topo = Topology(
+            nodes=[f"n{i:02d}" for i in range(8)],
+            cores_per_node=[32, 28, 24, 20, 16, 12, 8, 4],
+            env_type="slurm",
+        )
+        sug = {
+            "mode": "kpoint",
+            "recommended_total_cores": 8,
+            "omp_threads_per_rank": 1,
+            "granularity": 1,
+            "respect_saturation_limit": False,
+        }
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10, "kpoints": 16, "nmat": 800,
+                "is_soc": False, "is_hybrid": False, "is_spin_polarized": False,
+            }
+            content = backend.generate_input(topo, sug)
+        hosts = {host for kind, host, _ in _rank_core_entries(content) if kind == "1"}
+        assert hosts == {f"n{i:02d}" for i in range(8)}
+        assert "excluded:" not in content
+        assert sum(c for k, _, c in _rank_core_entries(content) if k == "1") == 8
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_omp_remainder_kept_on_last_rank(self, _elpa, backend):
+        topo = Topology(nodes=["n01"], cores_per_node=[13], env_type="local")
+        sug = {
+            "mode": "hybrid",
+            "recommended_total_cores": 13,
+            "omp_threads_per_rank": 4,
+            "granularity": 1,
+            "respect_saturation_limit": False,
+        }
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10, "kpoints": 8, "nmat": 1200,
+                "is_soc": False, "is_hybrid": False, "is_spin_polarized": False,
+            }
+            content = backend.generate_input(topo, sug)
+        node_cores = [c for k, h, c in _rank_core_entries(content) if k == "1" and h == "n01"]
+        assert sum(node_cores) == 13
+        assert 5 in node_cores
+        assert node_cores.count(4) == 2
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_header_matches_emitted_rank_cores(self, _elpa, backend):
+        topo = Topology(nodes=["n01", "n02"], cores_per_node=[16, 13], env_type="slurm")
+        for omp in (1, 2, 4):
+            for total in (16, 13, 29):
+                sug = {
+                    "mode": "hybrid",
+                    "recommended_total_cores": total,
+                    "omp_threads_per_rank": omp,
+                    "granularity": 1,
+                    "respect_saturation_limit": False,
+                }
+                with patch.object(backend, "_detect_problem_size") as mock_detect:
+                    mock_detect.return_value = {
+                        "atoms": 10, "kpoints": 16, "nmat": 900,
+                        "is_soc": False, "is_hybrid": False, "is_spin_polarized": False,
+                    }
+                    content = backend.generate_input(topo, sug)
+                described = sum(c for k, _, c in _rank_core_entries(content) if k in ("1", "lapw1", "lapw2"))
+                assert _header_total_cores(content) == described
+                assert described > 0
 
 
 # =============================================================================

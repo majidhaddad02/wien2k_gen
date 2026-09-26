@@ -27,6 +27,7 @@ from .parsers import (
     DayfileResult,
     detect_io_bottleneck,
     estimate_kpoint_density,
+    load_struct_geometry,
     parse_dayfile,
     parse_output,
 )
@@ -215,8 +216,71 @@ class Wien2kBackend(Backend):
             return min(6, available_cores)
         return min(8, available_cores)
 
+    @staticmethod
+    def _effective_core_budget(
+        total_cores: int,
+        mode: str,
+        max_efficient_cores: int | None,
+        respect_saturation_limit: bool,
+    ) -> int:
+        """Clamp kpoint/hybrid auto-allocation to Amdahl max_efficient_cores."""
+        budget = max(1, int(total_cores))
+        mode_key = mode.value if hasattr(mode, "value") else str(mode)
+        if not respect_saturation_limit or mode_key.lower() not in ("kpoint", "hybrid"):
+            return budget
+        if max_efficient_cores is None:
+            return budget
+        cap = max(1, int(max_efficient_cores))
+        return cap if cap < budget else budget
+
+    def _resolve_amdahl_cap(
+        self,
+        total_cores: int,
+        kpoints: int,
+        atoms: int,
+        nmat: int,
+        mode: str,
+        num_nodes: int,
+        max_efficient_cores: int | None = None,
+        saturation_data: dict[str, Any] | None = None,
+    ) -> tuple[int, dict[str, Any], list[str]]:
+        """Reuse advisor saturation data; fallback computes it once if missing."""
+        saturation: dict[str, Any] = dict(saturation_data or {})
+        warnings: list[str] = list(saturation.get("saturation_warnings") or [])
+        if max_efficient_cores is not None:
+            return max(1, int(max_efficient_cores)), saturation, warnings
+
+        logger.debug(
+            "Amdahl saturation not provided by advisor; computing fallback locally"
+        )
+        try:
+            from ...optimizer.advisor import estimate_amdahl_saturation
+            saturation = estimate_amdahl_saturation(
+                kpoints=kpoints,
+                nmat=nmat,
+                atoms=atoms,
+                total_cores_available=total_cores,
+                num_nodes=num_nodes,
+                mode=mode,
+            )
+            cap = saturation.get("max_efficient_cores", total_cores)
+            warnings = list(saturation.get("saturation_warnings") or [])
+            return max(1, int(cap)), saturation, warnings
+        except ImportError:
+            logger.debug("Suppressed exception in _resolve_amdahl_cap()", exc_info=True)
+            return max(1, int(total_cores)), saturation, warnings
+
     def _smart_allocate_cores(
-        self, total_cores: int, kpoints: int, atoms: int, nmat: int, mode: str, num_nodes: int
+        self,
+        total_cores: int,
+        kpoints: int,
+        atoms: int,
+        nmat: int,
+        mode: str,
+        num_nodes: int,
+        max_efficient_cores: int | None = None,
+        respect_saturation_limit: bool = True,
+        saturation_data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """
         Intelligent core allocation for WIEN2k processors.
@@ -229,33 +293,38 @@ class Wien2kBackend(Backend):
         - lapw1: diagonalization, CPU-bound, parallel over k-points. Gets priority.
         - lapw2: vector ops. Can exploit vector_split for excess cores.
         - Cores beyond k-point saturation use granularity + vector_split, not wasted.
-        - Amdahl's Law cap: warns when user requests more cores than useful.
+        - Amdahl's Law cap: when respect_saturation_limit and mode is kpoint/hybrid,
+          the working core budget is clamped to advisor max_efficient_cores.
           (Ref: Amdahl 1967; Hager & Wellein 2010, §4.2)
 
         Returns dict with per-processor core counts, kpar, reason, and warnings.
         """
-        # Step 0: Amdahl's Law saturation check
-        saturation_warnings: list[str] = []
-        max_efficient = total_cores
-        saturation = {}
-        try:
-            from ...optimizer.advisor import estimate_amdahl_saturation
-            saturation = estimate_amdahl_saturation(
-                kpoints=kpoints,
-                nmat=nmat,
-                atoms=atoms,
-                total_cores_available=total_cores,
-                num_nodes=num_nodes,
-                mode=mode,
+        max_efficient, saturation, saturation_warnings = self._resolve_amdahl_cap(
+            total_cores=total_cores,
+            kpoints=kpoints,
+            atoms=atoms,
+            nmat=nmat,
+            mode=mode,
+            num_nodes=num_nodes,
+            max_efficient_cores=max_efficient_cores,
+            saturation_data=saturation_data,
+        )
+        working_cores = self._effective_core_budget(
+            total_cores, mode, max_efficient, respect_saturation_limit
+        )
+        if working_cores < total_cores:
+            saturation_warnings = [
+                w for w in saturation_warnings
+                if not w.startswith(("SEVERE SATURATION", "Moderate saturation", "K-point saturation"))
+            ]
+            saturation_warnings.append(
+                f"Capped at {working_cores} cores (Amdahl max_efficient_cores="
+                f"{max_efficient}); use --ignore-saturation to override."
             )
-            max_efficient = saturation.get("max_efficient_cores", total_cores)
-            saturation_warnings = saturation.get("saturation_warnings", [])
-        except ImportError:
-            logger.debug("Suppressed exception in _smart_allocate_cores()", exc_info=True)
 
         # Step 1: lapw0 allocation
-        lapw0_cores = self._get_optimal_lapw0_cores(total_cores, atoms)
-        remaining = total_cores - lapw0_cores
+        lapw0_cores = self._get_optimal_lapw0_cores(working_cores, atoms)
+        remaining = working_cores - lapw0_cores
 
         # Step 2: Cap lapw1 at k-point count (k-point parallelism limit)
         max_lapw1_by_kp = max(1, kpoints) if kpoints > 0 else remaining
@@ -293,11 +362,11 @@ class Wien2kBackend(Backend):
             reason_parts.append("[kp-saturated]")
         if atoms < 4 and lapw0_cores == 1:
             reason_parts.append("[lapw0:serial]")
-        if saturation.get("is_saturated"):
+        if working_cores < total_cores or saturation.get("is_saturated"):
             reason_parts.append(f"[amdahl:max_eff={max_efficient}]")
         total_used = lapw0_cores + lapw1_cores + lapw2_cores
-        if total_used < total_cores:
-            reason_parts.append(f"[granularity:{total_cores-total_used}c]")
+        if total_used < working_cores:
+            reason_parts.append(f"[granularity:{working_cores-total_used}c]")
 
         return {
             "lapw0_cores": lapw0_cores,
@@ -344,50 +413,204 @@ class Wien2kBackend(Backend):
     def estimate_kpoint_density(self, rkmax: float | None = None) -> dict[str, Any]:
         return estimate_kpoint_density(rkmax)
 
+    def _predict_nmat_for_rkmax(
+        self,
+        candidate_rkmax: float,
+        current_rkmax: float,
+        nmat_detected: int,
+        rmts: list[float],
+        volume_bohr3: float,
+    ) -> int:
+        """Predict basis size at ``candidate_rkmax``.
+
+        When a measured ``nmat`` at ``current_rkmax`` is available, scale it with
+        RKmax³ (same physics as ``CaseFileParser.estimate_nmat``). Otherwise
+        call ``estimate_nmat`` with muffin-tin radii and cell volume.
+        """
+        from ...core.case_parser import CaseFileParser
+
+        if nmat_detected > 0 and current_rkmax > 0:
+            scaled = int(round(nmat_detected * (candidate_rkmax / current_rkmax) ** 3))
+            return max(100, scaled)
+        return CaseFileParser.estimate_nmat(candidate_rkmax, rmts, volume_bohr3)
+
+    def _predict_total_memory_gb(
+        self,
+        candidate_rkmax: float,
+        *,
+        current_rkmax: float,
+        nmat_detected: int,
+        rmts: list[float],
+        volume_bohr3: float,
+        kpoints: int,
+        is_soc: bool,
+        is_hybrid: bool,
+        available_cores: int,
+    ) -> float:
+        """Total memory (GB) at a candidate RKmax.
+
+        Composes RKmax³ nmat scaling (``estimate_nmat`` / measured nmat) with
+        nmat² Hamiltonian footprint (``_estimate_memory_per_core``).
+        ``available_memory_gb`` at the call site is total node/job RAM, so the
+        per-rank MB estimate is multiplied by the core/rank count.
+        """
+        nmat = self._predict_nmat_for_rkmax(
+            candidate_rkmax, current_rkmax, nmat_detected, rmts, volume_bohr3
+        )
+        per_rank_mb = self._estimate_memory_per_core(nmat, kpoints, is_soc, is_hybrid)
+        return (float(per_rank_mb) * max(1, int(available_cores))) / 1024.0
+
     def auto_rkmax(
         self, available_cores: int, available_memory_gb: float
     ) -> float:
         """
-        Compute the maximum feasible RKMAX based on available memory and cores.
+        Compute the maximum feasible RKMAX given total memory and cores.
 
-        Uses the scaling law:
-            memory ∝ (nmat / natoms) * RKMAX² * nkpt
+        Physics (not inverted in closed form):
+            nmat ∝ RKmax³   (``CaseFileParser.estimate_nmat``: plane-wave
+                             count in the interstitial, kmax = RKmax / RMT)
+            memory ∝ nmat²  (``_estimate_memory_per_core``: dense Hamiltonian)
+            ⇒ memory ∝ RKmax⁶
 
-        The recommended RKMAX is clamped to the realistic WIEN2k range [5.0, 10.0].
-        Formula:
-            rkmax_auto = 7.0 * min(1.0, sqrt(available_memory_gb / estimated_memory_at_rkmax7))
-        where estimated_memory_at_rkmax7 is derived from the existing footprint estimator.
+        ``available_memory_gb`` is total RAM (see ``auto_detect_optimal_rkmax``,
+        which passes ``get_total_mem_kb()``). Current case RKmax from
+        ``params["rkmax"]`` (fallback 7.0) is the reference for scaling a
+        measured nmat; it is not assumed to be 7.0.
+
+        Numeric search: largest candidate in [5.0, 10.0] (step 0.25) whose
+        predicted total memory fits the budget. If even 5.0 overflows, return
+        5.0 and log a warning — never recommend below the WIEN2k floor.
         """
         params = self._detect_problem_size()
-        natoms = max(params.get("atoms", 10), 1)
-        nmat = params.get("nmat", 0)
-        nkpt = params.get("kpoints", 1)
+        current_rkmax = float(params.get("rkmax") or 7.0)
+        if current_rkmax <= 0:
+            current_rkmax = 7.0
+        nmat_detected = int(params.get("nmat", 0) or 0)
+        nkpt = int(params.get("kpoints", 0) or 0)
+        is_soc = bool(params.get("is_soc", False))
+        is_hybrid = bool(params.get("is_hybrid", False))
 
         density = self.estimate_kpoint_density()
         if nkpt <= 0:
-            nkpt = max(1, density.get("nkpt_est", 1))
+            nkpt = max(1, int(density.get("nkpt_est", 1) or 1))
 
-        if nmat <= 0:
-            nmat = natoms * 100
+        rmts, volume_bohr3 = load_struct_geometry()
 
-        nmat_per_atom = max(1.0, float(nmat) / float(natoms))
-        estimated_memory_at_rkmax7 = (nmat_per_atom * 49.0 * float(nkpt) * 8.0) / (1024.0 ** 3)
+        lo, hi, step = 5.0, 10.0, 0.25
+        n_steps = int(round((hi - lo) / step))
+        candidates = [round(lo + i * step, 2) for i in range(n_steps + 1)]
 
-        if estimated_memory_at_rkmax7 <= 0:
-            return 7.0
+        kwargs = {
+            "current_rkmax": current_rkmax,
+            "nmat_detected": nmat_detected,
+            "rmts": rmts,
+            "volume_bohr3": volume_bohr3,
+            "kpoints": nkpt,
+            "is_soc": is_soc,
+            "is_hybrid": is_hybrid,
+            "available_cores": available_cores,
+        }
 
-        ratio = math.sqrt(available_memory_gb / estimated_memory_at_rkmax7)
-        ratio = min(1.0, max(0.4, ratio))
-        rkmax_auto = 7.0 * ratio
+        chosen = lo
+        mem_at_chosen = self._predict_total_memory_gb(lo, **kwargs)
+        if mem_at_chosen > available_memory_gb:
+            logger.warning(
+                "auto_rkmax: predicted %.2f GB at RKMAX=5.0 exceeds budget "
+                "%.2f GB; system may not fit at any allowed RKMAX. "
+                "Returning the WIEN2k floor 5.0.",
+                mem_at_chosen,
+                available_memory_gb,
+            )
+            return 5.0
 
-        rkmax_auto = max(5.0, min(10.0, rkmax_auto))
+        for cand in candidates:
+            pred = self._predict_total_memory_gb(cand, **kwargs)
+            if pred <= available_memory_gb:
+                chosen = cand
+                mem_at_chosen = pred
+            else:
+                break
 
         logger.info(
-            f"auto_rkmax: memory={available_memory_gb:.1f} GB, "
-            f"est_at_rkmax7={estimated_memory_at_rkmax7:.2f} GB, "
-            f"recommended rkmax={rkmax_auto:.2f}"
+            "auto_rkmax: memory=%.1f GB, cores=%s, current_rkmax=%.2f, "
+            "est=%.2f GB at rkmax=%.2f, recommended rkmax=%.2f",
+            available_memory_gb,
+            available_cores,
+            current_rkmax,
+            mem_at_chosen,
+            chosen,
+            chosen,
         )
-        return round(rkmax_auto, 2)
+        return round(float(chosen), 2)
+
+    @staticmethod
+    def _allocate_node_cores(
+        nodes: list[str],
+        topo_cores: list[int],
+        total_cores: int,
+    ) -> tuple[list[str], list[int], list[str]]:
+        """Distribute total_cores so every listed node gets at least 1 core.
+
+        If total_cores is smaller than the node count, drop the lowest-weight
+        nodes first rather than emitting a zero-core (or phantom) rank.
+        """
+        if not nodes or total_cores <= 0:
+            return [], [], list(nodes)
+
+        paired = list(zip(list(nodes), [max(int(c), 1) for c in topo_cores]))
+        excluded: list[str] = []
+        if total_cores < len(paired):
+            ranked = sorted(range(len(paired)), key=lambda i: paired[i][1], reverse=True)
+            keep = set(ranked[:total_cores])
+            excluded = [paired[i][0] for i in range(len(paired)) if i not in keep]
+            paired = [paired[i] for i in range(len(paired)) if i in keep]
+
+        names = [n for n, _ in paired]
+        weights = [c for _, c in paired]
+        n = len(names)
+        remaining = total_cores - n
+        wsum = sum(weights) or n
+        raw = [remaining * w / wsum for w in weights]
+        extra = [int(r) for r in raw]
+        leftover = remaining - sum(extra)
+        order = sorted(range(n), key=lambda i: raw[i] - extra[i], reverse=True)
+        for i in range(max(0, leftover)):
+            extra[order[i % n]] += 1
+        cores = [1 + e for e in extra]
+        return names, cores, excluded
+
+    @staticmethod
+    def _rank_lines_for_node(node: str, cores: int, omp: int) -> list[str]:
+        """Emit ``1: host:N`` lines covering exactly ``cores`` (no silent drop)."""
+        if cores <= 0:
+            return []
+        omp = max(1, int(omp))
+        n_full = cores // omp
+        rem = cores % omp
+        if n_full == 0:
+            return [f"1: {node}:{cores}"]
+        lines = [f"1: {node}:{omp}" for _ in range(n_full)]
+        if rem:
+            lines[-1] = f"1: {node}:{omp + rem}"
+        return lines
+
+    @staticmethod
+    def _sum_described_cores(lines: list[str]) -> int:
+        """Sum core counts from ``1:`` / ``lapw1:`` / ``lapw2:`` rank lines."""
+        total = 0
+        for line in lines:
+            stripped = line.strip()
+            if not (
+                stripped.startswith("1:")
+                or stripped.startswith("lapw1:")
+                or stripped.startswith("lapw2:")
+            ):
+                continue
+            try:
+                total += int(stripped.rsplit(":", 1)[1].split()[0])
+            except (IndexError, ValueError):
+                continue
+        return total
 
     def _build_machines_lines(self, topo: Topology, suggestion: dict[str, Any]) -> list[str]:  # noqa: C901
         """
@@ -408,6 +631,9 @@ class Wien2kBackend(Backend):
         Blaha et al. (2020), J. Chem. Phys. 152, 074101.
         """
         mode = suggestion.get("mode", "mpi")
+        if hasattr(mode, "value"):
+            mode = mode.value
+        mode = str(mode).lower()
         total_cores = suggestion.get("recommended_total_cores", 1)
         nodes = list(topo.nodes)
         cores_per_node = list(topo.cores_per_node)
@@ -422,52 +648,50 @@ class Wien2kBackend(Backend):
         is_hybrid = params.get("is_hybrid", False)
         is_spin = params.get("is_spin_polarized", False)
         first_node = nodes[0] if nodes else "localhost"
+        omp = max(1, int(omp) if omp else 1)
 
-        # Scale cores_per_node to total_cores
-        available = sum(cores_per_node)
-        if total_cores < available and cores_per_node:
-            ratio = total_cores / available
-            cores_per_node = [max(1, int(c * ratio)) for c in cores_per_node]
-            diff = total_cores - sum(cores_per_node)
-            if diff > 0:
-                for i in range(min(diff, len(cores_per_node))):
-                    cores_per_node[i] += 1
-            elif diff < 0:
-                for i in range(min(-diff, len(cores_per_node))):
-                    if cores_per_node[i] > 1:
-                        cores_per_node[i] -= 1
-
-        # Heterogeneous nodes: rebalance proportionally to node core counts so the
-        # total equals exactly total_cores (no cores lost to integer truncation).
-        # Uses the largest-remainder method to distribute leftover cores fairly.
-        if (topo.heterogeneous or (len(set(cores_per_node)) > 1)) and len(cores_per_node) > 1 and total_cores > 0:
-            weights = [max(c, 1) for c in cores_per_node]
-            wsum = sum(weights)
-            raw = [c * total_cores / wsum for c in weights]
-            floor = [int(r) for r in raw]
-            leftover = total_cores - sum(floor)
-            # Assign leftover cores to nodes with the largest fractional part
-            order = sorted(range(len(raw)), key=lambda i: raw[i] - floor[i], reverse=True)
-            for i in range(leftover):
-                floor[order[i % len(order)]] += 1
-            cores_per_node = floor
+        orig_nodes = list(nodes)
+        nodes, cores_per_node, excluded_nodes = self._allocate_node_cores(
+            nodes, cores_per_node, total_cores
+        )
+        if nodes:
+            first_node = nodes[0]
 
         lines = []
         ts = datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z')
         lines.append(f"# FORGE v0.1.0 | {ts}")
-        lines.append(f"# Mode: {mode.upper()} | Total cores = {sum(cores_per_node)} | OMP per rank = {omp}")
+        header_idx = len(lines)
+        lines.append("")  # Mode/Total cores header filled after rank emission
         lines.append(f"# Nodes: {', '.join(nodes)} | Cores: {cores_per_node}")
         lines.append(f"# Problem: atoms={atoms} kpts={kpoints} nmat={nmat} "
                      f"soc={is_soc} hybrid={is_hybrid} spin={is_spin}")
         is_hetero = topo.heterogeneous or (len(set(cores_per_node)) > 1)
         if is_hetero:
             lines.append("# Heterogeneous cluster — ranks scaled to core ratio")
+        if excluded_nodes:
+            lines.append(
+                f"# node {', '.join(excluded_nodes)} excluded: 0 cores after "
+                f"rebalancing for total_cores={total_cores} across "
+                f"{len(orig_nodes)} heterogeneous nodes"
+            )
         lines.append("")
 
-        # ── lauter allocation ──
+        respect_saturation = suggestion.get("respect_saturation_limit", True)
+        max_efficient = suggestion.get("max_efficient_cores")
+        sat_data = suggestion.get("saturation_data")
+        if max_efficient is None and isinstance(sat_data, dict):
+            max_efficient = sat_data.get("max_efficient_cores")
+
         allocation = self._smart_allocate_cores(
-            total_cores=total_cores, kpoints=kpoints, atoms=atoms,
-            nmat=nmat, mode=mode, num_nodes=len(nodes)
+            total_cores=total_cores,
+            kpoints=kpoints,
+            atoms=atoms,
+            nmat=nmat,
+            mode=mode,
+            num_nodes=len(nodes),
+            max_efficient_cores=max_efficient,
+            respect_saturation_limit=bool(respect_saturation),
+            saturation_data=sat_data if isinstance(sat_data, dict) else None,
         )
 
         # Memory estimate
@@ -497,9 +721,9 @@ class Wien2kBackend(Backend):
             kpar = min(strat["bands_per_group"], kpoints if kpoints > 0 else 1, len(nodes) if nodes else 1)
             lines.append(f"kpar: {kpar}")
             for node, cores in zip(nodes, cores_per_node):
-                ranks_on_node = max(1, cores // omp)
-                for _ in range(ranks_on_node):
-                    lines.append(f"1: {node}:{omp}")
+                if cores <= 0:
+                    continue
+                lines.extend(self._rank_lines_for_node(node, cores, omp))
         elif strat["strategy"] == "fine_grain_elpa":
             lines.append(f"# Fine-grain MPI with ELPA (nmat={nmat}, BLACS-aware)")
             lapw1_cores = allocation.get("lapw1_cores", total_cores // 2)
@@ -517,14 +741,16 @@ class Wien2kBackend(Backend):
         elif strat["strategy"] == "core_parallel":
             lines.append(f"# Core parallelization (nmat={nmat}, large system)")
             for node, cores in zip(nodes, cores_per_node):
+                if cores <= 0:
+                    continue
                 lines.append(f"1: {node}:{cores}")
             lines.append(f"granularity: {granularity}")
         else:  # kpoint parallel — default
             lines.append(f"# K-point parallelization (nkpt={kpoints})")
             for node, cores in zip(nodes, cores_per_node):
-                ranks_on_node = max(1, cores // omp)
-                for _ in range(ranks_on_node):
-                    lines.append(f"1: {node}:{omp}")
+                if cores <= 0:
+                    continue
+                lines.extend(self._rank_lines_for_node(node, cores, omp))
             lines.append(f"granularity: {granularity}")
             if kpoints and kpoints % total_cores != 0:
                 lines.append("extrafine: 1")
@@ -559,6 +785,11 @@ class Wien2kBackend(Backend):
         if not _hw.check_elpa_available() and mode == "mpi" and nmat > 5000:
             lines.append("# WARNING: ELPA not detected. MPI fine-grain diagonalization may be slow.")
             lines.append("# Consider recompiling WIEN2k with ELPA for large matrices.")
+
+        actual_cores = self._sum_described_cores(lines)
+        lines[header_idx] = (
+            f"# Mode: {str(mode).upper()} | Total cores = {actual_cores} | OMP per rank = {omp}"
+        )
 
         return lines
 

@@ -750,7 +750,8 @@ def _score_mode(
 def suggest_optimal_resources(  # noqa: C901
     topo: Topology,
     user_max_cores: Optional[int] = None,
-    optimization_target: OptimizationTarget = OptimizationTarget.TIME
+    optimization_target: OptimizationTarget = OptimizationTarget.TIME,
+    respect_saturation_limit: bool = True,
 ) -> ResourceSuggestion:
     """
     Return optimal resource suggestion based on problem size and hardware.
@@ -760,10 +761,16 @@ def suggest_optimal_resources(  # noqa: C901
     3. Estimate memory footprint with safety factor
     4. Score parallelization modes using Dynamic Roofline model
     5. Select mode based on optimization target (time/energy/cost)
-    6. Distribute cores across nodes (heterogeneous-aware)
-    7. Configure vector_split for I/O bottleneck prevention
-    8. Generate warnings and confidence score
-    9. Validate against scheduler constraints
+    6. Apply Amdahl max_efficient_cores to kpoint/hybrid when auto-sizing
+    7. Distribute cores across nodes (heterogeneous-aware)
+    8. Configure vector_split for I/O bottleneck prevention
+    9. Generate warnings and confidence score
+    10. Validate against scheduler constraints
+
+    respect_saturation_limit
+        When True (default), kpoint/hybrid rank counts are clamped to
+        Amdahl max_efficient_cores. Set False for an explicit ``--cores``
+        request or ``--ignore-saturation``. MPI mode is never clamped.
     """
     backend = _get_current_backend()
     params = backend.detect_problem_size()
@@ -837,18 +844,6 @@ def suggest_optimal_resources(  # noqa: C901
     if user_max_cores and user_max_cores < total_cores_available:
         total_cores_available = user_max_cores
 
-    # Estimate memory requirements
-    if backend_name == "vasp":
-        estimated_mem_gb = estimate_vasp_memory(nmat, nbands, nk, atoms)
-    elif backend_name == "qe":
-        estimated_mem_gb = estimate_qe_memory(nmat, nk, atoms)
-    else:
-        estimated_mem_gb = estimate_memory_footprint_gb(
-            nmat, nbands, rkmax, atoms, is_soc, is_hybrid,
-            is_dftu=is_dftu, is_vdw=is_vdw,
-            total_cores=total_cores_available,
-        )
-
     # Roofline-based bandwidth cap for k-point parallelism
     max_kp_cores_bw = estimate_max_kp_cores_roofline(
         nmat, hw_profile["mem_bw_gb_s"], hw_profile["arch"], total_cores_available,
@@ -889,21 +884,38 @@ def suggest_optimal_resources(  # noqa: C901
     mode = selected_mode
     mode_reason = mode_scores[mode]["reason"]
 
+    saturation = estimate_amdahl_saturation(
+        kpoints=nk,
+        nmat=nmat,
+        atoms=atoms,
+        total_cores_available=total_cores_available,
+        num_nodes=len(topo.nodes),
+        mode=mode,
+    )
+
+    alloc_cores = total_cores_available
+    saturation_clamped = False
+    if respect_saturation_limit and mode in ("kpoint", "hybrid"):
+        cap = max(1, int(saturation["max_efficient_cores"]))
+        if cap < alloc_cores:
+            alloc_cores = cap
+            saturation_clamped = True
+
     # === Core distribution logic ===
     if mode == "kpoint":
-        r = min(nk, total_cores_available, max_kp_cores_bw)
+        r = min(nk, alloc_cores, max_kp_cores_bw)
         t = 1
     elif mode == "mpi":
         r = total_cores_available
         t = 1
     else:  # hybrid
-        r = min(nk, total_cores_available, max_kp_cores_bw)
+        r = min(nk, alloc_cores, max_kp_cores_bw)
         if r == 0:
             r = 1
-        t = total_cores_available // r
+        t = alloc_cores // r
         if t > max_omp_threads:
             t = max_omp_threads
-            r = max(1, total_cores_available // t)
+            r = max(1, alloc_cores // t)
             if r > nk:
                 r = nk
         if t < 1:
@@ -912,15 +924,29 @@ def suggest_optimal_resources(  # noqa: C901
             r = 1
 
     total_cores_used = r * t
-    if total_cores_used > total_cores_available:
-        # Adjust to fit available cores
+    if total_cores_used > alloc_cores:
         if mode == "kpoint":
-            r = min(nk, total_cores_available, max_kp_cores_bw)
+            r = min(nk, alloc_cores, max_kp_cores_bw)
+            t = 1
+        elif mode == "mpi":
+            r = total_cores_available
             t = 1
         else:
-            t = min(max_omp_threads, total_cores_available)
-            r = max(1, total_cores_available // t)
+            t = min(max_omp_threads, alloc_cores)
+            r = max(1, alloc_cores // t)
         total_cores_used = r * t
+
+    if backend_name == "vasp":
+        estimated_mem_gb = estimate_vasp_memory(nmat, nbands, nk, atoms)
+    elif backend_name == "qe":
+        estimated_mem_gb = estimate_qe_memory(nmat, nk, atoms)
+    else:
+        estimated_mem_gb = estimate_memory_footprint_gb(
+            nmat, nbands, rkmax, atoms, is_soc, is_hybrid,
+            is_dftu=is_dftu, is_vdw=is_vdw,
+            total_cores=total_cores_used,
+            omp_threads=t,
+        )
 
     # === Heterogeneous node distribution ===
     cores_per_node_list = distribute_cores_heterogeneous(total_cores_used, topo)
@@ -975,19 +1001,20 @@ def suggest_optimal_resources(  # noqa: C901
             f"algorithmic/hardware limits."
         )
 
-    # === Amdahl's Law saturation analysis ===
-    # Warns user when requested cores exceed useful maximum for their problem.
-    # Based on Amdahl (1967) + Hager & Wellein (2010) scaling analysis
-    # showing peak speedup at 4 nodes declining with more hardware.
-    saturation = estimate_amdahl_saturation(
-        kpoints=nk,
-        nmat=nmat,
-        atoms=atoms,
-        total_cores_available=total_cores_available,
-        num_nodes=len(topo.nodes),
-        mode=mode,
-    )
-    warnings_list.extend(saturation["saturation_warnings"])
+    if saturation_clamped:
+        warnings_list.append(
+            f"Capped at {total_cores_used} cores (Amdahl serial fraction "
+            f"s={saturation['serial_fraction']:.2f}, max useful speedup "
+            f"~{saturation['max_speedup_amdahl']:.0f}x); "
+            f"use --ignore-saturation to override."
+        )
+        skip_prefixes = ("SEVERE SATURATION", "Moderate saturation", "K-point saturation")
+        for w in saturation["saturation_warnings"]:
+            if w.startswith(skip_prefixes):
+                continue
+            warnings_list.append(w)
+    else:
+        warnings_list.extend(saturation["saturation_warnings"])
 
     # === Confidence score calculation ===
     confidence = 1.0
@@ -1023,6 +1050,7 @@ def suggest_optimal_resources(  # noqa: C901
             "efficiency_pct": saturation["efficiency_at_cores"],
             "sweet_spot_cores": saturation["sweet_spot_cores"],
             "kpoint_limit": saturation["kpoint_limit"],
+            "max_efficient_cores": saturation["max_efficient_cores"],
         },
         # Stage-specific configs aligned with WIEN2k parallel execution guide
         lapw0_cfg=StageConfig(
@@ -1055,12 +1083,20 @@ def suggest_optimal_resources(  # noqa: C901
     )
     return suggestion
 
-def recommend(topo: Topology, user_max_cores: Optional[int] = None) -> dict[str, Any]:
+def recommend(
+    topo: Topology,
+    user_max_cores: Optional[int] = None,
+    respect_saturation_limit: bool = True,
+) -> dict[str, Any]:
     """
     Wrapper for backward compatibility.
     Returns simplified dict for legacy code.
     """
-    opt = suggest_optimal_resources(topo, user_max_cores)
+    opt = suggest_optimal_resources(
+        topo,
+        user_max_cores,
+        respect_saturation_limit=respect_saturation_limit,
+    )
     return {
         "mode": opt.mode,
         "omp": opt.omp_threads_per_rank,
