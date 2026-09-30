@@ -293,8 +293,6 @@ def build_auto(  # noqa: C901
         except Exception as e:
             err_msg = f"Backend suggestion validation failed: {e}"
             logger.error(err_msg, exc_info=True)
-            if dry_run:
-                return BuildResult(success=False, error_message=err_msg)
             return BuildResult(success=False, error_message=err_msg)
         blocking_errors: list[str] = []
         for item in backend_validation or []:

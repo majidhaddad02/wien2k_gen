@@ -17,6 +17,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+from ..core.hardware import check_elpa_available, check_mkl_available
 from ..core.topology import factorize_blacs_grid
 from ..logging_config import get_logger
 
@@ -72,7 +73,7 @@ def select_eigensolver(
             recommended_grid=blacs_grid,
         )
 
-    if nmat < 2000:
+    if effective_nmat < 2000:
         return _mk(
             "LAPACK", 32, 1.0,
             f"Small matrix (nmat={nmat}): ScaLAPACK communication overhead "
@@ -96,7 +97,7 @@ def select_eigensolver(
                 True,
             )
 
-        elpa_available = _check_elpa_runtime()
+        elpa_available = check_elpa_available()
         if elpa_available:
             return _mk(
                 elpa_kernel,
@@ -120,11 +121,11 @@ def select_eigensolver(
                 False,
             )
 
-    if 2000 <= nmat < 8000:
+    if 2000 <= effective_nmat < 8000:
         block_size = min(256, max(32, nmat // 8))
 
         if is_soc:
-            elpa_avail = _check_elpa_runtime()
+            elpa_avail = check_elpa_available()
             elpa_block = 32
             return _mk(
                 "ELPA1" if elpa_avail else "ScaLAPACK",
@@ -229,11 +230,12 @@ def get_recommended_wien2k_compile_flags(
 
         flags["environment"] = f"export ELPA_DIR={elpa_dir}"
 
-    if "SCALAPACK" in solver_upper and ("OPTIMIZED" in solver_upper or _check_mkl_runtime()):
-        flags["cflags"] += " -DSCALAPACK -DUSE_SCALAPACK_OPTIMIZED"
+    if "SCALAPACK" in solver_upper:
+        flags["cflags"] += " -DSCALAPACK"
         flags["configure_opts"] += " -DSCALAPACK"
-
-        if _check_mkl_runtime():
+        if "OPTIMIZED" in solver_upper or check_mkl_available():
+            flags["cflags"] += " -DUSE_SCALAPACK_OPTIMIZED"
+        if check_mkl_available():
             flags["cflags"] += " -DMKL_ILP64"
             flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_intel_ilp64"
             flags["environment"] += (
@@ -270,28 +272,3 @@ def _resolve_elpa_dir() -> str:
         return elpa_dir
     return find_elpa_dir() or ""
 
-
-def _check_elpa_runtime() -> bool:
-    """Check if ELPA library is loadable at runtime (import or dlopen)."""
-    from pathlib import Path
-
-    from ..core.locator import find_elpa_dir, find_wienroot
-
-    wienroot = find_wienroot() or ""
-    elpa_dir = find_elpa_dir() or ""
-    paths = [
-        Path(wienroot, "lib", "libelpa.a"),
-        Path(wienroot, "lib", "libelpa.so"),
-        Path(elpa_dir, "lib", "libelpa.so"),
-        Path(elpa_dir, "lib", "libelpa.a"),
-    ]
-    return any(p.exists() for p in paths)
-
-
-def _check_mkl_runtime() -> bool:
-    """Check if Intel MKL is available via environment variables."""
-    import os
-    return any(
-        os.environ.get(var)
-        for var in ["MKLROOT", "MKL_LIB", "INTEL_MKL"]
-    )

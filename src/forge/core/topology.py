@@ -56,13 +56,13 @@ def factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> tuple[int, i
     Uses the algorithm from ScaLAPACK's pdlaset.f: start from sqrt(N), decrement p
     until divisibility, producing an optimal 2D processor grid for ELPA Stage 2.
 
-    For prime total_ranks where no 2D factorization exists, the function returns
-    (1, total_ranks) — a 1D grid — which degrades performance compared to
-    square grids. The exact penalty is problem-dependent; empirical studies
-    (e.g. Marek et al. 2014, J. Phys.: Condens. Matter 26, 213201) show
-    square grids outperform 1D, but the "40%" figure requires verification
-    against the full-text article. Callers must handle this case
-    by redistributing ranks or selecting a nearby composite count.
+    Prefers a pair where p or q is a multiple of ``block_size`` when one exists.
+    If no divisor pair aligns with block_size, returns the most balanced
+    factorization found (minimal |p-q|), not a degenerate 1xN grid.
+
+    For prime total_ranks the only valid factorization is (1, total_ranks) —
+    a 1D grid. That case is mathematical, not a fallback. Callers that need
+    a 2D grid must redistribute ranks or pick a nearby composite count.
 
     Reference:
         ScaLAPACK Users' Guide Chapter 6 (Process Grid);
@@ -73,23 +73,26 @@ def factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> tuple[int, i
         block_size: BLACS block size for distribution alignment (default 32).
 
     Returns:
-        Tuple[p, q] where p <= q and p * q == total_ranks, minimizing |p - q|.
-        For prime total_ranks, returns (1, total_ranks), which is a 1D grid.
+        Tuple[p, q] where p <= q and p * q == total_ranks. Prefers block_size
+        alignment when available; otherwise the most balanced pair.
+        For prime total_ranks, returns (1, total_ranks).
     """
     if total_ranks <= 0:
         return (1, 1)
 
-    last_pq = (1, total_ranks)
+    best_balanced: tuple[int, int] | None = None
     p = math.isqrt(total_ranks)
     while p >= 1:
         if total_ranks % p == 0:
             q = total_ranks // p
-            last_pq = (p, q) if p <= q else (q, p)
+            pair = (p, q) if p <= q else (q, p)
+            if best_balanced is None:
+                best_balanced = pair
             if block_size <= 1 or p % block_size == 0 or q % block_size == 0:
-                return last_pq
+                return pair
         p -= 1
 
-    return last_pq
+    return best_balanced if best_balanced is not None else (1, total_ranks)
 
 
 def _is_blacs_friendly(n: int) -> bool:

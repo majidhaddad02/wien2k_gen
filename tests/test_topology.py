@@ -18,6 +18,7 @@ from forge.core.topology import (
     TopologyValidationError,
     _detect_nvidia_gpus_topology,
     detect_gpu_topology,
+    factorize_blacs_grid,
 )
 
 
@@ -402,3 +403,31 @@ class TestTopologyTypeDetection:
             network_topology={"type": "ethernet"},
         )
         assert topo.detect_topology_type() == TopologyType.STAR
+
+
+class TestFactorizeBlacsGrid:
+    def test_balanced_100(self):
+        assert factorize_blacs_grid(100) == (10, 10)
+
+    def test_balanced_60(self):
+        assert factorize_blacs_grid(60) == (6, 10)
+
+    def test_balanced_48(self):
+        assert factorize_blacs_grid(48) == (6, 8)
+
+    def test_block_aligned_96_preferred(self):
+        assert factorize_blacs_grid(96, block_size=32) == (3, 32)
+
+    def test_prime_returns_1d(self):
+        assert factorize_blacs_grid(13) == (1, 13)
+
+    def test_block_size_one_returns_balanced(self):
+        assert factorize_blacs_grid(100, block_size=1) == (10, 10)
+        assert factorize_blacs_grid(48, block_size=1) == (6, 8)
+
+    def test_block_size_zero_returns_balanced(self):
+        assert factorize_blacs_grid(100, block_size=0) == (10, 10)
+
+    def test_nonpositive_ranks(self):
+        assert factorize_blacs_grid(0) == (1, 1)
+        assert factorize_blacs_grid(-4) == (1, 1)
