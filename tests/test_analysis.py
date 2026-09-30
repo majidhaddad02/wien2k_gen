@@ -5,13 +5,18 @@ Covers WIEN2k/VASP/QE parsers, strong/weak scaling metrics, and report generatio
 
 import pytest
 
+from pathlib import Path
+
 from forge.ui.analysis import (
     AnalysisReport,
+    _parse_wien2k_scf,
     calculate_scaling_metrics,
     calculate_weak_scaling_metrics,
     generate_report,
     parse_scf_log,
 )
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 WIEN2K_SCF_CONTENT = """\
 WIEN2k 23.1
@@ -125,6 +130,19 @@ class TestParseScfLog:
         log.write_text("PWSCF output\nQuantum ESPRESSO v7.0\nk-points calculation")
         result = parse_scf_log(str(log))
         assert result["code"] == "qe"
+
+    def test_fixture_converged_scf(self):
+        content = (_FIXTURES / "scf_converged.scf").read_text()
+        result = _parse_wien2k_scf(content)
+        assert result["converged"] is True
+        assert result["charge_convergence"] == pytest.approx(5e-8)
+        assert result["total_cycles"] == 1
+
+    def test_fixture_not_converged_scf(self):
+        content = (_FIXTURES / "scf_not_converged.scf").read_text()
+        result = _parse_wien2k_scf(content)
+        assert result["converged"] is False
+        assert result["charge_convergence"] == pytest.approx(0.00085)
 
 
 class TestScalingMetrics:

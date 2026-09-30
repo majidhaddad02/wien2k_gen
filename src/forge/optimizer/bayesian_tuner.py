@@ -23,7 +23,7 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ..core.case_parser import CaseFileParser
+from ..core.case_parser import CaseFileParser, parse_scf_output
 from ..logging_config import get_logger
 from .bayesian import _CATEGORICAL_MODES, compute_expected_improvement
 
@@ -204,12 +204,11 @@ class BayesianParameterTuner:
                 capture_output=True, text=True, timeout=600,
             )
 
-            content = result.stdout.lower()
-            if "charge convergence" in content or "energy convergence" in content:
-                import re
-                energies = re.findall(r":ene\s*:\s*.*?(-?\d+\.\d+)", result.stdout.lower())
+            parsed = parse_scf_output(result.stdout)
+            energies = parsed["energy_values"]
+            if parsed["converged"]:
                 if len(energies) >= 2:
-                    delta = abs(float(energies[-1]) - float(energies[-2]))
+                    delta = abs(energies[-1] - energies[-2])
                     if self.verbose:
                         logger.info(f"Converged: rkmax={rkmax:.1f} kppra={kppra} "
                                    f"mixing={mixing:.3f} deltaE={delta:.6f}")
@@ -220,10 +219,8 @@ class BayesianParameterTuner:
                 logger.warning(f"Not converged: rkmax={rkmax:.1f} kppra={kppra} "
                               f"mixing={mixing:.3f}")
 
-            import re
-            energies = re.findall(r":ene\s*:\s*.*?(-?\d+\.\d+)", result.stdout.lower())
             if len(energies) >= 2:
-                delta = abs(float(energies[-1]) - float(energies[-2]))
+                delta = abs(energies[-1] - energies[-2])
                 return min(delta * 10, 1e10)
 
             return 1e10

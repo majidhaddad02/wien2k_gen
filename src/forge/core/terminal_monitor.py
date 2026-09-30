@@ -140,16 +140,16 @@ def _parse_scf_output(filepath: Path) -> SCFSnapshot:
     except Exception:
         return snap
 
-    energy_matches = re.findall(r":ENE\s*:\s*.*?(-?\d+\.\d+)", content)
-    if energy_matches:
-        energies = [float(e) for e in energy_matches]
+    from .case_parser import parse_scf_output
+    parsed = parse_scf_output(content)
+    energies = parsed["energy_values"]
+    if energies:
         snap.energy = energies[-1]
         if len(energies) >= 2:
             snap.delta_energy = abs(energies[-1] - energies[-2])
 
-    charge_matches = re.findall(r":DIS\s*:\s*.*?(\d+\.\d+)", content)
-    if charge_matches:
-        snap.charge_distance = float(charge_matches[-1])
+    if parsed["charge_convergence"] is not None:
+        snap.charge_distance = float(parsed["charge_convergence"])
 
     cycle_matches = re.findall(r"\*\*.*?(?:cycle|lapw|ITERATION)\s*[:#]?\s*(\d+)", content, re.IGNORECASE)
     if cycle_matches:

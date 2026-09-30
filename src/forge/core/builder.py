@@ -283,19 +283,37 @@ def build_auto(  # noqa: C901
         suggestion_dict["warnings"] = []
     suggestion_dict["warnings"].extend(safety_warnings)
 
-    # Backend-specific suggestion validation
+    # Backend-specific suggestion validation.
+    # Matches pipeline.py preflight_check: ERROR-severity findings abort both
+    # dry-run preview and real writes (pipeline raises before the dry_run branch).
     validate_sugg_method = getattr(backend, 'validate_suggestion', None)
     if callable(validate_sugg_method):
         try:
             backend_validation = validate_sugg_method(suggestion_dict)
-            if backend_validation:
-                suggestion_dict["warnings"].extend(backend_validation)
         except Exception as e:
-            logger.warning(f"Backend suggestion validation failed: {e}")
-            
+            err_msg = f"Backend suggestion validation failed: {e}"
+            logger.error(err_msg, exc_info=True)
+            if dry_run:
+                return BuildResult(success=False, error_message=err_msg)
+            return BuildResult(success=False, error_message=err_msg)
+        blocking_errors: list[str] = []
+        for item in backend_validation or []:
+            severity = getattr(item, "severity", None)
+            message = getattr(item, "message", None)
+            if severity == "error" and message is not None:
+                blocking_errors.append(message)
+            elif severity == "warning" and message is not None:
+                suggestion_dict["warnings"].append(message)
+            elif isinstance(item, str):
+                suggestion_dict["warnings"].append(item)
+        if blocking_errors:
+            err_msg = "; ".join(blocking_errors)
+            logger.error(f"Suggestion validation errors detected: {err_msg}")
+            return BuildResult(success=False, error_message=err_msg)
+
     if safety_warnings and any("oversubscription" in w.lower() for w in safety_warnings):
         logger.warning("Critical oversubscription detected in suggestion; proceeding with caution.")
-        
+
     # 3. Dry-Run Mode
     if dry_run:
         try:

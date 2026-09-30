@@ -370,9 +370,11 @@ class WorkflowExecutor:
             else:
                 return True
 
+        from .case_parser import parse_scf_output
+
         try:
-            content = scf_path.read_text(encoding="utf-8", errors="replace").lower()
-            if any(phrase in content for phrase in ("charge convergence", "energy convergence", "scf cycle converged")):
+            content = scf_path.read_text(encoding="utf-8", errors="replace")
+            if parse_scf_output(content)["converged"]:
                 return True
         except Exception:
             logger.debug("Suppressed exception in _check_convergence()", exc_info=True)
@@ -380,8 +382,8 @@ class WorkflowExecutor:
         try:
             dayfile = scf_path.with_suffix(".dayfile")
             if dayfile.exists():
-                content = dayfile.read_text(encoding="utf-8", errors="replace").lower()
-                if ".dayfile" in str(dayfile) and "converged" in content and "not converged" not in content:
+                content = dayfile.read_text(encoding="utf-8", errors="replace")
+                if parse_scf_output(content)["converged"]:
                     return True
         except Exception:
             logger.debug("Suppressed exception in _check_convergence()", exc_info=True)
@@ -519,13 +521,14 @@ def run_wien2k_pipeline(  # noqa: C901
             if not scf_path.exists():
                 scf_path = Path(f"{case_name}.scf")
             if scf_path.exists():
+                from .case_parser import parse_scf_output
                 content = scf_path.read_text()
-                energy_match = re.search(r':ENE\s*:\s*.*?(-?\d+\.\d+)', content, re.IGNORECASE)
-                if energy_match:
-                    result["total_energy_ry"] = float(energy_match.group(1))
+                parsed = parse_scf_output(content)
+                if parsed["total_energy_ry"] is not None:
+                    result["total_energy_ry"] = float(parsed["total_energy_ry"])
 
                 iter_pattern = re.findall(r':ITE\s*:\s*\d+', content)
-                result["scf_iterations"] = len(iter_pattern)
+                result["scf_iterations"] = len(iter_pattern) or int(parsed["scf_iterations"] or 0)
 
                 for line in content.split('\n'):
                     if 'MIX' in line.upper():
@@ -534,7 +537,7 @@ def run_wien2k_pipeline(  # noqa: C901
                             result["mixing_used"] = float(mix_match.group(1))
 
                 if result["scf_iterations"] > 0:
-                    result["converged"] = ":DIS" in content and "CHARGE CONVERGENCE" in content.upper()
+                    result["converged"] = parsed["converged"]
 
             create_scf_checkpoint(case_name, label="pipeline_done")
 

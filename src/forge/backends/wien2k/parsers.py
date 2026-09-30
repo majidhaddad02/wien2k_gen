@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 if TYPE_CHECKING:
     from ...types import Wien2kFlags
 
+from ...core.case_parser import parse_scf_output
 from ...logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -61,10 +62,8 @@ def parse_output(log_path: Path) -> dict[str, Any]:
         return {"exists": False, "converged": None, "errors": [], "timing": {}}
 
     try:
-        content = log_path.read_text(encoding="utf-8", errors="replace").lower()
-        converged = any(phrase in content for phrase in [
-            "charge convergence", "energy convergence", "scf cycle converged"
-        ])
+        content = log_path.read_text(encoding="utf-8", errors="replace")
+        parsed = parse_scf_output(content)
 
         timing = {}
         time_pattern = r"(\w+):\s+cpu time:\s+([\d\.]+)"
@@ -72,23 +71,12 @@ def parse_output(log_path: Path) -> dict[str, Any]:
             prog = match.group(1).lower()
             timing[prog] = float(match.group(2))
 
-        errors = []
-        error_patterns = {
-            "qtl-b": "QTL-B error: check case.in1 and convergence parameters",
-            "lapw": "LAPWx crash: check MPI communication and memory limits",
-            "error while loading shared libraries": "Missing library: check LD_LIBRARY_PATH and WIENROOT",
-            "segmentation fault": "Segmentation fault: check memory limits and array bounds",
-        }
-        for pattern, msg in error_patterns.items():
-            if pattern in content:
-                errors.append(msg)
-
         return {
             "exists": True,
-            "converged": converged,
-            "errors": errors,
+            "converged": parsed["converged"],
+            "errors": list(parsed["errors"]),
             "timing": timing,
-            "content_snippet": content[:1000] if len(content) > 1000 else content
+            "content_snippet": content[:1000] if len(content) > 1000 else content,
         }
     except Exception as e:
         logger.warning(f"Could not parse output {log_path}: {e}")
@@ -154,30 +142,26 @@ def parse_dayfile(dayfile_path: str = "case.dayfile") -> DayfileResult:  # noqa:
                     "lapw1 is the bottleneck. Consider increasing k-point parallelization (kpar)."
                 )
 
-    # Convergence status
-    lower_content = content.lower()
-    if "charge convergence" in lower_content or "energy convergence" in lower_content:
-        result["convergence"] = "converged"
-    elif "not converged" in lower_content or "diverged" in lower_content:
+    parsed = parse_scf_output(content)
+    # Explicit failure/divergence overrides the numeric :DIS comparison.
+    if parsed["explicit_failure"]:
         result["convergence"] = "not_converged"
-        result["warnings"].append("SCF did not converge. Check mixing parameters and case.in1.")
+        result["warnings"].append(
+            "SCF did not converge. Check mixing parameters and case.in1."
+        )
+    elif parsed["converged"]:
+        result["convergence"] = "converged"
+    elif parsed["charge_values"]:
+        result["convergence"] = "not_converged"
+
+    result["errors"].extend(parsed["errors"])
 
     # Count completed cycles
     cycle_matches = re.findall(r"cycle\s+(\d+)", content, re.IGNORECASE)
     if cycle_matches:
         result["cycles_completed"] = max(int(c) for c in cycle_matches)
-
-    # Detect common errors
-    error_patterns = {
-        "QTL-B": "QTL-B error: check case.in1, RKMAX, and convergence parameters",
-        "LAPWx crashed": "LAPWx crashed: check MPI communication, memory limits, and case.struct",
-        "error while loading shared libraries": "Missing shared library: check LD_LIBRARY_PATH and WIENROOT",
-        "segmentation fault": "Segmentation fault: check memory limits and array bounds",
-        "MPI_ABORT": "MPI abort: check network connectivity and process placement",
-    }
-    for pattern, msg in error_patterns.items():
-        if pattern in content:
-            result["errors"].append(msg)
+    elif parsed["total_cycles"]:
+        result["cycles_completed"] = int(parsed["total_cycles"])
 
     return result
 

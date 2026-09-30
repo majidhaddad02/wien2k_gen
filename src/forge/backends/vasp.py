@@ -33,7 +33,7 @@ from ..core.hardware import (
 from ..core.topology import Topology
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
-from .base import Backend, ProblemSize
+from .base import Backend, ProblemSize, ValidationIssue
 
 logger = get_logger(__name__)
 
@@ -95,36 +95,41 @@ class VaspBackend(Backend):
             launcher = f"srun -n {total_cores} --hint=nomultithread" if "SLURM_JOB_ID" in os.environ else f"mpirun -np {total_cores}"
             return f"{launcher} {binary}"
 
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
         """Validate suggestion against VASP-specific mathematical constraints."""
-        errors = []
+        issues: list[ValidationIssue] = []
         mode = suggestion.get("mode", "mpi")
         total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
         nkpts = suggestion.get("problem_params", {}).get("kpoints", 0)
         cores_per_node = suggestion.get("cores_per_node", [1])
 
-        # KPAR divisibility check
         kpar = suggestion.get("kpar", 1)
         if kpar > 1 and nkpts > 0 and nkpts % kpar != 0:
-                errors.append(f"KPAR={kpar} does not divide NKPTS={nkpts}. VASP will crash or run inefficiently.")
+            issues.append(ValidationIssue(
+                "error",
+                f"KPAR={kpar} does not divide NKPTS={nkpts}. VASP will crash or run inefficiently.",
+            ))
 
-        # NCORE divisibility check
         ncore = suggestion.get("ncore", 1)
         if ncore > 1:
-            # NCORE should divide cores_per_rank (which is cores_per_node for MPI, or omp for hybrid)
             cores_per_rank = omp if mode == "hybrid" else cores_per_node[0] if cores_per_node else 1
             if cores_per_rank % ncore != 0:
-                errors.append(f"NCORE={ncore} does not divide cores_per_rank={cores_per_rank}.")
+                issues.append(ValidationIssue(
+                    "error",
+                    f"NCORE={ncore} does not divide cores_per_rank={cores_per_rank}.",
+                ))
 
-        # Memory sanity check (VASP scales poorly with large NGX*NGY*NGZ)
         est_mem_mb = suggestion.get("estimated_memory_mb", 2048)
         mem_per_core = est_mem_mb / max(1, total_cores)
         job_limit_mb = get_job_memory_limit_mb()
         if job_limit_mb and mem_per_core > job_limit_mb * 0.9:
-            errors.append(f"Estimated memory per core ({mem_per_core:.0f} MB) exceeds job limit.")
+            issues.append(ValidationIssue(
+                "error",
+                f"Estimated memory per core ({mem_per_core:.0f} MB) exceeds job limit.",
+            ))
 
-        return errors
+        return issues
 
     def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """Write run_optimized.sh with environment setup and scheduler integration."""

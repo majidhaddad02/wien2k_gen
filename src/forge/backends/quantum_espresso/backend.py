@@ -34,7 +34,7 @@ from ...logging_config import get_logger
 from ...utils.atomic_write import atomic_write
 
 # Adjust imports to match project package structure
-from ..base import Backend, ProblemSize
+from ..base import Backend, ProblemSize, ValidationIssue
 from .config_generator import generate_qe_config
 
 logger = get_logger(__name__)
@@ -159,54 +159,62 @@ class QuantumEspressoBackend(Backend):
             flags_str = " " + flags_str
         return f"{omp_prefix}{launcher} {exec_name}{flags_str} -input {input_file}"
 
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
         """Validate suggestion against QE-specific mathematical & memory constraints."""
-        errors = []
+        issues: list[ValidationIssue] = []
         total_cores = suggestion.get("recommended_total_cores", 1)
         nkpts = suggestion.get("problem_params", {}).get("kpoints", 0)
 
-        # QE domain decomposition: nproc = npool * nband * ntg * procs_per_task_group
-        # ndiag is a square sub-group of the band group, NOT a multiplicative factor.
         npool = suggestion.get("npool", 1)
         ndiag = suggestion.get("ndiag", 1)
         nband = suggestion.get("nband", 1)
         ntg = suggestion.get("ntg", 1)
 
-        # Multiplicative factors must divide total cores
         proc_product = npool * nband * ntg
         if total_cores % proc_product != 0:
-            errors.append(
+            issues.append(ValidationIssue(
+                "error",
                 f"QE domain decomposition invalid: npool*nband*ntg ({proc_product}) "
-                f"does not divide total_cores ({total_cores}). MPI ranks must be exact multiple."
-            )
+                f"does not divide total_cores ({total_cores}). MPI ranks must be exact multiple.",
+            ))
 
-        # ndiag must be a perfect square (ScaLAPACK 2D grid) not exceeding procs per band group
         if ndiag > 1:
             import math as _math
             n_sqrt = _math.isqrt(ndiag)
             if n_sqrt * n_sqrt != ndiag:
-                errors.append(f"QE ndiag must be a perfect square (n^2). Got {ndiag}.")
+                issues.append(ValidationIssue(
+                    "error",
+                    f"QE ndiag must be a perfect square (n^2). Got {ndiag}.",
+                ))
             procs_per_band_group = total_cores // max(1, npool * nband)
             if ndiag > procs_per_band_group:
-                errors.append(
+                issues.append(ValidationIssue(
+                    "error",
                     f"QE ndiag ({ndiag}) exceeds procs per band group ({procs_per_band_group}). "
-                    f"Diagonalization group is a sub-group of the band group."
-                )
+                    f"Diagonalization group is a sub-group of the band group.",
+                ))
 
-        # K-point pool constraint
         if nkpts > 0 and npool > nkpts:
-            errors.append(f"npool ({npool}) exceeds k-point count ({nkpts}). QE will crash.")
+            issues.append(ValidationIssue(
+                "error",
+                f"npool ({npool}) exceeds k-point count ({nkpts}). QE will crash.",
+            ))
         if nkpts > 0 and nkpts % npool != 0:
-            errors.append(f"nkpts ({nkpts}) not divisible by npool ({npool}). Load imbalance expected.")
+            issues.append(ValidationIssue(
+                "warning",
+                f"nkpts ({nkpts}) not divisible by npool ({npool}). Load imbalance expected.",
+            ))
 
-        # Memory sanity check
         est_mem_mb = suggestion.get("estimated_memory_mb", 2048)
         mem_per_core = est_mem_mb / max(1, total_cores)
         job_limit_mb = get_job_memory_limit_mb()
         if job_limit_mb and mem_per_core > job_limit_mb * 0.9:
-            errors.append(f"Estimated memory per core ({mem_per_core:.0f} MB) exceeds job limit.")
+            issues.append(ValidationIssue(
+                "error",
+                f"Estimated memory per core ({mem_per_core:.0f} MB) exceeds job limit.",
+            ))
 
-        return errors
+        return issues
 
     def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
         """Write run_qe_optimized.sh with environment setup, NUMA binding, and scheduler integration."""

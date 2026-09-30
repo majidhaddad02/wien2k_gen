@@ -15,6 +15,7 @@ import pytest
 # Ensure lazy-loader doesn't block patch() resolution
 import forge.backends as _be
 import forge.backends.wien2k
+from forge.backends.base import ValidationIssue
 from forge.backends.wien2k.core import Wien2kBackend, auto_detect_optimal_rkmax
 from forge.backends.wien2k.parsers import (
     detect_io_bottleneck,
@@ -25,7 +26,11 @@ from forge.backends.wien2k.parsers import (
     parse_output,
 )
 from forge.core.topology import Topology
+from forge.core.case_parser import parse_scf_output
 from forge.types import Wien2kFlags
+from forge.ui.analysis import _parse_wien2k_scf
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 _be.wien2k = sys.modules.get("forge.backends.wien2k", forge.backends.wien2k)
 
@@ -171,7 +176,7 @@ DAYFILE_CONTENT = """Calculating Si in Fd-3m
     MIXER: starting at 2025-01-15_10:31:40 ended at 2025-01-15_10:31:45 cpu time: 5.100
 cycle 1
     LAPW1: starting at 2025-01-15_10:32:00 ended at 2025-01-15_10:32:30 cpu time: 175.000
-charge convergence
+:DIS  : CHARGE CONVERGENCE = 0.00000005
 cycle 10
 """
 
@@ -531,72 +536,173 @@ class TestValidateSuggestion:
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_valid_suggestion(self, _elpa, _mem, backend):
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "mpi",
             "recommended_total_cores": 16,
             "omp_threads_per_rank": 1,
         })
-        assert errors == []
+        assert issues == []
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_zero_cores_invalid(self, _elpa, _mem, backend):
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "mpi",
             "recommended_total_cores": 0,
         })
-        assert any("must be > 0" in e for e in errors)
+        assert any("must be > 0" in i.message for i in issues)
+        assert any(i.severity == "error" for i in issues)
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_hybrid_mode_omp_zero(self, _elpa, _mem, backend):
-        with pytest.raises(ZeroDivisionError):
-            backend.validate_suggestion({
-                "mode": "hybrid",
-                "recommended_total_cores": 16,
-                "omp_threads_per_rank": 0,
-            })
+        issues = backend.validate_suggestion({
+            "mode": "hybrid",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 0,
+        })
+        assert any("must be > 0" in i.message for i in issues)
+        assert all(isinstance(i, ValidationIssue) for i in issues)
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_hybrid_cores_not_divisible(self, _elpa, _mem, backend):
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "hybrid",
             "recommended_total_cores": 15,
             "omp_threads_per_rank": 4,
         })
-        assert any("not divisible" in e for e in errors)
+        assert any("not divisible" in i.message for i in issues)
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=4000)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_memory_limit_violation(self, _elpa, _mem, backend):
         """High estimated_memory_gb with low job limit triggers error."""
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "mpi",
             "recommended_total_cores": 4,
             "estimated_memory_gb": 20.0,  # 5 GB/core → 5120 MB/core
         })
-        assert any("exceeds job limit" in e for e in errors)
+        assert any("exceeds job limit" in i.message for i in issues)
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_large_nmat_no_elpa_warns(self, _elpa, _mem, backend):
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "mpi",
             "recommended_total_cores": 32,
             "nmat": 25000,
         })
-        assert any("ELPA" in e for e in errors)
+        assert any("ELPA" in i.message for i in issues)
 
     @patch("forge.backends.wien2k.core.get_job_memory_limit_mb", return_value=None)
     @patch("forge.core.hardware.check_elpa_available", return_value=True)
     def test_large_nmat_elpa_ok(self, _elpa, _mem, backend):
-        errors = backend.validate_suggestion({
+        issues = backend.validate_suggestion({
             "mode": "mpi",
             "recommended_total_cores": 32,
             "nmat": 25000,
         })
-        assert not any("ELPA" in e for e in errors)
+        assert not any("ELPA" in i.message for i in issues)
+
+
+# =============================================================================
+# Tests: write_auxiliary_files (omp / MKL / KPAR / BLACS)
+# =============================================================================
+
+class TestWriteAuxiliaryFiles:
+    def _problem(self, **overrides):
+        base = {
+            "atoms": 10, "kpoints": 8, "nmat": 1200,
+            "is_soc": False, "is_hybrid": False, "is_spin_polarized": False,
+        }
+        base.update(overrides)
+        return base
+
+    def test_soc_hybrid_writes_mkl_one(self, backend, twin_topo, tmp_path, monkeypatch):
+        """SOC + omp>1 must write MKL_NUM_THREADS=1 into parallel_options."""
+        monkeypatch.chdir(tmp_path)
+        sug = {
+            "mode": "hybrid",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 4,
+            "nmat": 1200,
+            "is_soc": True,
+            "elpa_solver": "",
+        }
+        with (
+            patch.object(backend, "_detect_problem_size", return_value=self._problem(is_soc=True)),
+            patch("forge.core.locator.find_wienroot", return_value=str(tmp_path)),
+        ):
+            backend.write_auxiliary_files(twin_topo, sug)
+        text = (tmp_path / "parallel_options").read_text()
+        assert "OMP_NUM_THREADS=4" in text
+        assert "MKL_NUM_THREADS=1" in text
+        assert "OMP_GLOBAL=4" in text
+
+    def test_kpar_matches_machines_for_band_parallel(
+        self, backend, simple_topo, tmp_path, monkeypatch
+    ):
+        """KPAR in parallel_options and run_optimized.sh matches .machines kpar."""
+        monkeypatch.chdir(tmp_path)
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 1,
+            "nmat": 6000,
+            "is_hybrid": True,
+            "elpa_solver": "",
+        }
+        problem = self._problem(nmat=6000, kpoints=8, is_hybrid=True)
+        with patch.object(backend, "_detect_problem_size", return_value=problem):
+            with patch("forge.core.hardware.check_elpa_available", return_value=False):
+                machines = backend.generate_input(simple_topo, sug)
+            kpar_line = [ln for ln in machines.splitlines() if ln.startswith("kpar:")]
+            assert kpar_line, "expected kpar in .machines for band_parallel"
+            machines_kpar = int(kpar_line[0].split(":")[1].strip())
+            with patch("forge.core.locator.find_wienroot", return_value=str(tmp_path)):
+                backend.write_auxiliary_files(simple_topo, sug)
+        po = (tmp_path / "parallel_options").read_text()
+        script = (tmp_path / "run_optimized.sh").read_text()
+        assert f"KPAR={machines_kpar}" in po
+        assert f"export KPAR={machines_kpar}" in script
+        assert machines_kpar != 0
+
+    def test_blacs_grid_uses_clamped_ranks(self, backend, tmp_path, monkeypatch):
+        """BLACS_GRID must use Amdahl/allocated ranks, not raw topology core sum."""
+        monkeypatch.chdir(tmp_path)
+        topo = Topology(
+            nodes=["n01", "n02", "n03", "n04"],
+            cores_per_node=[32, 32, 32, 32],
+            env_type="slurm",
+        )
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 64,
+            "omp_threads_per_rank": 1,
+            "nmat": 8000,
+            "elpa_solver": "ELPA2",
+        }
+        with (
+            patch.object(backend, "_detect_problem_size", return_value=self._problem(nmat=8000)),
+            patch("forge.core.locator.find_wienroot", return_value=str(tmp_path)),
+        ):
+            backend.write_auxiliary_files(topo, sug)
+        script = (tmp_path / "run_optimized.sh").read_text()
+        from forge.core.topology import factorize_blacs_grid
+        expected_p, expected_q = factorize_blacs_grid(64)
+        raw_p, raw_q = factorize_blacs_grid(128)
+        assert expected_p > 1
+        assert expected_q > 1
+        assert f'BLACS_GRID="{expected_p}x{expected_q}"' in script
+        assert f'BLACS_GRID="{raw_p}x{raw_q}"' not in script
+
+    def test_resolve_kpar_zero_for_non_band(self):
+        assert Wien2kBackend._resolve_kpar({"strategy": "kpoint_parallel"}, 8, ["n1"]) == 0
+
+    def test_resolve_kpar_clamps_to_nodes(self):
+        strat = {"strategy": "band_parallel", "bands_per_group": 4}
+        assert Wien2kBackend._resolve_kpar(strat, 8, ["n1", "n2"]) == 2
 
 
 # =============================================================================
@@ -666,7 +772,10 @@ class TestParseOutput:
 
     def test_converged_output(self, tmp_path):
         log = tmp_path / "case.scf"
-        log.write_text("Charge convergence achieved. CPU time: 123.45")
+        log.write_text(
+            ":ENE  : TOTAL ENERGY    =      -12345.67890123\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00000005\n"
+        )
         result = parse_output(log)
         assert result["exists"] is True
         assert result["converged"] is True
@@ -709,6 +818,51 @@ class TestParseOutput:
         log.write_text("x" * 1500)
         result = parse_output(log)
         assert len(result["content_snippet"]) <= 1000
+
+    def test_fixture_converged_scf(self):
+        result = parse_output(_FIXTURES / "scf_converged.scf")
+        assert result["exists"] is True
+        assert result["converged"] is True
+        assert result["errors"] == []
+
+    def test_fixture_not_converged_scf(self):
+        result = parse_output(_FIXTURES / "scf_not_converged.scf")
+        assert result["exists"] is True
+        assert result["converged"] is False
+        assert result["errors"] == []
+
+    def test_keyword_presence_is_not_converged(self, tmp_path):
+        log = tmp_path / "case.scf"
+        log.write_text("Charge convergence achieved. energy convergence.\n")
+        result = parse_output(log)
+        assert result["converged"] is False
+
+    def test_lapw_timing_is_not_a_crash(self, tmp_path):
+        log = tmp_path / "case.scf"
+        log.write_text(
+            "LAPW0: starting at 2025-01-15_10:30:15 ended at 2025-01-15_10:30:45 cpu time: 30.500\n"
+            "LAPW1: starting at 2025-01-15_10:30:45 ended at 2025-01-15_10:31:15 cpu time: 180.200\n"
+            "LAPW2: starting at 2025-01-15_10:31:15 ended at 2025-01-15_10:31:40 cpu time: 75.300\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00000005\n"
+        )
+        result = parse_output(log)
+        assert result["converged"] is True
+        assert result["errors"] == []
+        assert not any("crash" in e.lower() for e in result["errors"])
+
+    def test_lapwx_crash_still_detected(self, tmp_path):
+        log = tmp_path / "case.scf"
+        log.write_text("LAPW1 crashed: MPI error\n")
+        result = parse_output(log)
+        assert any("LAPWx crashed" in e for e in result["errors"])
+
+    def test_shared_parser_agrees_on_fixtures(self):
+        conv = (_FIXTURES / "scf_converged.scf").read_text()
+        fail = (_FIXTURES / "scf_not_converged.scf").read_text()
+        assert parse_scf_output(conv)["converged"] is True
+        assert _parse_wien2k_scf(conv)["converged"] is True
+        assert parse_scf_output(fail)["converged"] is False
+        assert _parse_wien2k_scf(fail)["converged"] is False
 
 
 # =============================================================================
@@ -761,6 +915,39 @@ class TestParseDayfile:
         monkeypatch.chdir(tmp_path)
         result = parse_dayfile("nonexistent.dayfile")
         assert result["exists"] is True
+
+    def test_status_lines_do_not_mask_failure(self, tmp_path):
+        df = tmp_path / "case.dayfile"
+        df.write_text(
+            "cycle 1\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00100000\n"
+            "energy convergence\n"
+            "cycle 8\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00090000\n"
+            "charge convergence\n"
+            "** SCF NOT CONVERGED\n"
+            "diverged\n"
+        )
+        result = parse_dayfile(str(df))
+        assert result["convergence"] == "not_converged"
+
+    def test_above_threshold_is_not_converged(self, tmp_path):
+        df = tmp_path / "case.dayfile"
+        df.write_text(
+            "cycle 1\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00100000\n"
+            "cycle 2\n"
+            ":DIS  : CHARGE CONVERGENCE = 0.00050000\n"
+        )
+        result = parse_dayfile(str(df))
+        assert result["convergence"] == "not_converged"
+
+    def test_fixture_not_converged_as_dayfile(self, tmp_path):
+        content = (_FIXTURES / "scf_not_converged.scf").read_text()
+        df = tmp_path / "case.dayfile"
+        df.write_text(content)
+        result = parse_dayfile(str(df))
+        assert result["convergence"] == "not_converged"
 
 
 # =============================================================================
@@ -1043,7 +1230,7 @@ class TestAutoRKMax:
             "atoms": 10, "kpoints": 8, "is_soc": False, "is_hybrid": False,
         }
         nmat_at_6 = 1000
-        nmat_at_9 = int(round(1000 * (9.0 / 6.0) ** 3))
+        nmat_at_9 = round(1000 * (9.0 / 6.0) ** 3)
         pred_from_6 = backend._predict_nmat_for_rkmax(
             7.5, 6.0, nmat_at_6, _RMTS, _VOLUME
         )

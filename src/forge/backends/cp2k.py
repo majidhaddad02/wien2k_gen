@@ -26,7 +26,7 @@ from typing import Any, Optional
 from ..core.topology import Topology
 from ..logging_config import get_logger
 from ..utils.atomic_write import atomic_write
-from .base import Backend, ProblemSize, ResourceEstimate
+from .base import Backend, ProblemSize, ResourceEstimate, ValidationIssue
 
 logger = get_logger(__name__)
 
@@ -121,7 +121,7 @@ class CP2KBackend(Backend):
         else:
             return f"mpirun -np {total_cores} {binary} -i {inp_file} -o {out_file}"
 
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
         """
         Validate suggestion against CP2K-specific constraints.
 
@@ -132,28 +132,34 @@ class CP2KBackend(Backend):
             suggestion: Resource allocation suggestion to validate.
 
         Returns:
-            List of validation error messages (empty if valid).
+            List of ValidationIssue (error = blocking, warning = advisory).
         """
-        errors = []
+        issues: list[ValidationIssue] = []
         total_cores = suggestion.get("recommended_total_cores", 1)
         omp = suggestion.get("omp_threads_per_rank", 1)
         mode = suggestion.get("mode", "mpi")
 
         if total_cores <= 0:
-            errors.append("recommended_total_cores must be > 0")
+            issues.append(ValidationIssue("error", "recommended_total_cores must be > 0"))
 
         if omp <= 0:
-            errors.append("omp_threads_per_rank must be > 0")
+            issues.append(ValidationIssue("error", "omp_threads_per_rank must be > 0"))
 
-        if mode == "hybrid" and total_cores % omp != 0:
-            errors.append("total_cores not divisible by omp_threads_per_rank for hybrid mode")
+        if mode == "hybrid" and omp > 0 and total_cores % omp != 0:
+            issues.append(ValidationIssue(
+                "error",
+                "total_cores not divisible by omp_threads_per_rank for hybrid mode",
+            ))
 
         problem_params = suggestion.get("problem_params", {})
         atoms = problem_params.get("atoms", 10) or 10
         if atoms > 1000 and mode == "mpi":
-            errors.append("Large system (>1000 atoms) may benefit from hybrid MPI+OpenMP mode.")
+            issues.append(ValidationIssue(
+                "warning",
+                "Large system (>1000 atoms) may benefit from hybrid MPI+OpenMP mode.",
+            ))
 
-        return errors
+        return issues
 
     def estimate_resources(self, params: ProblemSize, topo: Topology) -> ResourceEstimate:
         """

@@ -23,7 +23,6 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa: C901
     console = get_console()
-    import re as _re
 
     scf_path = None
     if args.log:
@@ -42,12 +41,11 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
 
     content = scf_path.read_text(encoding="utf-8", errors="replace")
 
-    energy_matches = _re.findall(r":ENE\s*:\s*.*?(-?\d+\.\d+)", content)
-    charge_matches = _re.findall(r":DIS\s*:\s*.*?(\d+\.\d+)", content)
-
-    energies = [float(e) for e in energy_matches]
-    charges = [float(c) for c in charge_matches]
-    converged = "charge convergence" in content.lower() or "energy convergence" in content.lower()
+    from ..core.case_parser import parse_scf_output
+    parsed = parse_scf_output(content)
+    energies = list(parsed["energy_values"])
+    charges = list(parsed["charge_values"])
+    converged = parsed["converged"]
 
     table = Table(title=f"SCF Diagnostics: {scf_path.name}", border_style="blue")
     table.add_column("Metric", style="cyan")

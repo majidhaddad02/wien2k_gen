@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import math
 import os
 import shutil
 from pathlib import Path
@@ -22,7 +21,7 @@ from ...core.hardware import (
 from ...core.topology import Topology
 from ...logging_config import get_logger
 from ...utils.atomic_write import atomic_write
-from ..base import Backend, ProblemSize
+from ..base import Backend, ProblemSize, ValidationIssue
 from .parsers import (
     DayfileResult,
     detect_io_bottleneck,
@@ -138,44 +137,66 @@ class Wien2kBackend(Backend):
                 return f"{calc_base} -p -np {ranks} {' '.join(extra_parts)}"
             return f"{calc_base} -p -np {ranks}"
 
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
-        """Validate suggestion against WIEN2k-specific constraints."""
-        errors = []
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
+        """Validate suggestion against WIEN2k-specific constraints.
+
+        Returns ValidationIssue items. severity="error" is fatal (cores<=0,
+        hybrid divisibility, memory over job limit, nmat>20000 without ELPA);
+        severity="warning" is advisory.
+        """
+        issues: list[ValidationIssue] = []
         mode = suggestion.get("mode", "")
         cores = suggestion.get("recommended_total_cores", 0)
         omp = suggestion.get("omp_threads_per_rank", 1)
         nmat = suggestion.get("nmat", 0)
 
         if cores <= 0:
-            errors.append("recommended_total_cores must be > 0")
+            issues.append(ValidationIssue("error", "recommended_total_cores must be > 0"))
         if mode == "hybrid" and omp <= 0:
-            errors.append("omp_threads_per_rank must be > 0 for hybrid mode")
-        if mode == "hybrid" and cores % omp != 0:
-            errors.append(
-                f"total_cores ({cores}) not divisible by omp_threads ({omp}) for hybrid mode"
-            )
+            issues.append(ValidationIssue(
+                "error", "omp_threads_per_rank must be > 0 for hybrid mode"
+            ))
+        if mode == "hybrid" and omp > 0 and cores % omp != 0:
+            issues.append(ValidationIssue(
+                "error",
+                f"total_cores ({cores}) not divisible by omp_threads ({omp}) for hybrid mode",
+            ))
 
-        # Memory sanity check
         est_mem_gb = suggestion.get("estimated_memory_gb") or 2.0
         mem_per_core_mb = (est_mem_gb * 1024) / max(1, cores)
         job_limit_mb = get_job_memory_limit_mb()
         if job_limit_mb and mem_per_core_mb > job_limit_mb * 0.9:
-            errors.append(
-                f"Estimated memory per core ({mem_per_core_mb:.0f} MB) exceeds job limit"
-            )
+            issues.append(ValidationIssue(
+                "error",
+                f"Estimated memory per core ({mem_per_core_mb:.0f} MB) exceeds job limit",
+            ))
 
-        # WIEN2k version/library compatibility
         if nmat > 20000 and not _hw.check_elpa_available():
-            errors.append(
+            issues.append(ValidationIssue(
+                "error",
                 "Large matrix (nmat > 20000) without ELPA: "
-                "consider recompiling WIEN2k with ELPA support or switch to hybrid mode"
-            )
+                "consider recompiling WIEN2k with ELPA support or switch to hybrid mode",
+            ))
 
-        return errors
+        return issues
 
     def write_auxiliary_files(self, topo: Topology, suggestion: dict[str, Any]) -> None:
-        """Write parallel_options and run_optimized.sh with atomic writes."""
-        self._write_parallel_options(solver_hint=suggestion.get("elpa_solver", ""))
+        """Write parallel_options and run_optimized.sh with atomic writes.
+
+        WIEN2k *para_lapw scripts source a file literally named parallel_options
+        ($WIENROOT/parallel_options or ./parallel_options). They do not honor
+        $PARALLEL_OPTIONS, so the CWD file written here is authoritative.
+        """
+        if suggestion.get("kpar") is None:
+            suggestion["kpar"] = self._kpar_for_job(topo, suggestion)
+        self._write_parallel_options(
+            solver_hint=suggestion.get("elpa_solver", ""),
+            omp_threads=suggestion.get("omp_threads_per_rank", 1),
+            is_soc=bool(suggestion.get("is_soc", False)),
+            nmat=int(suggestion.get("nmat", 0) or 0),
+            mode=str(suggestion.get("mode", "mpi")),
+            kpar=int(suggestion.get("kpar", 0) or 0),
+        )
         self._write_runner_script(topo, suggestion)
 
     def get_short_test_command(self) -> str | None:
@@ -718,7 +739,8 @@ class Wien2kBackend(Backend):
         # ── lapw1 / lapw2 lines ──
         if strat["strategy"] == "band_parallel":
             lines.append(f"# Band parallelization for hybrid functional (nmat={nmat})")
-            kpar = min(strat["bands_per_group"], kpoints if kpoints > 0 else 1, len(nodes) if nodes else 1)
+            kpar = self._resolve_kpar(strat, kpoints, nodes)
+            suggestion["kpar"] = kpar
             lines.append(f"kpar: {kpar}")
             for node, cores in zip(nodes, cores_per_node):
                 if cores <= 0:
@@ -876,15 +898,78 @@ class Wien2kBackend(Backend):
             "reason": f"Standard k-point parallel (nkpt={kpoints}, granularity={granularity})",
         }
 
-    def _write_parallel_options(self, solver_hint: str = "", omp_threads: int = 1) -> None:
+    @staticmethod
+    def _resolve_kpar(strat: dict[str, Any], kpoints: int, nodes: list[str]) -> int:
+        """Clamp band_parallel kpar against k-point count and node count.
+
+        Single source of truth used by _build_machines_lines and auxiliary files.
+        Returns 0 when the strategy is not band_parallel.
+        """
+        if strat.get("strategy") != "band_parallel":
+            return 0
+        bands = int(strat.get("bands_per_group", 1) or 1)
+        return min(bands, kpoints if kpoints > 0 else 1, len(nodes) if nodes else 1)
+
+    def _kpar_for_job(self, topo: Topology, suggestion: dict[str, Any]) -> int:
+        """Resolve kpar for the current suggestion using the same inputs as .machines."""
+        params = self._detect_problem_size()
+        kpoints = params.get("kpoints", 0)
+        nmat = params.get("nmat", 0)
+        atoms = params.get("atoms", 10)
+        is_soc = params.get("is_soc", False)
+        is_hybrid = params.get("is_hybrid", False)
+        is_spin = params.get("is_spin_polarized", False)
+        mode = suggestion.get("mode", "mpi")
+        if hasattr(mode, "value"):
+            mode = mode.value
+        mode = str(mode).lower()
+        omp = max(1, int(suggestion.get("omp_threads_per_rank", 1) or 1))
+        granularity = suggestion.get("granularity", 1)
+        total_cores = suggestion.get("recommended_total_cores", 1)
+        nodes, _, _ = self._allocate_node_cores(
+            list(topo.nodes), list(topo.cores_per_node), total_cores
+        )
+        strat = self._select_parallel_strategy(
+            mode=mode, nmat=nmat, kpoints=kpoints, atoms=atoms,
+            is_hybrid=is_hybrid, is_soc=is_soc, is_spin=is_spin,
+            total_cores=total_cores, omp=omp, granularity=granularity,
+        )
+        return self._resolve_kpar(strat, kpoints, nodes)
+
+    def _job_rank_count(self, topo: Topology, suggestion: dict[str, Any]) -> int:
+        """MPI ranks for this job after Amdahl clamp and zero-core node exclusion.
+
+        Matches the core budget actually emitted by _build_machines_lines so the
+        BLACS grid cannot diverge from the .machines rank count.
+        """
+        total_cores = suggestion.get("recommended_total_cores", 1)
+        _, cores_per_node, _ = self._allocate_node_cores(
+            list(topo.nodes), list(topo.cores_per_node), total_cores
+        )
+        allocated = sum(c for c in cores_per_node if c > 0)
+        return max(1, allocated)
+
+    def _write_parallel_options(
+        self,
+        solver_hint: str = "",
+        omp_threads: int = 1,
+        is_soc: bool = False,
+        nmat: int = 0,
+        mode: str = "mpi",
+        kpar: int = 0,
+    ) -> None:
         """
         Write parallel_options file with comprehensive HPC best practices.
         Includes WIEN_MPIRUN auto-detection, ELPA config, MKL threading,
         fine-grain granularity, and GPU hints.
 
         Reference: WIEN2k Usersguide Section 4.5.8, Blaha et al. (2020).
+
+        This CWD file is what WIEN2k actually sources (see write_auxiliary_files).
         """
-        omp = max(1, omp_threads)
+        omp = max(1, int(omp_threads) if omp_threads else 1)
+        mkl_threads = self._get_optimal_mkl_threads(omp, mode, nmat, is_soc)
+        kpar = max(0, int(kpar) if kpar else 0)
         content = (
             "# Auto-generated by forge v0.1.0\n"
             "# Reference: Blaha, P. et al. (2020). WIEN2k Usersguide Sec 4.5.8.\n"
@@ -896,7 +981,7 @@ class Wien2kBackend(Backend):
             "# ---- CPU affinity & threading ----\n"
             "export TASKSET=no\n"
             f"export OMP_NUM_THREADS={omp}\n"
-            f"export MKL_NUM_THREADS={max(1, min(omp, 4))}\n"
+            f"export MKL_NUM_THREADS={mkl_threads}\n"
             "\n"
             "# ---- MPI launcher ----\n"
             'export WIEN_MPIRUN="mpirun -np _NP_ -machinefile _HOSTS_ _EXEC_"\n'
@@ -907,7 +992,7 @@ class Wien2kBackend(Backend):
             "\n"
             "# ---- Parallelism granularity ----\n"
             f"export OMP_GLOBAL={omp}\n"
-            "export KPAR=0\n"
+            f"export KPAR={kpar}\n"
             "export WIEN_GRANULARITY=1\n"
             "\n"
             "# ---- Debugging ----\n"
@@ -993,6 +1078,11 @@ class Wien2kBackend(Backend):
         mode = suggestion.get("mode", "mpi")
         is_soc = suggestion.get("is_soc", False)
         solver_hint = suggestion.get("elpa_solver", "")
+        kpar = suggestion.get("kpar")
+        if kpar is None:
+            kpar = self._kpar_for_job(topo, suggestion)
+            suggestion["kpar"] = kpar
+        kpar = max(0, int(kpar) if kpar else 0)
 
         # ELPA environment and run_lapw flag
         elpa_env = ""
@@ -1012,11 +1102,12 @@ class Wien2kBackend(Backend):
 
         # Default run_lapw command with optional ELPA flag
         run_lapw_cmd = f"run_lapw -p -NI {elpa_run_flag}".strip()
-        # BLACS grid for ELPA awareness
+        # BLACS grid for ELPA awareness — use the job's allocated rank count,
+        # not the raw topology core sum (Amdahl clamp / zero-core exclusion).
         blacs_env = ""
         if solver_hint:
             from ...core.topology import factorize_blacs_grid
-            total_ranks = sum(topo.cores_per_node) if topo.cores_per_node else 1
+            total_ranks = self._job_rank_count(topo, suggestion)
             p, q = factorize_blacs_grid(total_ranks)
             if p > 1 and q > 1:
                 blacs_env = f'export BLACS_GRID="{p}x{q}"\n'
@@ -1070,7 +1161,10 @@ export WIEN2K_SCRATCH="$SCRATCH_DIR"
 trap 'echo "[forge] Cleaning up $SCRATCH_DIR"; rm -rf "$SCRATCH_DIR" 2>/dev/null' EXIT TERM INT
 echo "[forge] SCRATCH set to $SCRATCH_DIR"
 
-# Write parallel_options inline (ensures consistency)
+# Mirror of ./parallel_options. WIEN2k *para_lapw scripts source
+# $WIENROOT/parallel_options or ./parallel_options by filename; they do
+# not honor $PARALLEL_OPTIONS. Keep this copy in sync so a user who cds
+# into $SCRATCH still sees the same OMP/MKL/KPAR values as the CWD file.
 cat > "$SCRATCH_DIR/parallel_options" << 'PARALLEL_OPTIONS_EOF'
 export USE_REMOTE=0
 export MPI_REMOTE=0
@@ -1081,7 +1175,7 @@ export WIEN_MPIRUN="mpirun -np _NP_ -machinefile _HOSTS_ _EXEC_"
 export DELAY=0.1
 export SLEEPY=1
 export OMP_GLOBAL={omp}
-export KPAR=0
+export KPAR={kpar}
 export WIEN_GRANULARITY=1
 export WIEN_DBGLVL=0
 {elpa_parallel_opts}

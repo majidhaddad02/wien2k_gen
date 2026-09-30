@@ -11,6 +11,7 @@ from forge.core.case_parser import (
     Vector,
     detect_wien2k_version,
     parse_case_directory,
+    parse_scf_output,
     try_float,
 )
 
@@ -224,6 +225,63 @@ def test_parse_scf_iterations() -> None:
         path = _write(Path(d) / "test.scf", SCF_CONTENT)
         r = CaseFileParser.parse_scf(path)
         assert r["scf_iterations"] == 12
+
+
+def test_parse_scf_output_last_dis_below_threshold() -> None:
+    content = (
+        ":ENE  : TOTAL ENERGY = -12345.67890123\n"
+        ":DIS  : CHARGE CONVERGENCE = 0.00100000\n"
+        ":DIS  : CHARGE CONVERGENCE = 0.00000005\n"
+    )
+    r = parse_scf_output(content)
+    assert r["converged"] is True
+    assert r["charge_convergence"] == pytest.approx(5e-8)
+    assert r["total_cycles"] == 2
+    assert r["total_energy_ry"] == pytest.approx(-12345.67890123)
+
+
+def test_parse_scf_output_last_dis_above_threshold() -> None:
+    content = (
+        ":DIS  : CHARGE CONVERGENCE = 0.00100000\n"
+        ":DIS  : CHARGE CONVERGENCE = 0.00090000\n"
+    )
+    r = parse_scf_output(content)
+    assert r["converged"] is False
+    assert r["explicit_failure"] is False
+
+
+def test_parse_scf_output_failure_overrides_low_dis() -> None:
+    content = (
+        ":DIS  : CHARGE CONVERGENCE = 0.00000005\n"
+        "energy convergence\n"
+        "** SCF NOT CONVERGED\n"
+    )
+    r = parse_scf_output(content)
+    assert r["converged"] is False
+    assert r["explicit_failure"] is True
+
+
+def test_parse_scf_output_keyword_presence_is_not_enough() -> None:
+    r = parse_scf_output("charge convergence\nenergy convergence\nscf cycle converged\n")
+    assert r["converged"] is False
+    assert r["charge_values"] == []
+
+
+def test_parse_scf_output_lapw_timing_is_not_a_crash() -> None:
+    r = parse_scf_output("LAPW0: cpu time: 12.1\nLAPW1: cpu time: 89.4\nLAPW2: cpu time: 31.2\n")
+    assert r["errors"] == []
+
+
+def test_parse_scf_output_lapw_crash_detected() -> None:
+    r = parse_scf_output("LAPW1 crashed: MPI error\n")
+    assert any("LAPWx crashed" in e for e in r["errors"])
+
+
+def test_parse_scf_still_extracts_energy_from_star_line() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        path = _write(Path(d) / "test.scf", SCF_CONTENT)
+        r = CaseFileParser.parse_scf(path)
+        assert r["total_energy_ry"] == pytest.approx(-1234.56789012)
 
 
 # ============================================================

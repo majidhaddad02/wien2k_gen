@@ -13,8 +13,9 @@ Key Improvements Applied:
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Protocol, TypedDict, runtime_checkable
+from typing import Any, Literal, Optional, Protocol, TypedDict, runtime_checkable
 
 from ..core.topology import Topology
 from ..logging_config import get_logger
@@ -91,10 +92,17 @@ class ResourceSuggestion(TypedDict, total=False):
 # Protocol Definitions for Optional Backend Capabilities
 # =============================================================================
 
+@dataclass(frozen=True)
+class ValidationIssue:
+    """A backend suggestion-validation finding with explicit severity."""
+    severity: Literal["error", "warning"]
+    message: str
+
+
 @runtime_checkable
 class SupportsValidation(Protocol):
     """Protocol for backends that support pre-flight suggestion validation."""
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
         """Validate if suggestion is compatible with this backend's constraints."""
         ...
 
@@ -190,25 +198,32 @@ class Backend(ABC):
 
     # ==================== Optional Methods with Robust Defaults ====================
 
-    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[str]:
+    def validate_suggestion(self, suggestion: dict[str, Any]) -> list[ValidationIssue]:
         """
         Validate if suggestion is compatible with this backend.
         Default: performs basic sanity checks. Override for backend-specific rules.
+
+        Returns:
+            List of ValidationIssue. Items with severity="error" block the build;
+            severity="warning" is advisory only.
         """
-        errors = []
+        issues: list[ValidationIssue] = []
         cores = suggestion.get("recommended_total_cores", 0)
         if cores <= 0:
-            errors.append("recommended_total_cores must be > 0")
-            
+            issues.append(ValidationIssue("error", "recommended_total_cores must be > 0"))
+
         omp = suggestion.get("omp_threads_per_rank", 1)
         if omp <= 0:
-            errors.append("omp_threads_per_rank must be > 0")
-            
+            issues.append(ValidationIssue("error", "omp_threads_per_rank must be > 0"))
+
         mode = suggestion.get("mode", "")
-        if mode == "hybrid" and cores % omp != 0:
-            errors.append("total_cores not divisible by omp_threads_per_rank for hybrid mode")
-            
-        return errors
+        if mode == "hybrid" and omp > 0 and cores % omp != 0:
+            issues.append(ValidationIssue(
+                "error",
+                "total_cores not divisible by omp_threads_per_rank for hybrid mode",
+            ))
+
+        return issues
 
     def estimate_resources(self, params: ProblemSize, topo: Topology) -> ResourceEstimate:
         """

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, TypedDict, Union
 
+from ..core.case_parser import parse_scf_output
 from ..core.constants import RYDBERG_TO_EV
 from ..logging_config import get_logger
 
@@ -90,37 +91,23 @@ class AnalysisReport:
 
 def _parse_wien2k_scf(content: str) -> SCFParseResult:
     """Extract WIEN2k convergence & timing from .scf or .dayfile."""
+    parsed = parse_scf_output(content)
+    energy_ry = parsed["total_energy_ry"]
     result: SCFParseResult = {
         "code": "wien2k",
-        "converged": False,
-        "total_cycles": 0,
-        "final_energy_ry": None,
-        "final_energy_ev": None,
+        "converged": parsed["converged"],
+        "total_cycles": parsed["total_cycles"],
+        "final_energy_ry": energy_ry,
+        "final_energy_ev": (energy_ry * RYDBERG_TO_EV) if energy_ry is not None else None,
         "cpu_time_sec": 0.0,
         "wall_time_sec": 0.0,
         "max_force_ry_au": None,
-        "charge_convergence": 0.0,
+        "charge_convergence": parsed["charge_convergence"] or 0.0,
         "stage_timings": {},
-        "errors": [],
-        "warnings": [],
+        "errors": list(parsed["errors"]),
+        "warnings": list(parsed["warnings"]),
         "raw_snippet": content[:500]
     }
-    
-    # Total Energy
-    ene_match = re.search(r':ENE\s+:\s+TOTAL\s+ENERGY\s*=\s*([-\d\.Ee+]+)', content, re.IGNORECASE)
-    if ene_match:
-        result["final_energy_ry"] = float(ene_match.group(1))
-        result["final_energy_ev"] = result["final_energy_ry"] * RYDBERG_TO_EV
-
-    # Convergence & Cycles
-    cycle_matches = re.findall(r':DIS\s+:\s+CHARGE\s+CONVERGENCE\s*=\s*([\d\.Ee+]+)', content, re.IGNORECASE)
-    if cycle_matches:
-        result["total_cycles"] = len(cycle_matches)
-        try:
-            result["charge_convergence"] = float(cycle_matches[-1])
-            result["converged"] = result["charge_convergence"] < 0.0001  # Default WIEN2k threshold
-        except ValueError:
-            logger.debug("Suppressed exception in _parse_wien2k_scf()", exc_info=True)
 
     # Stage Timings (lapw0, lapw1, lapw2, mixer, etc.)
     stage_pattern = r'(\w+)\s+:\s+cpu\s+time\s+:\s+([\d\.]+)'
@@ -137,15 +124,6 @@ def _parse_wien2k_scf(content: str) -> SCFParseResult:
     wall_match = re.search(r':REAL\s+:\s+TOTAL\s+WALL\s+TIME\s+FOR\s+SCF\s+IS\s*([\d\.]+)', content, re.IGNORECASE)
     if wall_match:
         result["wall_time_sec"] = float(wall_match.group(1))
-
-    # Errors/Warnings
-    if "QTL-B" in content:
-        result["errors"].append("QTL-B error detected. Check case.in1, RKMAX, or k-point grid.")
-    if "NOT CONVERGED" in content:
-        result["converged"] = False
-        result["warnings"].append("SCF did not converge within maximum cycles.")
-    if "LAPW1 crashed" in content or "lapw0 crashed" in content:
-        result["errors"].append("Critical LAPWx crash. Inspect MPI limits, memory, or case.struct.")
 
     return result
 

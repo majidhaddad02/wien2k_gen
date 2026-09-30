@@ -38,8 +38,10 @@ __all__ = [
     "CaseData",
     "CaseFileParser",
     "LDAUData",
+    "WIEN2K_CHARGE_CONVERGENCE_THRESHOLD",
     "check_struct_quality",
     "parse_case_directory",
+    "parse_scf_output",
 ]
 
 
@@ -84,6 +86,119 @@ class CaseData:
     fermi_energy_ry: float = 0.0
     total_energy_ry: float = 0.0
     wien2k_version: str = ""
+
+
+# Default WIEN2k charge-distance cutoff used by run_lapw -cc when unspecified.
+# case.in0 ec/cc criteria are not parsed anywhere in this codebase; do not
+# silently replace this with per-case values.
+WIEN2K_CHARGE_CONVERGENCE_THRESHOLD = 0.0001
+
+_ENE_RE = re.compile(r":ENE\s*:.*?=\s*([-\d.Ee+]+)", re.IGNORECASE)
+_DIS_RE = re.compile(
+    r":DIS\s+:\s+CHARGE\s+CONVERGENCE\s*=\s*([\d.Ee+-]+)",
+    re.IGNORECASE,
+)
+_ITER_RE = re.compile(r":LABEL\d*\s*:\s*ITERATION\s+(\d+)", re.IGNORECASE)
+_FER_RE = re.compile(r":FER\s*:.*=\s*([\d.E+\-]+)")
+_NMAT_RE = re.compile(r"NMAT\s*:?\s*=?\s*(\d+)", re.IGNORECASE)
+_LAPW_CRASH_RE = re.compile(r"lapw[0-9x]?\s+crashed", re.IGNORECASE)
+
+_SCF_ERROR_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"qtl-b", re.IGNORECASE),
+     "QTL-B error: check case.in1, RKMAX, and convergence parameters"),
+    (_LAPW_CRASH_RE,
+     "LAPWx crashed: check MPI communication, memory limits, and case.struct"),
+    (re.compile(r"error while loading shared libraries", re.IGNORECASE),
+     "Missing shared library: check LD_LIBRARY_PATH and WIENROOT"),
+    (re.compile(r"segmentation fault", re.IGNORECASE),
+     "Segmentation fault: check memory limits and array bounds"),
+    (re.compile(r"MPI_ABORT"),
+     "MPI abort: check network connectivity and process placement"),
+)
+
+
+def parse_scf_output(
+    content: str,
+    *,
+    charge_threshold: float = WIEN2K_CHARGE_CONVERGENCE_THRESHOLD,
+) -> dict[str, Any]:
+    """Single-sourced WIEN2k SCF extraction (:ENE, :DIS, cycles, crashes).
+
+    `:DIS : CHARGE CONVERGENCE = <value>` is a per-cycle status line, not a
+    convergence flag. Convergence is last-cycle value vs ``charge_threshold``.
+
+    Precedence (strongest first):
+        1. Explicit failure/divergence text ("not converged", "diverged")
+           forces ``converged=False``.
+        2. Else last ``:DIS`` value compared to ``charge_threshold``.
+        3. Else no ``:DIS`` data → ``converged=False``.
+    """
+    energy_values: list[float] = []
+    for raw in _ENE_RE.findall(content):
+        with contextlib.suppress(ValueError):
+            energy_values.append(float(raw))
+
+    charge_values: list[float] = []
+    for raw in _DIS_RE.findall(content):
+        with contextlib.suppress(ValueError):
+            charge_values.append(float(raw))
+
+    nmat = 0
+    m = _NMAT_RE.search(content)
+    if m:
+        with contextlib.suppress(ValueError):
+            nmat = int(m.group(1))
+
+    fermi_energy_ry = 0.0
+    m = _FER_RE.search(content)
+    if m:
+        with contextlib.suppress(ValueError):
+            fermi_energy_ry = float(m.group(1))
+
+    scf_iterations = 0
+    iter_matches = _ITER_RE.findall(content)
+    if iter_matches:
+        with contextlib.suppress(ValueError):
+            scf_iterations = int(iter_matches[-1])
+
+    lower = content.lower()
+    # Explicit termination messages override the numeric :DIS comparison.
+    explicit_failure = (
+        "not converged" in lower
+        or "diverged" in lower
+        or "not_converged" in lower
+    )
+
+    charge_convergence: float | None = charge_values[-1] if charge_values else None
+    converged = False
+    if charge_convergence is not None:
+        converged = charge_convergence < charge_threshold
+    if explicit_failure:
+        converged = False
+
+    errors: list[str] = []
+    for pattern, msg in _SCF_ERROR_PATTERNS:
+        if pattern.search(content):
+            errors.append(msg)
+
+    warnings: list[str] = []
+    if explicit_failure:
+        warnings.append("SCF did not converge within maximum cycles.")
+
+    return {
+        "nmat": nmat,
+        "fermi_energy_ry": fermi_energy_ry,
+        "total_energy_ry": energy_values[-1] if energy_values else None,
+        "scf_iterations": scf_iterations,
+        "energy_values": energy_values,
+        "charge_values": charge_values,
+        "charge_convergence": charge_convergence,
+        "total_cycles": len(charge_values),
+        "converged": converged,
+        "explicit_failure": explicit_failure,
+        "errors": errors,
+        "warnings": warnings,
+    }
 
 
 class CaseFileParser:
@@ -410,27 +525,12 @@ class CaseFileParser:
         except Exception:
             return result
 
-        m = re.search(r'NMAT\s*:?\s*=?\s*(\d+)', content, re.IGNORECASE)
-        if m:
-            result["nmat"] = int(m.group(1))
-
-        # :FER (Fermi energy)
-        m = re.search(r':FER\s*:.*=\s*([\d.E+\-]+)', content)
-        if m:
-            with contextlib.suppress(ValueError):
-                result["fermi_energy_ry"] = float(m.group(1))
-
-        # :ENE (Total energy)
-        m = re.search(r':ENE\s*:.*=\s*([\-\d.E+\-]+)', content)
-        if m:
-            with contextlib.suppress(ValueError):
-                result["total_energy_ry"] = float(m.group(1))
-
-        # :ITER (SCF iterations)
-        m = re.search(r':LABEL\d*\s*:\s*ITERATION\s+(\d+)', content)
-        if m:
-            result["scf_iterations"] = int(m.group(1))
-
+        parsed = parse_scf_output(content)
+        result["nmat"] = int(parsed["nmat"] or 0)
+        result["fermi_energy_ry"] = float(parsed["fermi_energy_ry"] or 0.0)
+        energy = parsed["total_energy_ry"]
+        result["total_energy_ry"] = float(energy) if energy is not None else 0.0
+        result["scf_iterations"] = int(parsed["scf_iterations"] or 0)
         return result
 
     # ------------------------------------------------------------------
