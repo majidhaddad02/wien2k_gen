@@ -16,9 +16,9 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-from ..core.topology import GPUInfo, Topology
+from ..core.topology import GPUInfo, Topology, allocate_node_cores
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 # =============================================================================
 # GPU Detection
 # =============================================================================
+
 
 def detect_gpu() -> list[GPUInfo]:
     """
@@ -87,14 +88,16 @@ def _detect_nvidia_gpus() -> list[GPUInfo]:
             pci_bus = parts[4] if len(parts) > 4 else ""
             numa_affinity = _get_gpu_numa_affinity(line_num)
 
-            gpus.append(GPUInfo(
-                name=name,
-                memory_mb=memory_mb,
-                compute_capability=compute_cap,
-                uuid=uuid,
-                pci_bus=pci_bus,
-                numa_affinity=numa_affinity,
-            ))
+            gpus.append(
+                GPUInfo(
+                    name=name,
+                    memory_mb=memory_mb,
+                    compute_capability=compute_cap,
+                    uuid=uuid,
+                    pci_bus=pci_bus,
+                    numa_affinity=numa_affinity,
+                )
+            )
 
         return gpus
     except (subprocess.SubprocessError, OSError, FileNotFoundError):
@@ -133,14 +136,16 @@ def _detect_amd_gpus() -> list[GPUInfo]:
 
             numa_affinity = _get_gpu_numa_affinity(line_num)
 
-            gpus.append(GPUInfo(
-                name=name,
-                memory_mb=memory_mb,
-                compute_capability="",
-                uuid=f"amd-{line_num}",
-                pci_bus="",
-                numa_affinity=numa_affinity,
-            ))
+            gpus.append(
+                GPUInfo(
+                    name=name,
+                    memory_mb=memory_mb,
+                    compute_capability="",
+                    uuid=f"amd-{line_num}",
+                    pci_bus="",
+                    numa_affinity=numa_affinity,
+                )
+            )
 
         return gpus
     except (subprocess.SubprocessError, OSError, FileNotFoundError):
@@ -176,14 +181,16 @@ def _detect_sysfs_gpus() -> list[GPUInfo]:
 
         numa_affinity = _get_gpu_numa_affinity(len(gpus))
 
-        gpus.append(GPUInfo(
-            name=f"GPU-{device_id}" if device_id else f"GPU-{len(gpus)}",
-            memory_mb=0,
-            compute_capability="",
-            uuid=str(card.name),
-            pci_bus="",
-            numa_affinity=numa_affinity,
-        ))
+        gpus.append(
+            GPUInfo(
+                name=f"GPU-{device_id}" if device_id else f"GPU-{len(gpus)}",
+                memory_mb=0,
+                compute_capability="",
+                uuid=str(card.name),
+                pci_bus="",
+                numa_affinity=numa_affinity,
+            )
+        )
 
     return gpus
 
@@ -220,6 +227,7 @@ def _get_gpu_numa_affinity(gpu_index: int) -> int:
 # =============================================================================
 # GPU Interconnect Detection (NVLink / Infinity Fabric)
 # =============================================================================
+
 
 def detect_nvlink_active() -> bool:
     """
@@ -336,7 +344,7 @@ def get_gpu_interconnect_info() -> dict[str, Any]:
         bandwidth = 200.0  # Infinity Fabric: ~200 GB/s (MI250X)
     else:
         ic_type = "pcie"
-        bandwidth = 32.0   # PCIe 4.0 x16
+        bandwidth = 32.0  # PCIe 4.0 x16
 
     return {
         "nvlink_active": nvlink,
@@ -350,11 +358,34 @@ def get_gpu_interconnect_info() -> dict[str, Any]:
 # GPU Usage Recommendations
 # =============================================================================
 
+
+def _gpu_per_mpi_rank(mode: str, effective_gpu_limit: int, mpi_ranks: Optional[int]) -> int:
+    """GPUs bound to each MPI rank.
+
+    Hybrid jobs pin one GPU per rank. Otherwise the denominator is the job's
+    MPI rank count — never ``topo.total_cores`` (CPU cores), which on any real
+    GPU node (e.g. 4 GPUs / 100 cores) collapses to ``max(1, 0) == 1``.
+    When ranks exceed GPUs, return 0 so ``generate_gpu_machines`` shares
+    devices round-robin instead of claiming one GPU per rank.
+    When the rank count is unknown, default to 1 rather than inventing a
+    ratio from hardware core counts.
+    """
+    if str(mode).lower() == "hybrid":
+        return 1
+    if mpi_ranks is None or int(mpi_ranks) <= 0:
+        return 1
+    ranks = max(1, int(mpi_ranks))
+    if ranks > effective_gpu_limit:
+        return 0
+    return max(1, effective_gpu_limit // ranks)
+
+
 def get_gpu_recommendation(
     topo: Topology,
     nmat: int,
     nkpt: int,
     mode: str,
+    mpi_ranks: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Determine whether and how to use GPUs for a given DFT calculation.
@@ -371,6 +402,9 @@ def get_gpu_recommendation(
         nmat: Matrix dimension.
         nkpt: Number of k-points.
         mode: Parallelization mode ('mpi', 'hybrid', 'kpoint').
+        mpi_ranks: MPI ranks in this job (Amdahl-clamped core budget). Used as
+            the denominator for ``gpu_per_mpi_rank``. CPU ``total_cores`` is
+            not a substitute. Optional for backward compatibility.
 
     Returns:
         Dictionary with keys: use_gpu, gpu_count, cuda_visible, gpu_per_mpi_rank,
@@ -393,7 +427,7 @@ def get_gpu_recommendation(
     total_gpu_mem_mb = sum(g.memory_mb for g in gpus)
     ic_info = get_gpu_interconnect_info()
 
-    matrix_mem_bytes = (nmat ** 2) * 16
+    matrix_mem_bytes = (nmat**2) * 16
     matrix_mem_mb = matrix_mem_bytes / (1024 * 1024)
 
     if nmat < 2000:
@@ -415,7 +449,7 @@ def get_gpu_recommendation(
     effective_gpu_limit = gpu_count if has_highspeed else min(gpu_count, 4)
 
     if nmat > 5000 and total_gpu_mem_mb > matrix_mem_mb:
-        gpu_per_rank = 1 if mode == "hybrid" else max(1, effective_gpu_limit // max(1, topo.total_cores))
+        gpu_per_rank = _gpu_per_mpi_rank(mode, effective_gpu_limit, mpi_ranks)
         cuda_visible = ",".join(str(i) for i in range(min(effective_gpu_limit, 8)))
 
         is_nvidia = any("nvidia" in g.name.lower() or g.compute_capability for g in gpus)
@@ -466,6 +500,7 @@ def get_gpu_recommendation(
 # GPU-Aware Machine File Generation
 # =============================================================================
 
+
 def generate_gpu_machines(
     topo: Topology,
     suggestion: dict[str, Any],
@@ -475,6 +510,11 @@ def generate_gpu_machines(
 
     Supports WIEN2k (.machines with 'gpu:' prefix), VASP (NCORE/KPAR),
     and Quantum ESPRESSO (pw.x GPU flags).
+
+    WIEN2k node/core lists go through the shared ``allocate_node_cores`` helper
+    as the CPU ``.machines`` path so Amdahl-clamped ``recommended_total_cores``
+    is honoured and zero-core nodes are dropped instead of emitting
+    ``lapw1: nodeX: 0 gpu: ...``.
 
     Args:
         topo: Hardware topology.
@@ -488,12 +528,18 @@ def generate_gpu_machines(
         return ""
 
     backend = suggestion.get("backend", "wien2k").lower()
-    nodes = list(topo.nodes)
-    cores_per_node = list(topo.cores_per_node)
     gpu_count = gpu_rec.get("gpu_count", 0)
 
     if backend == "wien2k":
-        return _generate_wien2k_gpu_machines(nodes, cores_per_node, gpu_rec)
+        total_cores = int(suggestion.get("recommended_total_cores") or 0)
+        if total_cores <= 0:
+            total_cores = int(topo.total_cores or 0)
+        orig_nodes = list(topo.nodes)
+        orig_cores = list(topo.cores_per_node)
+        nodes, cores_per_node, excluded = allocate_node_cores(
+            orig_nodes, orig_cores, total_cores
+        )
+        return _generate_wien2k_gpu_machines(nodes, cores_per_node, gpu_rec, suggestion, excluded)
     elif backend in ("vasp", "vasp_gpu"):
         return _generate_vasp_gpu_input(gpu_count, suggestion)
     elif backend in ("quantum_espresso", "qe"):
@@ -507,8 +553,14 @@ def _generate_wien2k_gpu_machines(
     nodes: list[str],
     cores_per_node: list[int],
     gpu_rec: dict[str, Any],
+    suggestion: Optional[dict[str, Any]] = None,
+    excluded_nodes: Optional[list[str]] = None,
 ) -> str:
     """Generate .machines content with gpu: prefix for WIEN2k GPU runs."""
+    suggestion = suggestion or {}
+    granularity = max(1, int(suggestion.get("granularity") or 1))
+    omp_global = max(1, int(suggestion.get("omp_threads_per_rank") or 1))
+
     lines = [
         "# WIEN2k GPU-Aware .machines",
         f"# GPUs available: {gpu_rec.get('gpu_count', 0)}",
@@ -516,19 +568,27 @@ def _generate_wien2k_gpu_machines(
         f"# GPU per MPI rank: {gpu_rec.get('gpu_per_mpi_rank', 1)}",
         "",
     ]
+    if excluded_nodes:
+        lines.append(f"# node {', '.join(excluded_nodes)} excluded: 0 cores after rebalancing")
+        lines.append("")
 
-    gpu_per_rank = gpu_rec.get("gpu_per_mpi_rank", 1)
+    gpu_per_rank = int(gpu_rec.get("gpu_per_mpi_rank", 1) or 0)
+    gpu_count = int(gpu_rec.get("gpu_count", 0) or 0)
     gpu_index = 0
 
     for node, cores in zip(nodes, cores_per_node):
-        if gpu_per_rank > 0 and gpu_index < gpu_rec.get("gpu_count", 0):
-            lines.append(f"lapw1: {node}: {cores} gpu: {node}: {gpu_per_rank}")
-            gpu_index += gpu_per_rank
+        if cores <= 0:
+            continue
+        assign = 1 if gpu_per_rank == 0 else gpu_per_rank
+        if assign > 0 and gpu_index < gpu_count:
+            chunk = min(assign, gpu_count - gpu_index)
+            lines.append(f"lapw1: {node}: {cores} gpu: {node}: {chunk}")
+            gpu_index += chunk
         else:
             lines.append(f"lapw1: {node}: {cores}")
 
-    lines.append("granularity: 1")
-    lines.append("omp_global: 1")
+    lines.append(f"granularity: {granularity}")
+    lines.append(f"omp_global: {omp_global}")
     return "\n".join(lines)
 
 
@@ -604,9 +664,11 @@ def _generate_qe_gpu_input(
 # Mixed-Precision Configuration
 # =============================================================================
 
+
 @dataclass
 class MixedPrecisionConfig:
     """Configuration for mixed-precision DFT execution."""
+
     use_mixed: bool
     fp64_ops: list[str]
     fp32_ops: list[str]

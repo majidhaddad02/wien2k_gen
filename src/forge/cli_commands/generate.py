@@ -13,6 +13,19 @@ from ._utils import get_console, open_editor_for_manual_review
 from .base import register_command
 
 
+def _extract_nmat_nkpt(problem: Any) -> tuple[int, int]:
+    """Read matrix size and k-point count from a backend problem payload."""
+    if isinstance(problem, dict):
+        nmat = int(problem.get("nmat") or 0)
+        nkpt = int(problem.get("kpoints") or problem.get("nkpt") or 0)
+        return nmat, nkpt
+    nmat = int(getattr(problem, "nmat", 0) or 0)
+    nkpt = int(
+        getattr(problem, "kpoints", None) or getattr(problem, "nkpt", 0) or 0
+    )
+    return nmat, nkpt
+
+
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("generate", help="Generate parallel configuration files")
     p.add_argument("--nodes", type=int, default=None, help="Number of compute nodes")
@@ -31,7 +44,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         default="time",
         help="Optimization target (time, memory, balanced, cost)",
     )
-    p.add_argument("--max-cores", type=int, default=None, help="Hard limit on total cores to utilize")
+    p.add_argument(
+        "--max-cores", type=int, default=None, help="Hard limit on total cores to utilize"
+    )
     p.add_argument(
         "--reserve-os-cores",
         type=int,
@@ -39,10 +54,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         metavar="N",
         help="Reserve N cores for OS/daemons (e.g., 4 leaves 124 of 128)",
     )
-    p.add_argument("--memory-limit", type=float, default=None, help="Hard limit on memory per node (GB)")
+    p.add_argument(
+        "--memory-limit", type=float, default=None, help="Hard limit on memory per node (GB)"
+    )
     p.add_argument("--dry-run", action="store_true", help="Generate config without writing to disk")
     p.add_argument("--export", type=str, default=None, help="Export configuration summary to path")
-    p.add_argument("--overwrite", action="store_true", help="Overwrite existing .machines/INCAR without prompt")
+    p.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing .machines/INCAR without prompt"
+    )
     p.add_argument(
         "--scheduler",
         "-S",
@@ -52,7 +71,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Target scheduler for job scripts (default: auto-detect)",
     )
     p.add_argument("--gpu", action="store_true", help="Enable GPU-aware configuration")
-    p.add_argument("--gpu-mixed-precision", action="store_true", help="Enable FP32/FP16 mixed precision")
+    p.add_argument(
+        "--gpu-mixed-precision", action="store_true", help="Enable FP32/FP16 mixed precision"
+    )
     p.add_argument(
         "--manual",
         action="store_true",
@@ -79,6 +100,7 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
 
     if getattr(args, "recalibrate", False):
         from ..core.perf_counters import _CALIBRATION_NOTICE, invalidate_perf_cache
+
         invalidate_perf_cache()
         console.print(f"[dim]{_CALIBRATION_NOTICE}[/dim]")
 
@@ -87,7 +109,9 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
         phys = get_physical_cores()
         reserved_max = max(1, phys - args.reserve_os_cores)
         max_cores = min(max_cores, reserved_max) if max_cores else reserved_max
-        console.print(f"[dim]Reserving {args.reserve_os_cores} OS cores → using {max_cores} of {phys}[/dim]")
+        console.print(
+            f"[dim]Reserving {args.reserve_os_cores} OS cores → using {max_cores} of {phys}[/dim]"
+        )
     topo = detect_topology(max_cores=max_cores)
 
     suggestion: dict[str, Any] = {}
@@ -107,16 +131,45 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
                 get_gpu_recommendation,
                 get_mixed_precision_recommendation,
             )
+
             gpus = detect_gpu()
             if gpus:
-                gpu_rec = get_gpu_recommendation(topo, nmat=5000, nkpt=8, mode=suggestion.get("mode", "mpi"))
+                mode = suggestion.get("mode", "mpi")
+                if hasattr(mode, "value"):
+                    mode = mode.value
+                nmat, nkpt = 0, 0
+                try:
+                    from ..backend_manager import get_current_backend
+
+                    nmat, nkpt = _extract_nmat_nkpt(
+                        get_current_backend().detect_problem_size()
+                    )
+                except Exception:
+                    nmat, nkpt = 0, 0
+                if nmat == 0:
+                    console.print(
+                        "[yellow]nmat is 0; GPU recommendation may be "
+                        "unreliable. Check input files.[/yellow]"
+                    )
+                mpi_ranks = suggestion.get("recommended_total_cores")
+                gpu_rec = get_gpu_recommendation(
+                    topo,
+                    nmat=nmat,
+                    nkpt=nkpt,
+                    mode=str(mode),
+                    mpi_ranks=mpi_ranks,
+                )
+                suggestion["nmat"] = nmat
+                suggestion["nkpt"] = nkpt
                 suggestion["gpu_recommendation"] = gpu_rec
                 if args.gpu_mixed_precision:
-                    fp_rec = get_mixed_precision_recommendation("wien2k", nmat=5000)
+                    fp_rec = get_mixed_precision_recommendation("wien2k", nmat=nmat)
                     suggestion["mixed_precision"] = fp_rec
                 console.print(f"[green]GPU detection: {len(gpus)} device(s) found.[/green]")
             else:
-                console.print("[yellow]No GPUs detected. Proceeding without GPU configuration.[/yellow]")
+                console.print(
+                    "[yellow]No GPUs detected. Proceeding without GPU configuration.[/yellow]"
+                )
         except ImportError as e:
             console.print(f"[yellow]GPU backend not available: {e}[/yellow]")
 
@@ -139,9 +192,13 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
             table.add_column("Value", style="green")
 
             sug = result.suggestion
-            sug_dict: dict[str, Any] = sug.to_dict() if sug is not None and hasattr(sug, "to_dict") else (suggestion or {})
+            sug_dict: dict[str, Any] = (
+                sug.to_dict() if sug is not None and hasattr(sug, "to_dict") else (suggestion or {})
+            )
             table.add_row("Mode", str(sug_dict.get("mode", "auto")))
-            table.add_row("Total Cores", str(sug_dict.get("recommended_total_cores", topo.total_cores)))
+            table.add_row(
+                "Total Cores", str(sug_dict.get("recommended_total_cores", topo.total_cores))
+            )
 
             max_eff = sug_dict.get("max_efficient_cores")
             if max_eff:
@@ -156,10 +213,14 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
                 if sf is not None:
                     table.add_row("Serial Fraction (Amdahl)", f"[dim]s={sf:.3f}[/dim]")
 
-            table.add_row("Dry-Run Content", f"[dim]{len(result.dry_run_content)} bytes generated[/dim]")
+            table.add_row(
+                "Dry-Run Content", f"[dim]{len(result.dry_run_content)} bytes generated[/dim]"
+            )
 
             console.print(table)
-            console.print(Panel(result.dry_run_content, title="Generated Config", border_style="dim"))
+            console.print(
+                Panel(result.dry_run_content, title="Generated Config", border_style="dim")
+            )
         else:
             console.print(
                 Panel(

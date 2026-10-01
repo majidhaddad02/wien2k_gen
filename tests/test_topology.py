@@ -17,6 +17,7 @@ from forge.core.topology import (
     TopologyType,
     TopologyValidationError,
     _detect_nvidia_gpus_topology,
+    allocate_node_cores,
     detect_gpu_topology,
     factorize_blacs_grid,
 )
@@ -431,3 +432,35 @@ class TestFactorizeBlacsGrid:
     def test_nonpositive_ranks(self):
         assert factorize_blacs_grid(0) == (1, 1)
         assert factorize_blacs_grid(-4) == (1, 1)
+
+
+class TestAllocateNodeCores:
+    def test_empty_or_zero(self):
+        assert allocate_node_cores([], [], 4) == ([], [], [])
+        names, cores, excluded = allocate_node_cores(["n1", "n2"], [8, 8], 0)
+        assert names == []
+        assert cores == []
+        assert excluded == ["n1", "n2"]
+
+    def test_even_split(self):
+        names, cores, excluded = allocate_node_cores(
+            ["n1", "n2"], [8, 8], 8
+        )
+        assert names == ["n1", "n2"]
+        assert cores == [4, 4]
+        assert sum(cores) == 8
+        assert excluded == []
+
+    def test_drops_low_weight_when_budget_smaller_than_nodes(self):
+        names, cores, excluded = allocate_node_cores(
+            ["gpu01", "cpu02"], [16, 8], 1
+        )
+        assert names == ["gpu01"]
+        assert cores == [1]
+        assert excluded == ["cpu02"]
+
+    def test_wrapper_matches_wien2k(self):
+        from forge.backends.wien2k.core import Wien2kBackend
+
+        args = (["a", "b", "c"], [32, 16, 8], 10)
+        assert Wien2kBackend._allocate_node_cores(*args) == allocate_node_cores(*args)

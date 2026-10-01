@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 @dataclass
 class SolverSelection:
     """Structured recommendation for the eigenvalue solver phase."""
+
     recommended_solver: str
     block_size: int
     estimated_speedup: float
@@ -75,7 +76,9 @@ def select_eigensolver(
 
     if effective_nmat < 2000:
         return _mk(
-            "LAPACK", 32, 1.0,
+            "LAPACK",
+            32,
+            1.0,
             f"Small matrix (nmat={nmat}): ScaLAPACK communication overhead "
             f"exceeds benefit at this size. Single-node LAPACK is fastest.",
             False,
@@ -148,7 +151,9 @@ def select_eigensolver(
         )
 
     return _mk(
-        "LAPACK", 32, 1.0,
+        "LAPACK",
+        32,
+        1.0,
         f"Fallback for nmat={nmat}: LAPACK single-core safest default.",
         False,
     )
@@ -238,20 +243,14 @@ def get_recommended_wien2k_compile_flags(
         if check_mkl_available():
             flags["cflags"] += " -DMKL_ILP64"
             flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_intel_ilp64"
-            flags["environment"] += (
-                " source ${MKLROOT}/bin/mklvars.sh intel64 ilp64"
-            )
+            flags["environment"] += " source ${MKLROOT}/bin/mklvars.sh intel64 ilp64"
 
     if "MKL" in solver_upper:
         flags["cflags"] += " -DMKL_ILP64"
         if mpi == "intel":
-            flags["ldflags"] += (
-                " -lmkl_scalapack_ilp64 -lmkl_blacs_intelmpi_ilp64"
-            )
+            flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_blacs_intelmpi_ilp64"
         else:
-            flags["ldflags"] += (
-                " -lmkl_scalapack_ilp64 -lmkl_blacs_openmpi_ilp64"
-            )
+            flags["ldflags"] += " -lmkl_scalapack_ilp64 -lmkl_blacs_openmpi_ilp64"
         flags["ldflags"] += " -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core"
 
     flags["cflags"] = flags["cflags"].strip()
@@ -263,12 +262,7 @@ def get_recommended_wien2k_compile_flags(
 
 
 def _resolve_elpa_dir() -> str:
-    """Resolve ELPA installation directory from environment or auto-detect."""
-    import os
-
+    """Resolve ELPA installation directory via the shared locator."""
     from ..core.locator import find_elpa_dir
-    elpa_dir = os.environ.get("ELPA_DIR", os.environ.get("ELPA_HOME", ""))
-    if elpa_dir:
-        return elpa_dir
-    return find_elpa_dir() or ""
 
+    return find_elpa_dir() or ""

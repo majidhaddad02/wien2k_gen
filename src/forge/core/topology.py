@@ -95,6 +95,47 @@ def factorize_blacs_grid(total_ranks: int, block_size: int = 32) -> tuple[int, i
     return best_balanced if best_balanced is not None else (1, total_ranks)
 
 
+def allocate_node_cores(
+    nodes: list[str],
+    topo_cores: list[int],
+    total_cores: int,
+) -> tuple[list[str], list[int], list[str]]:
+    """Distribute ``total_cores`` so every listed node gets at least 1 core.
+
+    Shared by the CPU ``.machines`` path and GPU-aware machines generation.
+    If ``total_cores`` is smaller than the node count, drop the lowest-weight
+    nodes first rather than emitting a zero-core (or phantom) rank.
+
+    Returns:
+        ``(names, cores, excluded)`` — kept hostnames, per-node core counts
+        summing to ``total_cores``, and hostnames dropped as zero-core.
+    """
+    if not nodes or total_cores <= 0:
+        return [], [], list(nodes)
+
+    paired = list(zip(list(nodes), [max(int(c), 1) for c in topo_cores]))
+    excluded: list[str] = []
+    if total_cores < len(paired):
+        ranked = sorted(range(len(paired)), key=lambda i: paired[i][1], reverse=True)
+        keep = set(ranked[:total_cores])
+        excluded = [paired[i][0] for i in range(len(paired)) if i not in keep]
+        paired = [paired[i] for i in range(len(paired)) if i in keep]
+
+    names = [n for n, _ in paired]
+    weights = [c for _, c in paired]
+    n = len(names)
+    remaining = total_cores - n
+    wsum = sum(weights) or n
+    raw = [remaining * w / wsum for w in weights]
+    extra = [int(r) for r in raw]
+    leftover = remaining - sum(extra)
+    order = sorted(range(n), key=lambda i: raw[i] - extra[i], reverse=True)
+    for i in range(max(0, leftover)):
+        extra[order[i % n]] += 1
+    cores = [1 + e for e in extra]
+    return names, cores, excluded
+
+
 def _is_blacs_friendly(n: int) -> bool:
     """
     Check if n can be factorized into p x q where both p > 1 and q > 1.

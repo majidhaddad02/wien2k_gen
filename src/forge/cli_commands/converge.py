@@ -6,15 +6,26 @@ from typing import Any, cast
 from rich.panel import Panel
 
 from ..config import AppConfig
+from ..core.constants import RYDBERG_TO_EV
 from ._utils import get_console
 from .base import register_command
+
+
+def tolerance_ry_to_mev(tolerance_ry: float) -> float:
+    """Convert a CLI energy tolerance from Rydberg to meV."""
+    return float(tolerance_ry) * RYDBERG_TO_EV * 1000.0
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("converge", help="Run automated convergence testing (k-points, RKmax)")
     p.add_argument("--case", required=True, help="Case name or path")
     p.add_argument("--mode", choices=("kpoints", "rkmax", "both"), default="both", help="Convergence mode")
-    p.add_argument("--tolerance", type=float, default=0.001, help="Tolerance in Ry")
+    p.add_argument(
+        "--tolerance",
+        type=float,
+        default=0.001,
+        help="Convergence tolerance in Ry (converted to meV internally)",
+    )
     p.add_argument("--kpoints", default="2,2,2 4,4,4 6,6,6 8,8,8 10,10,10", help="K-point grids to test")
     p.add_argument("--rkmax", default="5,6,7,8,9,10", help="RKmax values to test")
 
@@ -49,8 +60,9 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         console.print(f"[bold]Running RKmax convergence with values: {rkmax_values}...[/bold]")
         results["rkmax"] = run_rkmax_convergence(args.case, rkmax_values, wien2k_cmd)
 
+    tolerance_mev = tolerance_ry_to_mev(args.tolerance)
     for key, data in results.items():
-        converged = find_converged_parameters(data, tolerance=args.tolerance)
+        converged = find_converged_parameters(data, tolerance=tolerance_mev)
         console.print(f"[green]{key}: converged at {converged.get('converged_value')}[/green]")
 
     report = generate_convergence_report({"results": list(results.values())})

@@ -18,7 +18,7 @@ from ...core.hardware import (
     get_physical_cores,
     get_total_mem_kb,
 )
-from ...core.topology import Topology
+from ...core.topology import Topology, allocate_node_cores
 from ...logging_config import get_logger
 from ...utils.atomic_write import atomic_write
 from ..base import Backend, ProblemSize, ValidationIssue
@@ -570,35 +570,8 @@ class Wien2kBackend(Backend):
         topo_cores: list[int],
         total_cores: int,
     ) -> tuple[list[str], list[int], list[str]]:
-        """Distribute total_cores so every listed node gets at least 1 core.
-
-        If total_cores is smaller than the node count, drop the lowest-weight
-        nodes first rather than emitting a zero-core (or phantom) rank.
-        """
-        if not nodes or total_cores <= 0:
-            return [], [], list(nodes)
-
-        paired = list(zip(list(nodes), [max(int(c), 1) for c in topo_cores]))
-        excluded: list[str] = []
-        if total_cores < len(paired):
-            ranked = sorted(range(len(paired)), key=lambda i: paired[i][1], reverse=True)
-            keep = set(ranked[:total_cores])
-            excluded = [paired[i][0] for i in range(len(paired)) if i not in keep]
-            paired = [paired[i] for i in range(len(paired)) if i in keep]
-
-        names = [n for n, _ in paired]
-        weights = [c for _, c in paired]
-        n = len(names)
-        remaining = total_cores - n
-        wsum = sum(weights) or n
-        raw = [remaining * w / wsum for w in weights]
-        extra = [int(r) for r in raw]
-        leftover = remaining - sum(extra)
-        order = sorted(range(n), key=lambda i: raw[i] - extra[i], reverse=True)
-        for i in range(max(0, leftover)):
-            extra[order[i % n]] += 1
-        cores = [1 + e for e in extra]
-        return names, cores, excluded
+        """Thin wrapper around shared ``topology.allocate_node_cores``."""
+        return allocate_node_cores(nodes, topo_cores, total_cores)
 
     @staticmethod
     def _rank_lines_for_node(node: str, cores: int, omp: int) -> list[str]:

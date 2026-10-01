@@ -11,6 +11,40 @@ from ._utils import get_console
 from .base import register_command
 
 
+def _nmat_nkpt_from_struct(case_path: Path) -> tuple[int, int]:
+    """Derive nmat/nkpt from a WIEN2k case.struct and sibling inputs.
+
+    rkmax comes from ``{stem}.in1`` (default 7.0). nkpt comes from
+    ``{stem}.klist*`` — the same suffix glob used by
+    ``detect_problem_size()`` (``*.klist*``), scoped to this case stem
+    so ``case.klist`` and ``case.klist_band`` both match.
+    """
+    from ..core.case_parser import CaseFileParser
+
+    struct = CaseFileParser.parse_struct(case_path)
+    rmts = struct.get("rmts") or []
+    volume = float(struct.get("volume_bohr3") or 0.0)
+
+    rkmax = 7.0
+    in1_candidates = list(case_path.parent.glob(f"{case_path.stem}.in1"))
+    if in1_candidates:
+        in1_data = CaseFileParser.parse_in1(in1_candidates[0])
+        rkmax = float(in1_data.get("rkmax", 7.0) or 7.0)
+
+    if not rmts:
+        real_nmat = 0
+    else:
+        real_nmat = int(CaseFileParser.estimate_nmat(rkmax, rmts, volume) or 0)
+
+    klist_candidates = list(case_path.parent.glob(f"{case_path.stem}.klist*"))
+    real_nkpt = 1
+    if klist_candidates:
+        klist_data = CaseFileParser.parse_klist(klist_candidates[0])
+        real_nkpt = int(klist_data.get("kpoints", 1) or 1)
+
+    return real_nmat, real_nkpt
+
+
 def register(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser("history", help="Query and export execution history database")
     p.add_argument("--list", action="store_true", help="List recent history")
@@ -63,7 +97,23 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
         if args.similar_to:
             case_path = Path(args.similar_to)
             if case_path.exists() and case_path.suffix == ".struct":
-                recs = history.get_similar(nmat=5000, nkpt=4, backend=cfg.backend or "wien2k", limit=args.limit)
+                try:
+                    real_nmat, real_nkpt = _nmat_nkpt_from_struct(case_path)
+                except Exception:
+                    real_nmat, real_nkpt = 0, 1
+                if real_nmat == 0:
+                    console.print(
+                        "[yellow]Could not fully parse case file; "
+                        "falling back to recent history.[/yellow]"
+                    )
+                    recs = history.query(limit=args.limit)
+                else:
+                    recs = history.get_similar(
+                        nmat=real_nmat,
+                        nkpt=real_nkpt,
+                        backend=cfg.backend or "wien2k",
+                        limit=args.limit,
+                    )
             else:
                 recs = history.query(limit=args.limit)
             if recs:
