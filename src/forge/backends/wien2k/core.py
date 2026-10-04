@@ -601,6 +601,16 @@ class Wien2kBackend(Backend):
         return names, cores, excluded
 
     @staticmethod
+    def _split_across_nodes(total: int, nodes: list[str]) -> list[int]:
+        """Largest-remainder split of ``total`` cores across ``nodes`` (zeros allowed)."""
+        n = len(nodes)
+        if n == 0:
+            return []
+        total = max(0, int(total))
+        base, remainder = divmod(total, n)
+        return [base + (1 if i < remainder else 0) for i in range(n)]
+
+    @staticmethod
     def _rank_lines_for_node(node: str, cores: int, omp: int) -> list[str]:
         """Emit ``1: host:N`` lines covering exactly ``cores`` (no silent drop)."""
         if cores <= 0:
@@ -750,13 +760,13 @@ class Wien2kBackend(Backend):
             lines.append(f"# Fine-grain MPI with ELPA (nmat={nmat}, BLACS-aware)")
             lapw1_cores = allocation.get("lapw1_cores", total_cores // 2)
             lapw2_cores = allocation.get("lapw2_cores", total_cores - lapw1_cores)
-            lines.append(f"lapw1: {first_node}:{lapw1_cores}")
-            lines.append(f"lapw2: {first_node}:{lapw2_cores}")
-            for node in nodes[1:]:
-                n1 = max(1, lapw1_cores // len(nodes))
-                n2 = max(1, lapw2_cores // len(nodes))
-                lines.append(f"lapw1: {node}:{n1}")
-                lines.append(f"lapw2: {node}:{n2}")
+            lapw1_split = self._split_across_nodes(lapw1_cores, nodes)
+            lapw2_split = self._split_across_nodes(lapw2_cores, nodes)
+            for node, c1, c2 in zip(nodes, lapw1_split, lapw2_split):
+                if c1 > 0:
+                    lines.append(f"lapw1: {node}:{c1}")
+                if c2 > 0:
+                    lines.append(f"lapw2: {node}:{c2}")
             lines.append(f"granularity: {granularity}")
             if omp > 1:
                 lines.append(f"omp_global: {omp}")

@@ -1701,3 +1701,58 @@ class TestEdgeCases:
         cmd = backend.get_execution_command(sug)
         assert "run_lapw" in cmd
         assert "-p" in cmd
+
+
+class TestFineGrainElpaCoreSplit:
+    @patch("forge.core.hardware.check_elpa_available", return_value=True)
+    def test_three_node_budget_is_not_double_counted(self, _elpa, backend):
+        topo = Topology(
+            nodes=["n01", "n02", "n03"],
+            cores_per_node=[16, 16, 16],
+            env_type="slurm",
+        )
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 18,
+            "omp_threads_per_rank": 1,
+            "granularity": 1,
+            "respect_saturation_limit": False,
+        }
+        alloc = {
+            "lapw0_cores": 1,
+            "lapw1_cores": 10,
+            "lapw2_cores": 8,
+            "kpar": 1,
+            "reason": "test",
+            "max_efficient_cores": 18,
+            "saturation_warnings": [],
+        }
+        with patch.object(
+            backend,
+            "_detect_problem_size",
+            return_value={
+                "atoms": 10,
+                "kpoints": 1,
+                "nmat": 9000,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            },
+        ):
+            with patch.object(backend, "_smart_allocate_cores", return_value=alloc):
+                content = backend.generate_input(topo, sug)
+        entries = _rank_core_entries(content)
+        lapw1 = [c for kind, _, c in entries if kind == "lapw1"]
+        lapw2 = [c for kind, _, c in entries if kind == "lapw2"]
+        assert sum(lapw1) == 10
+        assert sum(lapw2) == 8
+        assert all(c > 0 for c in lapw1 + lapw2)
+        assert _header_total_cores(content) == 18
+
+    def test_split_across_nodes_largest_remainder_and_zero_skip(self, backend):
+        nodes = ["n01", "n02", "n03"]
+        assert backend._split_across_nodes(10, nodes) == [4, 3, 3]
+        assert backend._split_across_nodes(8, nodes) == [3, 3, 2]
+        assert backend._split_across_nodes(2, nodes) == [1, 1, 0]
+        assert backend._split_across_nodes(0, nodes) == [0, 0, 0]
+        assert backend._split_across_nodes(5, []) == []

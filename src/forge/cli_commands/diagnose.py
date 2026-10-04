@@ -97,9 +97,12 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
     except Exception:
         logger.debug("Suppressed exception in handle()", exc_info=True)
 
-    has_qtlb = any(p in content.lower() for p in ("qtl-b",))
-    has_crash = any(p in content.lower() for p in ("lapw crashed", "segmentation fault"))
-    has_not_conv = "not converged" in content.lower()
+    has_qtlb = any(e.startswith("QTL-B") for e in parsed["errors"])
+    has_crash = any(
+        e.startswith("LAPWx crashed") or e.startswith("Segmentation fault")
+        for e in parsed["errors"]
+    )
+    has_not_conv = parsed["explicit_failure"]
 
     if has_qtlb:
         qtlb_body = ""
@@ -148,7 +151,10 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
             title="[yellow bold]SCF Not Converged \u2014 Action Plan", border_style="yellow"
         ))
 
-    if not any([has_qtlb, has_crash, has_not_conv, converged, diag.get("root_cause", "") != "none" if 'diag' in dir() else False]):
+    root_cause_flagged = (
+        diag.get("root_cause", "none") != "none" if "diag" in dir() else False
+    )
+    if converged and not any([has_qtlb, has_crash, has_not_conv, root_cause_flagged]):
         console.print("[green]No critical issues detected. SCF appears healthy.[/green]")
 
     return {
@@ -156,6 +162,9 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:  # noqa:
         "cycles": len(energies),
         "error_detected": has_qtlb or has_crash,
         "final_energy": energies[-1] if energies else 0.0,
+        "has_qtlb": has_qtlb,
+        "has_crash": has_crash,
+        "has_not_conv": has_not_conv,
     }
 
 

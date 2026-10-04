@@ -13,7 +13,6 @@ All documentation and inline comments are in English per project standards.
 """
 
 import datetime
-import os
 import re
 import shutil
 import subprocess
@@ -145,11 +144,11 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> list[str]:  # noqa: C901
 
     job_limit_mb = get_job_memory_limit_mb()
     if job_limit_mb and directives.mem_per_node:
-        mem_val = re.match(r'(\d+)', directives.mem_per_node)
-        if mem_val:
-            req_mb = int(mem_val.group(1))
-            if "G" in directives.mem_per_node:
-                req_mb *= 1024
+        match = re.match(r"^(\d+)\s*([KMGTkmgt]?)$", directives.mem_per_node.strip())
+        if match:
+            value, unit = int(match.group(1)), match.group(2).upper()
+            multiplier = {"": 1, "M": 1, "K": 1 / 1024, "G": 1024, "T": 1024 * 1024}
+            req_mb = int(round(value * multiplier.get(unit, 1)))
             if req_mb > job_limit_mb:
                 warnings_list.append(
                     f"Requested memory per node ({directives.mem_per_node}) exceeds job limit ({job_limit_mb} MB)."
@@ -177,7 +176,6 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> list[str]:  # noqa: C901
 def _format_sbatch_directives(directives: SlurmDirectives) -> str:
     """Format SLURM directives with proper spacing, comments, and fallback defaults."""
     lines = []
-    user = os.getenv("USER", "")
 
     sbatch_map = [
         ("job_name",      directives.job_name or "forge_job",         "--job-name={value}"),
@@ -192,8 +190,10 @@ def _format_sbatch_directives(directives: SlurmDirectives) -> str:
         ("constraint",    directives.constraint or "",                     "--constraint={value}"),
         ("array",         directives.array or "",                          "--array={value}"),
         ("dependency",    directives.dependency or "",                     "--dependency={value}"),
-        ("mail_user",     directives.mail_user or user,                    "--mail-user={value}"),
-        ("mail_type",     directives.mail_type or "BEGIN,END,FAIL",        "--mail-type={value}"),
+        ("mail_user",     directives.mail_user or "",                      "--mail-user={value}"),
+        ("mail_type",
+         directives.mail_type or ("BEGIN,END,FAIL" if directives.mail_user else ""),
+         "--mail-type={value}"),
         ("output",        directives.output or "slurm-%j.out",             "--output={value}"),
         ("error",         directives.error or "slurm-%j.err",              "--error={value}"),
         ("export",        directives.export or "ALL",                      "--export={value}"),

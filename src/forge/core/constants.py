@@ -28,10 +28,17 @@ HBAR = 1.054571817e-34
 # m* / m_e = HBAR2_OVER_ME_EV_ANG2 / (d²E/dk²)
 HBAR2_OVER_ME_EV_ANG2 = 7.619964
 
+# Light hard elements (N, O, F). WIEN2k User Guide / Blaha et al. (2020)
+# J. Chem. Phys. 152, 074101: small-RMT first-row p-block anions have hard
+# potentials and need RKMAX >= 7.0. H is not in this class. S/Cl/Br are
+# handled by the separate RMT-ratio heuristic in optimizer.parallel.
+HARD_ELEMENTS = frozenset({7, 8, 9})
+
 __all__ = [
     "BOHR_TO_ANGSTROM",
     "ELECTRON_MASS",
     "ELEMENTARY_CHARGE",
+    "HARD_ELEMENTS",
     "HARTREE_TO_EV",
     "HBAR",
     "HBAR2_OVER_ME_EV_ANG2",

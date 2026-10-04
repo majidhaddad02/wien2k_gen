@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
+from ...core.constants import HARD_ELEMENTS
 from ...logging_config import get_logger
 from ...optimizer.history import ExecutionHistory, ExecutionRecord
 from .acquisition import (
@@ -43,67 +44,6 @@ _ELEMENT_ATOMIC_NUMBERS = {
     "Lu": 71, "Hf": 72, "Ta": 73, "W": 74,  "Re": 75, "Os": 76, "Ir": 77, "Pt": 78,
     "Au": 79, "Hg": 80, "Tl": 81, "Pb": 82, "Bi": 83, "Po": 84, "At": 85, "Rn": 86,
 }
-
-
-def add_physics_priors(
-    structure: dict[str, Any],
-    nmat: int = 0,
-    is_soc: bool = False,
-    is_metallic: bool = False,
-) -> dict[str, Any]:
-    """
-    Enforce physically-motivated parameter constraints.
-
-    Based on Blaha et al. (2020), J. Chem. Phys. 152, 074101 and
-    WIEN2k User Guide 2023:
-      - RKMAX ≥ 7.0 for light hard elements (O, F, N) — hard potentials
-      - RKMAX ≥ 7.0 for SOC calculations — spin-orbit requires high cutoff
-      - mixing ≤ 0.3 for metallic systems — Kerker preconditioning needed
-      - kpt density ≥ 1000 kpts/Å⁻³ for metals — Fermi surface resolution
-
-    Returns dict of constraints with min, max, and recommended default.
-    """
-    atoms = structure.get("atoms", [])
-    atomic_numbers = [a.get("z_num", 1) for a in atoms]
-    hard_elements = {8, 9, 7, 16, 17}
-    has_hard = any(z in hard_elements for z in atomic_numbers)
-
-    constraints = {
-        "rkmax": {"min": 5.0, "max": 9.0, "default": 7.0},
-        "mixing_beta": {"min": 0.05, "max": 1.0, "default": 0.30},
-        "kpoint_density": {"min": 100, "max": 2000, "default": 500},
-        "gmax": {"min": 10.0, "max": 20.0, "default": 14.0},
-        "lmax_apw": {"min": 8, "max": 12, "default": 10},
-        "warnings": [],
-    }
-
-    if has_hard:
-        constraints["rkmax"]["min"] = 7.0
-        constraints["rkmax"]["default"] = 7.0
-        constraints["warnings"].append(
-            "Light hard elements (O/F/N) detected — RKMAX set to ≥ 7.0"
-        )
-
-    if is_soc:
-        constraints["rkmax"]["min"] = max(constraints["rkmax"]["min"], 7.0)
-        constraints["warnings"].append(
-            "SOC calculation — RKMAX ≥ 7.0 required for reliable results"
-        )
-
-    if is_metallic:
-        constraints["mixing_beta"]["max"] = 0.30
-        constraints["mixing_beta"]["default"] = 0.10
-        constraints["kpoint_density"]["min"] = 1000
-        constraints["warnings"].append(
-            "Metallic system — mixing ≤ 0.30, kpt density ≥ 1000 recommended"
-        )
-
-    if nmat > 15000:
-        constraints["warnings"].append(
-            f"Large basis (nmat={nmat}) — consider parallel BO with q-EI batch evaluation"
-        )
-
-    return constraints
 
 
 def load_warm_start_history(
@@ -159,32 +99,62 @@ def save_bo_history(history_file: str, evaluations: list[dict[str, Any]]) -> Non
 # Bayesian Optimization Loop
 # =============================================================================
 
-def define_search_space(structure: dict[str, Any]) -> dict[str, Any]:
+def define_search_space(
+    structure: dict[str, Any],
+    case_dir: str = ".",
+) -> dict[str, Any]:
     """Define search space bounds and types for WIEN2k parameters.
+
+    Bounds (not just defaults) are constrained by file-derived physics:
+      - RKMAX >= 7.0 for light hard elements (N, O, F) or SOC (*.inso)
+      - mixing_beta <= 0.30 and kpoint_density >= 1000 for metals
+      - system type "unknown" (no prior *.scf) is treated as metallic
 
     Returns dict with bounds, types, and defaults for each parameter.
     """
+    from ...backends.wien2k.parsers import detect_wien2k_flags
+    from ...core.workflow_executor import detect_system_type
+
     atoms = structure.get("atoms", [])
     numeric_z = [int(a.get("z_num", 1)) for a in atoms]
-
-    # Detect system type for starting point heuristics
     has_heavy = any(z > 50 for z in numeric_z)
-    has_light_hard = any(z in {7, 8, 9} for z in numeric_z)
+    has_hard_element = any(z in HARD_ELEMENTS for z in numeric_z)
 
-    defaults = {
-        "rkmax": 7.5 if has_heavy else (7.0 if has_light_hard else 6.5),
-        "mixing_beta": 0.10,
-        "kpoint_density": 500,
-        "gmax": 14.0,
-        "lmax_apw": 10,
-    }
+    flags = detect_wien2k_flags()
+    is_soc = flags.is_soc
+
+    system_type = detect_system_type(case_dir)
+    is_metallic = system_type in ("metal", "unknown")
+
+    rkmax_floor_required = has_hard_element or is_soc
+    rkmax_min = 7.0 if rkmax_floor_required else 5.0
+    rkmax_default = (
+        7.5 if has_heavy else (7.0 if rkmax_floor_required else 6.5)
+    )
+
+    mixing_max = 0.30 if is_metallic else 1.0
+    mixing_default = 0.10 if is_metallic else 0.30
+
+    kpoint_min = 1000 if is_metallic else 100
 
     return {
-        "rkmax": {"bounds": (5.0, 9.0), "type": "continuous", "default": defaults["rkmax"]},
-        "mixing_beta": {"bounds": (0.05, 1.0), "type": "continuous", "default": defaults["mixing_beta"]},
-        "kpoint_density": {"bounds": (100, 2000), "type": "integer", "default": defaults["kpoint_density"]},
-        "gmax": {"bounds": (10.0, 20.0), "type": "continuous", "default": defaults["gmax"]},
-        "lmax_apw": {"bounds": (8, 12), "type": "discrete", "default": defaults["lmax_apw"]},
+        "rkmax": {
+            "bounds": (rkmax_min, 9.0),
+            "type": "continuous",
+            "default": rkmax_default,
+        },
+        "mixing_beta": {
+            "bounds": (0.05, mixing_max),
+            "type": "continuous",
+            "default": mixing_default,
+        },
+        "kpoint_density": {
+            "bounds": (kpoint_min, 2000),
+            "type": "integer",
+            "default": 500,
+        },
+        "gmax": {"bounds": (10.0, 20.0), "type": "continuous", "default": 14.0},
+        "lmax_apw": {"bounds": (8, 12), "type": "discrete", "default": 10},
     }
 
 
@@ -198,6 +168,7 @@ def bayesian_optimize_scf_params(
     parallel_batch: int = 4,
     warm_start: bool = True,
     history_file: str = ".bo_history.json",
+    case_dir: str = ".",
 ) -> dict[str, Any]:
     """Full Bayesian optimization loop for WIEN2k SCF parameters.
 
@@ -221,11 +192,12 @@ def bayesian_optimize_scf_params(
         parallel_batch: Batch size for q-EI.
         warm_start: Load previous results if available.
         history_file: Path to BO history JSON for warm start.
+        case_dir: WIEN2k case directory used to detect SOC/metallic signals.
 
     Returns:
         Dict with best_params, best_cost, evaluations, convergence_info.
     """
-    space = define_search_space(structure)
+    space = define_search_space(structure, case_dir=case_dir)
     bounds = [space[k]["bounds"] for k in ["rkmax", "mixing_beta", "kpoint_density", "gmax"]]
     param_names = ["rkmax", "mixing_beta", "kpoint_density", "gmax"]
     dims = len(bounds)
@@ -1256,7 +1228,6 @@ class MultiFidelityBayesianOptimizer(BayesianOptimizer):
 __all__ = [
     "BayesianOptimizer",
     "MultiFidelityBayesianOptimizer",
-    "add_physics_priors",
     "bayesian_optimize_scf_params",
     "define_search_space",
     "load_warm_start_history",

@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
+from .constants import HARD_ELEMENTS
 
 logger = get_logger(__name__)
 
@@ -1094,7 +1095,7 @@ def check_struct_quality(struct_path: Path) -> dict[str, Any]:  # noqa: C901
                 )
 
     # Warn about small RMT for light hard elements (O, F, N)
-    hard_z = {8, 9, 7}
+    hard_z = HARD_ELEMENTS
     for idx, (rmt, z) in enumerate(zip(atom_rmts, atom_zs)):
         if z in hard_z and rmt < 1.4:
             result["warnings"].append(
