@@ -29,6 +29,17 @@ forge submit --partition compute --time 48:00:00
 forge_wizard                           # interactive configuration
 ```
 
+## Documentation
+
+Start with `docs/workflow.md`, then:
+
+| Guide | Contents |
+|-------|----------|
+| `docs/machines-guide.md` | `.machines` tutorial, vs writing the file by hand |
+| `docs/job-submission.md` | Four submit models with copy-paste examples |
+| `docs/preprocessing-convergence.md` | RKmax, k-mesh, RMT, mixing convergence |
+| `docs/index.md` | Full documentation index |
+
 ## CLI Tools
 
 | Command | Description |

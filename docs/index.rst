@@ -5,13 +5,17 @@ FORGE Documentation
    :maxdepth: 2
    :caption: Contents:
 
-   installation
-   user-guide
-   examples
-   parallel-modes
-   troubleshooting
-   contributing
-   api
+    workflow
+    machines-guide
+    job-submission
+    preprocessing-convergence
+    installation
+    user-guide
+    examples
+    parallel-modes
+    troubleshooting
+    contributing
+    api
 
 Production-grade WIEN2k parallel configuration file generator and HPC job dispatcher
 for density functional theory (DFT) calculations.

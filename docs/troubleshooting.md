@@ -276,3 +276,10 @@ If you cannot resolve an issue:
 2. Include the case-specific information (number of atoms, k-points, NMAT)
 3. Paste the output of `forge generate --dry-run`
 4. File an issue at: https://github.com/majidhaddad02/forge/issues
+
+## Related Documents
+
+- `docs/machines-guide.md` — hostname, core-count, and mode mistakes in `.machines`
+- `docs/job-submission.md` — scheduler flags, generate-inside-allocation vs login-node files
+- `docs/preprocessing-convergence.md` — charge sloshing, mixing, RKmax/k-mesh before a long job
+- `docs/workflow.md` — full path from `init_lapw` to submit

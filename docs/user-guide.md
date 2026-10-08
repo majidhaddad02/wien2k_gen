@@ -12,6 +12,13 @@
 8. [Batch Script Usage](#batch-script-usage)
 9. [Advanced Physics Options](#advanced-physics-options)
 
+Longer tutorials (recommended next):
+
+- `docs/machines-guide.md` — generate and read `.machines`
+- `docs/job-submission.md` — four job-submit models
+- `docs/preprocessing-convergence.md` — RKmax / k-mesh / mixing scans
+- `docs/workflow.md` — end-to-end checklist
+
 ---
 
 ## Quick Start

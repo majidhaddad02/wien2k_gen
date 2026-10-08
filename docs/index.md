@@ -10,6 +10,10 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 
 | Document | Description |
 |----------|-------------|
+| [Workflow](workflow.md) | End-to-end map from `init_lapw` to a finished job |
+| [`.machines` Guide](machines-guide.md) | How to generate, read, and use `.machines`; why FORGE beats hand-written files |
+| [Job Submission](job-submission.md) | Four usage models (`forge submit`, generate-inside-job, `forge_sbatch`, wizard/local) |
+| [Preprocessing Convergence](preprocessing-convergence.md) | RKmax, k-mesh, GMAX, RMT, mixing scans with worked examples |
 | [Installation](installation.md) | System requirements, pip install, from source, air-gapped HPC |
 | [User Guide](user-guide.md) | CLI commands, wizard, interactive TUI, mixing strategies, convergence tools |
 | [API Reference](api-reference.md) | Python module reference for scripting and automation |
@@ -17,6 +21,7 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 | [Parallel Modes](parallel-modes.md) | kpoint, hybrid, mpi, fine-grain — when to use each |
 | [ML Dataset](ml_dataset.md) | GNN training data pipeline from Materials Project |
 | [Troubleshooting](troubleshooting.md) | Common errors, diagnostics, debugging |
+| [Contributing](contributing.md) | Development setup and contribution notes |
 
 ---
 
