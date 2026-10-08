@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -32,7 +33,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Target scheduler (default: auto-detect)",
     )
     p.add_argument("--partition", type=str, default="", help="Scheduler partition/queue")
-    p.add_argument("--nodes", type=int, default=1, help="Number of nodes")
+    p.add_argument(
+        "--nodes",
+        type=int,
+        default=0,
+        help="Number of nodes (0 = auto from .machines allocation)",
+    )
     p.add_argument(
         "--ntasks",
         type=int,
@@ -124,17 +130,58 @@ def _auto_generate_machines(topo: Any) -> dict[str, Any]:
     }
 
 
+def _scheduler_mem(mem: str, scheduler: str) -> str:
+    raw = str(mem or "").strip()
+    if scheduler != "pbs" or not raw:
+        return raw
+    match = re.match(r"^(\d+)\s*([KMGTkmgt]?)$", raw)
+    if not match:
+        return raw
+    value, unit = match.group(1), match.group(2).lower()
+    suffix = {"k": "kb", "m": "mb", "g": "gb", "t": "tb", "": "mb"}.get(unit, "gb")
+    return f"{value}{suffix}"
+
+
+def _scheduler_time(time_str: str, scheduler: str) -> str:
+    raw = str(time_str or "").strip()
+    if scheduler != "lsf" or not raw:
+        return raw
+    if re.match(r"^\d{1,3}:\d{2}$", raw):
+        return raw
+    if re.match(r"^\d+-", raw):
+        days, rest = raw.split("-", 1)
+        parts = rest.split(":")
+        hours = int(days) * 24 + (int(parts[0]) if parts else 0)
+        minutes = int(parts[1]) if len(parts) > 1 else 0
+        return f"{hours}:{minutes:02d}"
+    parts = raw.split(":")
+    if len(parts) >= 2:
+        return f"{int(parts[0])}:{int(parts[1]):02d}"
+    return raw
+
+
 def _resources_from_machines(machines_path: Path, topo: Any) -> dict[str, Any]:
     config, parse_errors = parse_machines_file(machines_path)
-    real_ntasks = sum(config.get("cores_per_node", [])) or int(
-        getattr(topo, "total_cores", 1) or 1
-    )
-    real_cpus_per_task = config.get("omp_global", 1) or 1
+    warnings = list(parse_errors or [])
+    cores_per_node = list(config.get("cores_per_node") or [])
+    allocated = sum(cores_per_node)
+    if allocated <= 0:
+        return _fail(
+            ["No rank/core allocation found in .machines (need 1:/2:/lapw1:/lapw2: lines)."],
+            warnings=warnings,
+        )
+    omp = max(1, int(config.get("omp_global", 1) or 1))
+    rank_count = int(config.get("rank_count", 0) or 0)
+    max_width = int(config.get("max_rank_width", 0) or 0)
+    ntasks = rank_count or allocated
+    cpus_per_task = max(omp, max_width, 1)
+    nodes = len(config.get("nodes") or []) or 1
     return {
         "success": True,
-        "ntasks": int(real_ntasks),
-        "cpus_per_task": int(real_cpus_per_task),
-        "warnings": list(parse_errors or []),
+        "ntasks": int(ntasks),
+        "cpus_per_task": int(cpus_per_task),
+        "nodes": int(nodes),
+        "warnings": warnings,
     }
 
 
@@ -148,9 +195,12 @@ def resolve_submit_resources(
 
     if machines_path.exists():
         resolved = _resources_from_machines(machines_path, topo)
+        if not resolved.get("success"):
+            return resolved
         warnings.extend(resolved.get("warnings") or [])
         ntasks = args.ntasks or resolved["ntasks"]
         cpus_per_task = args.cpus_per_task or resolved["cpus_per_task"]
+        nodes = args.nodes or resolved.get("nodes") or 1
         if warnings:
             for w in warnings:
                 console.print(f"[yellow]Warning:[/] {w}")
@@ -158,6 +208,7 @@ def resolve_submit_resources(
             "success": True,
             "ntasks": ntasks,
             "cpus_per_task": cpus_per_task,
+            "nodes": nodes,
             "warnings": warnings,
         }
 
@@ -182,10 +233,12 @@ def resolve_submit_resources(
     warnings.extend(generated.get("warnings") or [])
     ntasks = args.ntasks or generated["ntasks"]
     cpus_per_task = args.cpus_per_task or generated["cpus_per_task"]
+    nodes = args.nodes or generated.get("nodes") or 1
     return {
         "success": True,
         "ntasks": ntasks,
         "cpus_per_task": cpus_per_task,
+        "nodes": nodes,
         "warnings": warnings,
     }
 
@@ -209,13 +262,14 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
 
     ntasks = resolved["ntasks"]
     cpus_per_task = resolved["cpus_per_task"]
+    nodes = resolved.get("nodes") or args.nodes or 1
     exec_command = get_exec_command()
 
     if scheduler == "slurm":
         directives = SlurmDirectives(
             job_name=args.job_name,
             partition=args.partition,
-            nodes=args.nodes,
+            nodes=nodes,
             ntasks=ntasks,
             cpus_per_task=cpus_per_task,
             mem_per_node=args.mem,
@@ -270,16 +324,32 @@ def handle(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
         provider_cls = SUBMIT_PROVIDERS.get(scheduler)
         if provider_cls:
             provider = provider_cls()
+            total_slots = max(1, int(ntasks) * int(cpus_per_task))
+            ppn = max(1, (total_slots + int(nodes) - 1) // int(nodes))
+            if scheduler == "pbs":
+                sched_dirs = {
+                    "job_name": args.job_name,
+                    "queue": args.partition,
+                    "nodes": nodes,
+                    "ppn": ppn,
+                    "ncpus": total_slots,
+                    "walltime": args.time,
+                    "mem": _scheduler_mem(args.mem, "pbs"),
+                }
+            else:
+                sched_dirs = {
+                    "job_name": args.job_name,
+                    "queue": args.partition,
+                    "nodes": nodes,
+                    "nprocs": ntasks,
+                    "cpus_per_task": cpus_per_task,
+                    "walltime": _scheduler_time(args.time, "lsf"),
+                    "memory": args.mem,
+                }
             pbs_res = provider.submit(
                 topo=topo,
                 exec_command=exec_command,
-                directives={
-                    "job_name": args.job_name,
-                    "queue": args.partition,
-                    "nodes": args.nodes,
-                    "walltime": args.time,
-                    "mem" if scheduler == "pbs" else "memory": args.mem,
-                },
+                directives=sched_dirs,
                 script_path=Path(args.export) if args.export else None,
                 dry_run=args.dry_run,
             )

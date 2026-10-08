@@ -14,7 +14,7 @@ OFFLINE_DIR := offline_packages
 
 .PHONY: all install dev minimal test lint format clean build \
         install-offline download-offline install-completions \
-        run tui wizard docker singularity help
+        run tui wizard docker docker-dev docker-run docker-test docker-shell singularity help
 
 all: install
 
@@ -105,8 +105,21 @@ install-completions:
 	@echo "Dev fallback: source completions/forge.bash  (bash) or add ~/.local/share/zsh/site-functions to fpath (zsh)."
 
 docker:
-	@docker build --no-cache -t $(APP_NAME):latest -f Dockerfile .
-	@echo "🐳 Docker image built: $(APP_NAME):latest"
+	@docker build --target runtime -t $(APP_NAME):0.1.0 -t $(APP_NAME):latest -f Dockerfile .
+	@echo "Docker image built: $(APP_NAME):0.1.0 and $(APP_NAME):latest"
+
+docker-dev:
+	@docker build --target dev -t $(APP_NAME):0.1.0-dev -f Dockerfile .
+	@echo "Docker image built: $(APP_NAME):0.1.0-dev"
+
+docker-run:
+	@docker run --rm -v $(PWD):/work -w /work $(APP_NAME):0.1.0
+
+docker-test:
+	@docker run --rm $(APP_NAME):0.1.0-dev python -m pytest -q --tb=line
+
+docker-shell:
+	@docker run --rm -it -v $(PWD):/work -w /work --entrypoint bash $(APP_NAME):0.1.0-dev
 
 singularity:
 	@apptainer build --force $(APP_NAME).sif Singularity.def
@@ -132,7 +145,7 @@ clean:
 	rm -rf coverage_html/ $(OFFLINE_DIR)/ $(APP_NAME).sif
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	@docker rmi -f $(APP_NAME):latest 2>/dev/null || true
+	@docker rmi -f $(APP_NAME):latest $(APP_NAME):0.1.0 $(APP_NAME):0.1.0-dev 2>/dev/null || true
 	@echo "🧹 Cleaned build artifacts, caches, and containers."
 
 help:
@@ -148,7 +161,11 @@ help:
 	@echo "  make install-offline  → Install from local $(OFFLINE_DIR)/"
 	@echo "  make build            → Build sdist & wheel"
 	@echo "  make install-completions → Install shell auto-completions"
-	@echo "  make docker           → Build Docker image"
+	@echo "  make docker           → Build runtime Docker image ($(APP_NAME):0.1.0 and $(APP_NAME):latest)"
+	@echo "  make docker-dev       → Build dev Docker image ($(APP_NAME):0.1.0-dev)"
+	@echo "  make docker-run       → Run runtime image with PWD mounted at /work"
+	@echo "  make docker-test      → Run pytest in the dev image"
+	@echo "  make docker-shell     → Interactive bash in the dev image"
 	@echo "  make singularity      → Build Apptainer/Singularity image"
 	@echo "  make tui              → Launch interactive TUI"
 	@echo "  make wizard           → Launch CLI wizard"

@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 
 from forge.cli_commands import submit as submit_cmd
 from forge.core.topology import Topology
+from forge.submit.lsf import LSFSubmitProvider
+from forge.submit.pbs import PBSSubmitProvider
 from forge.types import PipelineResult, ResourceSuggestion
 
 
@@ -45,7 +47,7 @@ def _args(**kwargs) -> Namespace:
     defaults = dict(
         scheduler="slurm",
         partition="",
-        nodes=1,
+        nodes=0,
         ntasks=0,
         cpus_per_task=0,
         time="24:00:00",
@@ -75,10 +77,10 @@ def test_hybrid_machines_uses_clamped_allocation_not_topology(tmp_path, monkeypa
     console = _DummyConsole()
     resolved = submit_cmd.resolve_submit_resources(_args(), topo, console)
     assert resolved["success"] is True
-    assert resolved["ntasks"] == 13
-    assert resolved["cpus_per_task"] == 8
+    assert resolved["ntasks"] == 1
+    assert resolved["cpus_per_task"] == 13
+    assert resolved["ntasks"] * resolved["cpus_per_task"] == 13
     assert resolved["ntasks"] != topo.total_cores
-    assert resolved["cpus_per_task"] != 1
 
 
 def test_cli_ntasks_and_cpus_per_task_override_file(tmp_path, monkeypatch):
@@ -193,6 +195,7 @@ def test_handle_slurm_passes_machines_allocation(tmp_path, monkeypatch):
     def fake_submit(spec, dry_run=False, script_path=None):
         captured["ntasks"] = spec.directives.ntasks
         captured["cpus_per_task"] = spec.directives.cpus_per_task
+        captured["nodes"] = spec.directives.nodes
         captured["exec_command"] = spec.exec_command
         return {"success": True, "job_id": "1", "script_path": tmp_path / "job.sh"}
 
@@ -206,10 +209,11 @@ def test_handle_slurm_passes_machines_allocation(tmp_path, monkeypatch):
 
     result = submit_cmd.handle(_args(json_output=True, dry_run=True), None)
     assert result["success"] is True
-    assert result["ntasks"] == 13
-    assert result["cpus_per_task"] == 8
-    assert captured["ntasks"] == 13
-    assert captured["cpus_per_task"] == 8
+    assert result["ntasks"] == 1
+    assert result["cpus_per_task"] == 13
+    assert captured["ntasks"] == 1
+    assert captured["cpus_per_task"] == 13
+    assert captured["nodes"] == 1
     assert captured["exec_command"] == "run_lapw -p -so"
 
 
@@ -221,6 +225,7 @@ def test_handle_pbs_uses_get_exec_command(tmp_path, monkeypatch):
     class FakeProvider:
         def submit(self, topo, exec_command, directives=None, script_path=None, dry_run=False, **kwargs):
             captured["exec_command"] = exec_command
+            captured["directives"] = directives or {}
             return {"success": True, "job_id": "pbs.1", "script_path": tmp_path / "pbs.sh"}
 
     monkeypatch.setattr(submit_cmd, "get_console", lambda: _DummyConsole())
@@ -234,8 +239,11 @@ def test_handle_pbs_uses_get_exec_command(tmp_path, monkeypatch):
     result = submit_cmd.handle(_args(scheduler="pbs", json_output=True), None)
     assert result["success"] is True
     assert captured["exec_command"] == "run_lapw -p -so"
-    assert result["ntasks"] == 13
-    assert result["cpus_per_task"] == 8
+    assert result["ntasks"] == 1
+    assert result["cpus_per_task"] == 13
+    assert captured["directives"]["ppn"] == 13
+    assert captured["directives"]["nodes"] == 1
+    assert captured["directives"]["mem"] == "16gb"
 
 
 def test_handle_lsf_uses_get_exec_command(tmp_path, monkeypatch):
@@ -246,6 +254,7 @@ def test_handle_lsf_uses_get_exec_command(tmp_path, monkeypatch):
     class FakeProvider:
         def submit(self, topo, exec_command, directives=None, script_path=None, dry_run=False, **kwargs):
             captured["exec_command"] = exec_command
+            captured["directives"] = directives or {}
             return {"success": True, "job_id": "lsf.1", "script_path": tmp_path / "lsf.sh"}
 
     monkeypatch.setattr(submit_cmd, "get_console", lambda: _DummyConsole())
@@ -259,8 +268,11 @@ def test_handle_lsf_uses_get_exec_command(tmp_path, monkeypatch):
     result = submit_cmd.handle(_args(scheduler="lsf", json_output=True), None)
     assert result["success"] is True
     assert captured["exec_command"] == "runsp_lapw -p"
-    assert result["ntasks"] == 13
-    assert result["cpus_per_task"] == 8
+    assert result["ntasks"] == 1
+    assert result["cpus_per_task"] == 13
+    assert captured["directives"]["nprocs"] == 1
+    assert captured["directives"]["cpus_per_task"] == 13
+    assert captured["directives"]["walltime"] == "24:00"
 
 
 def test_handle_missing_machines_json_populates_errors(tmp_path, monkeypatch):
@@ -272,6 +284,95 @@ def test_handle_missing_machines_json_populates_errors(tmp_path, monkeypatch):
     assert result["success"] is False
     assert result.get("errors")
     assert MISSING_MSG in result["errors"]
+
+
+def test_nodes_derived_from_machines(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_machines(tmp_path, "1: n1: 8\n1: n2: 8\nomp_global: 1\n")
+    resolved = submit_cmd.resolve_submit_resources(_args(), _topo(128), _DummyConsole())
+    assert resolved["success"] is True
+    assert resolved["nodes"] == 2
+    assert resolved["ntasks"] == 2
+    assert resolved["cpus_per_task"] == 8
+
+
+def test_hybrid_packed_ranks_product_matches_allocation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    content = "\n".join([f"1: node01: 8" for _ in range(8)] + ["omp_global: 8", ""])
+    _write_machines(tmp_path, content)
+    resolved = submit_cmd.resolve_submit_resources(_args(), _topo(128), _DummyConsole())
+    assert resolved["success"] is True
+    assert resolved["ntasks"] == 8
+    assert resolved["cpus_per_task"] == 8
+    assert resolved["ntasks"] * resolved["cpus_per_task"] == 64
+
+
+def test_lapw0_only_machines_does_not_use_topology(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _write_machines(tmp_path, "lapw0: node01: 8\nomp_global: 1\n")
+    resolved = submit_cmd.resolve_submit_resources(_args(), _topo(128), _DummyConsole())
+    assert resolved["success"] is False
+    assert resolved.get("ntasks") != 128
+
+
+def test_pbs_script_matches_machines_not_topology():
+    topo = Topology(nodes=["login"], cores_per_node=[128], env_type="pbs")
+    script = PBSSubmitProvider().generate_submit_script(
+        topo,
+        "run_lapw -p",
+        directives={"nodes": 1, "ppn": 13, "ncpus": 13, "mem": "16gb", "walltime": "24:00:00"},
+    )
+    assert "nodes=1:ppn=13" in script
+    assert "ppn=128" not in script
+    assert "mem=16gb" in script
+    assert "\nexec " not in script
+    assert "EXIT_CODE=$?" in script
+    assert "${PBS_JOBID}" not in script.split("# Execute")[0]
+
+
+def test_lsf_nprocs_and_affinity_not_full_node():
+    topo = Topology(nodes=["n1"], cores_per_node=[32], env_type="lsf")
+    script = LSFSubmitProvider().generate_submit_script(
+        topo,
+        "run_lapw -p",
+        directives={
+            "nprocs": 1,
+            "cpus_per_task": 13,
+            "nodes": 1,
+            "walltime": "24:00",
+            "memory": "16G",
+        },
+    )
+    assert "#BSUB -n 1" in script
+    assert "#BSUB -n 32" not in script
+    assert 'affinity[core(13)]' in script
+    assert 'affinity[core(32)]' not in script
+    assert "#BSUB -W 24:00" in script
+    assert "\nexec " not in script
+
+
+def test_lsf_email_emits_begin_end_flags():
+    topo = Topology(nodes=["n1"], cores_per_node=[8], env_type="lsf")
+    script = LSFSubmitProvider().generate_submit_script(
+        topo,
+        "run_lapw -p",
+        directives={"nprocs": 1, "email": "user@example.com", "email_when": "began,end"},
+    )
+    assert "#BSUB -u user@example.com" in script
+    assert "#BSUB -B" in script
+    assert "#BSUB -N" in script
+
+
+def test_lsf_array_and_jsrun_flags():
+    topo = Topology(nodes=["n1"], cores_per_node=[8], env_type="lsf")
+    script = LSFSubmitProvider().generate_submit_script(
+        topo,
+        "run_lapw -p",
+        directives={"job_name": "j", "job_array": "1-4", "jsrun": True, "nprocs": 8, "nodes": 1},
+    )
+    assert '#BSUB -J "j[1-4]"' in script
+    assert " -o jsrun" not in script
+    assert "jsrun " in script
 
 
 def test_register_adds_cpus_per_task_and_auto_generate():

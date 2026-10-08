@@ -95,6 +95,7 @@ class LSFDirectives:
     project: Optional[str] = None
     nodes: Optional[int] = None
     nprocs: Optional[int] = None
+    cpus_per_task: Optional[int] = None
     walltime: Optional[str] = None           # e.g., "24:00"  (HH:MM)
     memory: Optional[str] = None             # e.g., "64G" or "64000" (MB)
     span_hosts: Optional[str] = None         # e.g., "span[hosts=1]" or "span[ptile=16]"
@@ -242,12 +243,12 @@ class LSFSubmitProvider(SubmitProvider):
         lines = []
         directives = spec.directives
 
-        job_name = shlex.quote(directives.job_name or "forge_job")
+        job_name = directives.job_name or "forge_job"
         array_spec = directives.job_array or ""
         if array_spec:
-            lines.append(f'#BSUB -J {job_name}[{array_spec}]')
+            lines.append(f'#BSUB -J "{job_name}[{array_spec}]"')
         else:
-            lines.append(f'#BSUB -J {job_name}')
+            lines.append(f"#BSUB -J {shlex.quote(job_name)}")
 
         if directives.queue:
             lines.append(f"#BSUB -q {directives.queue}")
@@ -279,9 +280,6 @@ class LSFSubmitProvider(SubmitProvider):
         if directives.gpu:
             lines.append(f'#BSUB -gpu "{directives.gpu}"')
 
-        if directives.jsrun:
-            lines.append("#BSUB -o jsrun")
-
         output = directives.output or "lsf-%J.out"
         error = directives.error or "lsf-%J.err"
         lines.append(f"#BSUB -o {output}")
@@ -290,15 +288,16 @@ class LSFSubmitProvider(SubmitProvider):
         if directives.email:
             lines.append(f"#BSUB -u {shlex.quote(directives.email)}")
         if directives.email_when:
-            lines.append(f"#BSUB -N -B -N {directives.email_when}")
+            lines.append("#BSUB -B")
+            lines.append("#BSUB -N")
 
         if directives.pre_exec:
             lines.append(f"#BSUB -E {shlex.quote(directives.pre_exec)}")
         if directives.post_exec:
             lines.append(f"#BSUB -Ep {shlex.quote(directives.post_exec)}")
 
-        cores_per_node = spec.topo.cores_per_node[0] if spec.topo.cores_per_node else nprocs
-        lines.append(f'#BSUB -R "affinity[core({cores_per_node})]"')
+        affinity_cores = directives.cpus_per_task or 1
+        lines.append(f'#BSUB -R "affinity[core({affinity_cores})]"')
 
         return "\n".join(lines)
 
@@ -338,7 +337,7 @@ class LSFSubmitProvider(SubmitProvider):
             lines.extend(self._inject_jsrun_command(spec))
         else:
             lines.append("# Execute calculation")
-            lines.append(f'exec {spec.exec_command} "$@"')
+            lines.append(f'{spec.exec_command} "$@"')
             lines.append("EXIT_CODE=$?")
             lines.append("exit $EXIT_CODE")
 
@@ -406,9 +405,11 @@ class LSFSubmitProvider(SubmitProvider):
             "# jsrun Integration (IBM Spectrum LSF on POWER)",
             "# ==============================================================================",
             'echo "[lsf_submit] Launching via jsrun for IBM Spectrum LSF..."',
-            f"jsrun --nrs=1 --rs_per_host=1 --tasks_per_rs={nprocs} --cpu_per_rs={cpus_per_rs} "
+            f"jsrun --nrs={nodes} --rs_per_host=1 --tasks_per_rs={cpus_per_rs} --cpu_per_rs={cpus_per_rs} "
             f"--gpu_per_rs=0 --latency_priority=cpu-cpu --bind=packed:1 "
             f"{spec.exec_command}",
+            "EXIT_CODE=$?",
+            "exit $EXIT_CODE",
         ]
 
     # =========================================================================

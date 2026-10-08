@@ -61,6 +61,8 @@ class MachinesConfig(TypedDict, total=False):
     vector_split: int
     extrafine: int
     granularity: int
+    rank_count: int
+    max_rank_width: int
     raw_lines: list[str]
 
 
@@ -92,6 +94,8 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
         "vector_split": 0,
         "extrafine": 0,
         "granularity": 1,
+        "rank_count": 0,
+        "max_rank_width": 0,
         "raw_lines": []
     }
     parse_warnings: list[str] = []
@@ -110,18 +114,38 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
     raw_lines = content.splitlines()
     config["raw_lines"] = [line.strip() for line in raw_lines if line.strip() and not line.strip().startswith("#")]
 
-    # Track node allocations to detect duplicates or mismatches
-    node_allocations: dict[str, int] = {}
-    lapw1_nodes = set()
-    lapw2_nodes = set()
+    k1_by_node: dict[str, int] = {}
+    k2_by_node: dict[str, int] = {}
+    lapw1_by_node: dict[str, int] = {}
+    lapw2_by_node: dict[str, int] = {}
+    node_order: list[str] = []
+    kpoint_rank_count = 0
+    max_rank_width = 0
+
+    def _touch_node(node: str) -> None:
+        if node not in node_order:
+            node_order.append(node)
+
+    def _add_cores(store: dict[str, int], node: str, cores: int) -> None:
+        _touch_node(node)
+        store[node] = store.get(node, 0) + cores
+
+    def _host_core_pairs(payload: str) -> list[tuple[str, int]]:
+        return [
+            (m.group(1), int(m.group(2)) if m.group(2) else 1)
+            for m in re.finditer(r"([^\s:]+)(?:\s*:\s*(\d+))?", payload)
+        ]
 
     for line_idx, line in enumerate(raw_lines, 1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-            
-        # Directives with values
-        val_match = re.match(r'^(omp_global|omp_lapw0|omp_mixer|kpar|granularity|extrafine|lapw2_vector_split)\s*:\s*(\d+)', stripped, re.IGNORECASE)
+
+        val_match = re.match(
+            r"^(omp_global|omp_lapw0|omp_mixer|kpar|granularity|extrafine|lapw2_vector_split)\s*:\s*(\d+)",
+            stripped,
+            re.IGNORECASE,
+        )
         if val_match:
             key, val = val_match.group(1).lower(), int(val_match.group(2))
             if key == "omp_global":
@@ -134,59 +158,61 @@ def parse_machines_file(path: Union[str, Path]) -> tuple[MachinesConfig, list[st
                 config["extrafine"] = val
             elif key == "lapw2_vector_split":
                 config["vector_split"] = val
-            # omp_lapw0 / omp_mixer accepted (recognized directives, no field)
             continue
-            
-        # lapw0 directive
-        lapw0_match = re.match(r'^lapw0\s*:\s*([^\s:]+)\s*:\s*(\d+)', stripped, re.IGNORECASE)
+
+        lapw0_match = re.match(r"^lapw0\s*:\s*([^\s:]+)\s*:\s*(\d+)", stripped, re.IGNORECASE)
         if lapw0_match:
             config["lapw0_cores"] = int(lapw0_match.group(2))
             continue
-            
-        # lapw1/lapw2 node allocation
-        lapw_match = re.match(r'^lapw(1|2)\s*:\s*([^\s:]+)\s*:\s*(\d+)', stripped, re.IGNORECASE)
+
+        lapw_match = re.match(r"^lapw(1|2)\s*:\s*(.+)", stripped, re.IGNORECASE)
         if lapw_match:
             prog = lapw_match.group(1)
-            node = lapw_match.group(2)
-            cores = int(lapw_match.group(3))
-            if node not in node_allocations:
-                node_allocations[node] = 0
-            node_allocations[node] += cores
-            if prog == "1":
-                lapw1_nodes.add(node)
-            else:
-                lapw2_nodes.add(node)
+            for node, cores in _host_core_pairs(lapw_match.group(2)):
+                if prog == "1":
+                    _add_cores(lapw1_by_node, node, cores)
+                else:
+                    _add_cores(lapw2_by_node, node, cores)
             continue
-            
-        # k-point parallel mode (1: hostname or 1: hostname:cores)
-        kpt_match = re.match(r'^1\s*:\s*([^\s:]+)(?::\s*(\d+))?', stripped)
-        if kpt_match:
-            node = kpt_match.group(1)
-            cores = int(kpt_match.group(2)) if kpt_match.group(2) else 1
-            config["mode"] = "kpoint"
-            if node not in node_allocations:
-                node_allocations[node] = 0
-            node_allocations[node] += cores
-            continue
-            
-        # Fallback: warn about unrecognized non-comment lines
-        if not stripped.startswith("#"):
-            parse_warnings.append(f"Line {line_idx} unrecognized or malformed: '{stripped[:50]}...'")
-            
-    # Flatten node allocations
-    config["nodes"] = sorted(node_allocations.keys())
-    config["cores_per_node"] = [node_allocations[n] for n in config["nodes"]]
 
-    # Infer mode if not explicitly set by k-point lines
-    if config["mode"] != "kpoint":
-        if config["omp_global"] > 1:
-            config["mode"] = "hybrid"
-        else:
-            config["mode"] = "mpi"
-            
-    # Aggregate lapw cores (fallback to 0 if no dedicated nodes)
-    config["lapw1_cores"] = sum(node_allocations[n] for n in lapw1_nodes) if lapw1_nodes else 0
-    config["lapw2_cores"] = sum(node_allocations[n] for n in lapw2_nodes) if lapw2_nodes else 0
+        kpt_match = re.match(r"^([12])\s*:\s*(.+)", stripped)
+        if kpt_match:
+            kind = kpt_match.group(1)
+            for node, cores in _host_core_pairs(kpt_match.group(2)):
+                if kind == "1":
+                    _add_cores(k1_by_node, node, cores)
+                    kpoint_rank_count += 1
+                    max_rank_width = max(max_rank_width, cores)
+                else:
+                    _add_cores(k2_by_node, node, cores)
+            continue
+
+        snippet = stripped if len(stripped) <= 50 else stripped[:50] + "..."
+        parse_warnings.append(f"Line {line_idx} unrecognized or malformed: '{snippet}'")
+
+    config["nodes"] = list(node_order)
+    config["cores_per_node"] = [
+        max(
+            k1_by_node.get(n, 0),
+            k2_by_node.get(n, 0),
+            lapw1_by_node.get(n, 0),
+            lapw2_by_node.get(n, 0),
+        )
+        for n in node_order
+    ]
+    config["lapw1_cores"] = sum(lapw1_by_node.values())
+    config["lapw2_cores"] = sum(lapw2_by_node.values()) or sum(k2_by_node.values())
+    config["rank_count"] = kpoint_rank_count or sum(lapw1_by_node.values())
+    config["max_rank_width"] = max_rank_width
+
+    if kpoint_rank_count and config["omp_global"] > 1:
+        config["mode"] = "hybrid"
+    elif kpoint_rank_count:
+        config["mode"] = "kpoint"
+    elif config["omp_global"] > 1:
+        config["mode"] = "hybrid"
+    else:
+        config["mode"] = "mpi"
 
     return config, parse_warnings
 
@@ -214,14 +240,8 @@ def _check_consistency(config: MachinesConfig) -> tuple[list[str], list[str]]:
     errors = []
     warnings = []
     total_cores = sum(config["cores_per_node"])
-    omp = config["omp_global"]
     kpar = config["kpar"]
 
-    # OMP divisibility
-    if omp > 1 and total_cores % omp != 0:
-        errors.append(f"total_cores ({total_cores}) not divisible by omp_global ({omp}). "
-                      f"Hybrid mode requires integer MPI ranks per node.")
-                   
     # kpar vs nodes
     if kpar > 0 and kpar > len(config["nodes"]):
         warnings.append(f"kpar ({kpar}) exceeds node count ({len(config['nodes'])}). "
@@ -254,12 +274,15 @@ def _check_topology_alignment(config: MachinesConfig, topo: Any) -> list[str]:
     missing_in_topo = set(config["nodes"]) - set(topo_nodes)
     if missing_in_topo:
         warnings.append(f"Nodes in .machines not in current allocation: {', '.join(sorted(missing_in_topo))}")
-        
-    # Core count mismatch
-    if len(config["nodes"]) == len(topo_nodes):
-        for cn, tc in zip(config["cores_per_node"], topo_cores):
-            if cn > tc:
-                warnings.append(f"Allocated cores ({cn}) exceed available topology cores ({tc}) on a node. Oversubscription risk.")
+
+    topo_core_by_name = dict(zip(topo_nodes, topo_cores))
+    for node_name, cn in zip(config["nodes"], config["cores_per_node"]):
+        tc = topo_core_by_name.get(node_name)
+        if tc is not None and cn > tc:
+            warnings.append(
+                f"Allocated cores ({cn}) on {node_name} exceed available "
+                f"topology cores ({tc}). Oversubscription risk."
+            )
                 
     # Scheduler hints
     env_type = getattr(topo, "env_type", "")

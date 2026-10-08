@@ -598,17 +598,50 @@ class Wien2kBackend(Backend):
         for i in range(max(0, leftover)):
             extra[order[i % n]] += 1
         cores = [1 + e for e in extra]
+        overflow = 0
+        for i in range(n):
+            cap = weights[i]
+            if cores[i] > cap:
+                overflow += cores[i] - cap
+                cores[i] = cap
+        if overflow:
+            order = sorted(range(n), key=lambda i: weights[i] - cores[i], reverse=True)
+            for i in order:
+                spare = max(0, weights[i] - cores[i])
+                take = min(spare, overflow)
+                cores[i] += take
+                overflow -= take
+                if overflow == 0:
+                    break
         return names, cores, excluded
 
     @staticmethod
-    def _split_across_nodes(total: int, nodes: list[str]) -> list[int]:
+    def _split_across_nodes(total: int, nodes: list[str], caps: list[int] | None = None) -> list[int]:
         """Largest-remainder split of ``total`` cores across ``nodes`` (zeros allowed)."""
         n = len(nodes)
         if n == 0:
             return []
         total = max(0, int(total))
         base, remainder = divmod(total, n)
-        return [base + (1 if i < remainder else 0) for i in range(n)]
+        split = [base + (1 if i < remainder else 0) for i in range(n)]
+        if not caps or len(caps) != n:
+            return split
+        leftover = 0
+        for i in range(n):
+            cap = max(0, int(caps[i]))
+            if split[i] > cap:
+                leftover += split[i] - cap
+                split[i] = cap
+        if leftover:
+            order = sorted(range(n), key=lambda i: int(caps[i]) - split[i], reverse=True)
+            for i in order:
+                spare = max(0, int(caps[i]) - split[i])
+                take = min(spare, leftover)
+                split[i] += take
+                leftover -= take
+                if leftover == 0:
+                    break
+        return split
 
     @staticmethod
     def _rank_lines_for_node(node: str, cores: int, omp: int) -> list[str]:
@@ -672,12 +705,12 @@ class Wien2kBackend(Backend):
         omp = suggestion.get("omp_threads_per_rank", 1)
 
         params = self._detect_problem_size()
-        atoms = params.get("atoms", 10)
-        kpoints = params.get("kpoints", 0)
-        nmat = params.get("nmat", 0)
-        is_soc = params.get("is_soc", False)
-        is_hybrid = params.get("is_hybrid", False)
-        is_spin = params.get("is_spin_polarized", False)
+        atoms = suggestion.get("atoms", params.get("atoms", 10))
+        kpoints = suggestion.get("nkpt", suggestion.get("kpoints", params.get("kpoints", 0)))
+        nmat = suggestion.get("nmat", params.get("nmat", 0))
+        is_soc = suggestion.get("is_soc", params.get("is_soc", False))
+        is_hybrid = suggestion.get("is_hybrid", params.get("is_hybrid", False))
+        is_spin = suggestion.get("is_spin_polarized", params.get("is_spin_polarized", False))
         first_node = nodes[0] if nodes else "localhost"
         omp = max(1, int(omp) if omp else 1)
 
@@ -756,12 +789,14 @@ class Wien2kBackend(Backend):
                 if cores <= 0:
                     continue
                 lines.extend(self._rank_lines_for_node(node, cores, omp))
+            if omp > 1:
+                lines.append(f"omp_global: {omp}")
         elif strat["strategy"] == "fine_grain_elpa":
             lines.append(f"# Fine-grain MPI with ELPA (nmat={nmat}, BLACS-aware)")
             lapw1_cores = allocation.get("lapw1_cores", total_cores // 2)
             lapw2_cores = allocation.get("lapw2_cores", total_cores - lapw1_cores)
-            lapw1_split = self._split_across_nodes(lapw1_cores, nodes)
-            lapw2_split = self._split_across_nodes(lapw2_cores, nodes)
+            lapw1_split = self._split_across_nodes(lapw1_cores, nodes, cores_per_node)
+            lapw2_split = self._split_across_nodes(lapw2_cores, nodes, cores_per_node)
             for node, c1, c2 in zip(nodes, lapw1_split, lapw2_split):
                 if c1 > 0:
                     lines.append(f"lapw1: {node}:{c1}")
@@ -775,8 +810,10 @@ class Wien2kBackend(Backend):
             for node, cores in zip(nodes, cores_per_node):
                 if cores <= 0:
                     continue
-                lines.append(f"1: {node}:{cores}")
+                lines.extend(self._rank_lines_for_node(node, cores, omp))
             lines.append(f"granularity: {granularity}")
+            if omp > 1:
+                lines.append(f"omp_global: {omp}")
         else:  # kpoint parallel — default
             lines.append(f"# K-point parallelization (nkpt={kpoints})")
             for node, cores in zip(nodes, cores_per_node):
@@ -784,15 +821,16 @@ class Wien2kBackend(Backend):
                     continue
                 lines.extend(self._rank_lines_for_node(node, cores, omp))
             lines.append(f"granularity: {granularity}")
-            if kpoints and kpoints % total_cores != 0:
+            n_ranks = sum(1 for ln in lines if ln.startswith("1:"))
+            if kpoints and n_ranks and kpoints % n_ranks != 0:
                 lines.append("extrafine: 1")
+            if omp > 1:
+                lines.append(f"omp_global: {omp}")
 
         # ── Common options ──
         lines.append("")
-        lines.append("omp_lapw0: 1")
+        lines.append(f"omp_lapw0: {max(1, lapw0_cores)}")
         lines.append("omp_mixer: 1")
-        if allocation.get("kpar", 0) > 1:
-            lines.append(f"kpar: {allocation['kpar']}")
 
         # ── Vector split for large matrices ──
         vector_split_active = suggestion.get("vector_split_active", False)
@@ -871,6 +909,12 @@ class Wien2kBackend(Backend):
           4. Default → k-point parallel with granularity for I/O
         """
         elpa_ok = _hw.check_elpa_available()
+        mode_l = str(mode or "").lower()
+        if mode_l == "kpoint":
+            return {
+                "strategy": "kpoint_parallel",
+                "reason": f"Caller requested k-point parallel (nkpt={kpoints}, granularity={granularity})",
+            }
 
         if is_hybrid and nmat > 5000:
             bands_per_group = min(4, max(1, nmat // 2000))

@@ -658,7 +658,7 @@ class TestWriteAuxiliaryFiles:
             with patch("forge.core.hardware.check_elpa_available", return_value=False):
                 machines = backend.generate_input(simple_topo, sug)
             kpar_line = [ln for ln in machines.splitlines() if ln.startswith("kpar:")]
-            assert kpar_line, "expected kpar in .machines for band_parallel"
+            assert len(kpar_line) == 1, "band_parallel must emit exactly one kpar: line"
             machines_kpar = int(kpar_line[0].split(":")[1].strip())
             with patch("forge.core.locator.find_wienroot", return_value=str(tmp_path)):
                 backend.write_auxiliary_files(simple_topo, sug)
@@ -1452,8 +1452,11 @@ class TestGenerateInput:
                                          "is_soc": False, "is_hybrid": False,
                                          "is_spin_polarized": False}
             content = backend.generate_input(simple_topo, sug)
-        if 7 % sum(simple_topo.cores_per_node) != 0:
+        n_ranks = sum(1 for ln in content.splitlines() if ln.startswith("1:"))
+        if n_ranks and 7 % n_ranks != 0:
             assert "extrafine" in content.lower()
+        else:
+            assert "extrafine" not in content.lower()
 
     @patch("forge.core.hardware.check_elpa_available", return_value=False)
     def test_heterogeneous_handling(self, _elpa, backend, hetero_topo):
@@ -1756,3 +1759,156 @@ class TestFineGrainElpaCoreSplit:
         assert backend._split_across_nodes(2, nodes) == [1, 1, 0]
         assert backend._split_across_nodes(0, nodes) == [0, 0, 0]
         assert backend._split_across_nodes(5, []) == []
+
+    def test_split_across_nodes_respects_caps(self, backend):
+        nodes = ["big", "small"]
+        caps = [32, 8]
+        split = backend._split_across_nodes(20, nodes, caps)
+        assert split == [12, 8]
+        assert all(s <= c for s, c in zip(split, caps))
+
+
+class TestMachinesKparAndOmpSemantics:
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_band_parallel_single_kpar_line(self, _elpa, backend, simple_topo):
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 1,
+            "nmat": 6000,
+            "is_hybrid": True,
+        }
+        problem = {
+            "atoms": 10,
+            "kpoints": 8,
+            "nmat": 6000,
+            "is_soc": False,
+            "is_hybrid": True,
+            "is_spin_polarized": False,
+        }
+        with patch.object(backend, "_detect_problem_size", return_value=problem):
+            content = backend.generate_input(simple_topo, sug)
+        kpar_lines = [ln for ln in content.splitlines() if ln.startswith("kpar:")]
+        assert len(kpar_lines) == 1
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_kpoint_multinode_no_spurious_kpar(self, _elpa, backend, simple_topo, base_suggestion):
+        sug = {**base_suggestion, "nmat": 1200, "nkpt": 8, "is_hybrid": False}
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10,
+                "kpoints": 8,
+                "nmat": 1200,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            }
+            content = backend.generate_input(simple_topo, sug)
+        assert not any(ln.startswith("kpar:") for ln in content.splitlines())
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_extrafine_uses_rank_count_not_total_cores(self, _elpa, backend):
+        topo = Topology(nodes=["n01"], cores_per_node=[16], env_type="slurm")
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 4,
+            "granularity": 1,
+            "nmat": 500,
+            "nkpt": 8,
+        }
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10,
+                "kpoints": 8,
+                "nmat": 500,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            }
+            content = backend.generate_input(topo, sug)
+        n_ranks = sum(1 for ln in content.splitlines() if ln.startswith("1:"))
+        assert n_ranks == 4
+        assert "extrafine" not in content.lower()
+        assert "omp_global: 4" in content
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=True)
+    def test_mode_kpoint_not_overridden_by_elpa(self, _elpa, backend, simple_topo):
+        sug = {
+            "mode": "kpoint",
+            "recommended_total_cores": 16,
+            "omp_threads_per_rank": 1,
+            "nmat": 10000,
+            "nkpt": 1,
+        }
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 20,
+                "kpoints": 1,
+                "nmat": 10000,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            }
+            content = backend.generate_input(simple_topo, sug)
+        assert any(ln.startswith("1:") for ln in content.splitlines())
+        assert not any(ln.startswith("lapw1:") for ln in content.splitlines())
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=False)
+    def test_omp_lapw0_matches_lapw0_cores(self, _elpa, backend, simple_topo, base_suggestion):
+        with patch.object(backend, "_detect_problem_size") as mock_detect:
+            mock_detect.return_value = {
+                "atoms": 10,
+                "kpoints": 8,
+                "nmat": 1200,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            }
+            content = backend.generate_input(simple_topo, base_suggestion)
+        lapw0 = [ln for ln in content.splitlines() if ln.startswith("lapw0:")]
+        omp0 = [ln for ln in content.splitlines() if ln.startswith("omp_lapw0:")]
+        assert lapw0 and omp0
+        n = int(lapw0[0].rsplit(":", 1)[1])
+        assert omp0[0] == f"omp_lapw0: {n}"
+
+    @patch("forge.core.hardware.check_elpa_available", return_value=True)
+    def test_fine_grain_elpa_respects_hetero_caps(self, _elpa, backend):
+        topo = Topology(nodes=["big", "small"], cores_per_node=[32, 8], env_type="slurm")
+        sug = {
+            "mode": "mpi",
+            "recommended_total_cores": 40,
+            "omp_threads_per_rank": 1,
+            "granularity": 1,
+            "respect_saturation_limit": False,
+        }
+        alloc = {
+            "lapw0_cores": 1,
+            "lapw1_cores": 20,
+            "lapw2_cores": 8,
+            "kpar": 1,
+            "reason": "test",
+            "max_efficient_cores": 40,
+            "saturation_warnings": [],
+        }
+        with patch.object(
+            backend,
+            "_detect_problem_size",
+            return_value={
+                "atoms": 10,
+                "kpoints": 1,
+                "nmat": 9000,
+                "is_soc": False,
+                "is_hybrid": False,
+                "is_spin_polarized": False,
+            },
+        ):
+            with patch.object(backend, "_smart_allocate_cores", return_value=alloc):
+                content = backend.generate_input(topo, sug)
+        entries = _rank_core_entries(content)
+        by_host = {}
+        for kind, host, cores in entries:
+            if kind == "lapw1":
+                by_host[host] = cores
+        assert by_host.get("small", 0) <= 8
+        assert by_host.get("big", 0) <= 32

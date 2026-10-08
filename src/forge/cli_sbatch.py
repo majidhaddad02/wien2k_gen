@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -40,7 +41,6 @@ from .submit.slurm import (
     SlurmDirectives,
     SlurmJobSpec,
     generate_sbatch_script,
-    submit_slurm_job,
 )
 from .utils.atomic_write import atomic_write
 
@@ -265,22 +265,39 @@ def handle_submit(args: argparse.Namespace, cfg: AppConfig) -> dict[str, Any]:
 
     logger.info(f"Submitting {script_path} to SLURM...")
 
-    topo = detect_topology()
-    spec = SlurmJobSpec(
-        topo=topo,
-        exec_command=f"bash {script_path}",
-        directives=SlurmDirectives(),
-        working_dir=script_path.parent
-    )
+    if getattr(args, "dry_run", False):
+        return {
+            "success": True,
+            "job_id": None,
+            "script_path": script_path,
+            "dry_run_content": script_path.read_text(encoding="utf-8"),
+            "errors": [],
+            "warnings": [],
+        }
 
-    result = submit_slurm_job(spec=spec, script_path=script_path, dry_run=args.dry_run)
-    if not result.get("success"):
-        raise SchedulerError(
-            f"Submission failed: {'; '.join(result.get('errors', []))}",
-            job_id=result.get("job_id")
+    try:
+        proc = subprocess.run(
+            ["sbatch", str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
+    except subprocess.TimeoutExpired as e:
+        raise SchedulerError("sbatch command timed out. Check SLURM controller connectivity.") from e
+    except Exception as e:
+        raise SchedulerError(f"Submission exception: {e}") from e
 
-    return result
+    if proc.returncode != 0:
+        raise SchedulerError(f"sbatch failed: {proc.stderr.strip()}")
+
+    match = re.search(r"Submitted batch job (\d+)", proc.stdout)
+    return {
+        "success": True,
+        "job_id": int(match.group(1)) if match else None,
+        "script_path": script_path,
+        "errors": [],
+        "warnings": [],
+    }
 
 
 # =============================================================================

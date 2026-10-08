@@ -183,7 +183,7 @@ class ResourcesStep(WizardStep):
         )
 
         self.wizard.data['cpus_per_task'] = IntPrompt.ask(
-            "CPUs per {'Task' if sched == 'slurm' else 'Process'}",
+            f"CPUs per {'Task' if sched == 'slurm' else 'Process'}",
             default=1,
             console=self.console
         )
@@ -291,17 +291,30 @@ class ReviewStep(WizardStep):
                     return False
                 provider = provider_cls()
                 topo = self.wizard.data.get('topo')
+                ntasks = self.wizard.data['ntasks']
+                nodes = self.wizard.data['nodes']
+                if sched == "pbs":
+                    wiz_dirs = {
+                        "job_name": self.wizard.data['job_name'],
+                        "queue": self.wizard.data.get('partition', ''),
+                        "nodes": nodes,
+                        "ppn": max(1, ntasks // max(1, nodes)),
+                        "walltime": self.wizard.data['walltime'],
+                        "mem": self.wizard.data['mem_per_node'],
+                    }
+                else:
+                    wiz_dirs = {
+                        "job_name": self.wizard.data['job_name'],
+                        "queue": self.wizard.data.get('partition', ''),
+                        "nodes": nodes,
+                        "nprocs": ntasks,
+                        "walltime": self.wizard.data['walltime'],
+                        "memory": self.wizard.data['mem_per_node'],
+                    }
                 self.wizard.script_content = provider.generate_submit_script(
                     topo=topo,
                     exec_command=_get_exec_command_for_wizard(),
-                    directives={
-                        "job_name": self.wizard.data['job_name'],
-                        "queue": self.wizard.data.get('partition', ''),
-                        "nodes": self.wizard.data['nodes'],
-                        "walltime": self.wizard.data['walltime'],
-                        "mem" if sched == "pbs" else "memory": self.wizard.data['mem_per_node'],
-                        "nprocs": self.wizard.data['ntasks'],
-                    },
+                    directives=wiz_dirs,
                     working_dir=Path.cwd(),
                 )
 

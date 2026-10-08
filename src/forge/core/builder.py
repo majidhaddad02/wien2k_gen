@@ -368,7 +368,10 @@ def build_auto(  # noqa: C901
                 validation_passed = validate_config_method(config_content, config_path)
             else:
                 # Fallback to generic WIEN2k machines validator
-                validation_passed = validate_machines(config_path)
+                val_result = validate_machines(config_path)
+                validation_passed = bool(
+                    val_result.get("valid") if isinstance(val_result, dict) else val_result
+                )
         except Exception as e:
             logger.warning(f"Validation routine failed; assuming pass: {e}")
             validation_passed = False

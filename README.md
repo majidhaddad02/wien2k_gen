@@ -163,6 +163,26 @@ forge_wizard
 | Optimization | +0.5 | Forces require higher cutoff |
 | EFG/Hyperfine | +1.0 | Maximum precision needed |
 
+## Docker (no host pip/apt)
+
+Runtime image ships Python, OpenMPI, gfortran, and `forge[hpc]`. Dev image adds pytest/ruff/mypy.
+
+```bash
+# Build
+make docker
+make docker-dev
+
+# Use (case files in the current directory)
+docker run --rm -v "$PWD":/work -w /work forge:0.1.0 forge generate
+docker compose run --rm forge --help
+
+# Tests / shell (libraries already inside the image)
+make docker-test
+make docker-shell
+```
+
+Not baked in: WIEN2k itself (needs a license), CUDA/CuPy, and PyTorch/BoTorch. Mount WIEN2k or load it from the host cluster.
+
 ## Development
 
 ```bash

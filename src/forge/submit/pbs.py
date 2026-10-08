@@ -93,8 +93,8 @@ def _validate_pbs_time(time_str: str) -> bool:
 
 def _validate_pbs_memory(mem_str: str) -> bool:
     """Validate PBS memory suffix format: digits followed by kb, mb, gb (case-insensitive)."""
-    pattern = r'^\d+(kb|mb|gb|KB|MB|GB)?$'
-    return bool(re.match(pattern, mem_str))
+    pattern = r'^\d+\s*(kb|mb|gb|tb|k|m|g|t)?$'
+    return bool(re.match(pattern, mem_str, re.IGNORECASE))
 
 
 def _check_pbs_limits(spec: PBSJobSpec) -> list[str]:
@@ -217,13 +217,13 @@ class PBSSubmitProvider(SubmitProvider):
         if directives.job_array:
             lines.append(f"#PBS -t {directives.job_array}")
 
-        output = directives.output or "pbs-${PBS_JOBID}.out"
+        output = directives.output or "pbs.out"
         if directives.join_output:
             lines.append("#PBS -j oe")
             lines.append(f"#PBS -o {output}")
         else:
             lines.append(f"#PBS -o {output}")
-            error = directives.error or "pbs-${PBS_JOBID}.err"
+            error = directives.error or "pbs.err"
             lines.append(f"#PBS -e {error}")
 
         if directives.email:
@@ -279,7 +279,7 @@ class PBSSubmitProvider(SubmitProvider):
 
         lines.append("# Execute calculation")
         lines.append(f'echo "[pbs_submit] Launching: {spec.exec_command}"')
-        lines.append(f'exec {spec.exec_command} "$@"')
+        lines.append(f'{spec.exec_command} "$@"')
         lines.append("EXIT_CODE=$?")
         lines.append("exit $EXIT_CODE")
 

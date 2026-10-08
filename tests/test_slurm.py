@@ -98,3 +98,22 @@ def test_explicit_mail_user_and_mail_type_unchanged():
     assert "--mail-user=someone@example.com" in text
     assert "--mail-type=FAIL" in text
     assert "--mail-type=BEGIN,END,FAIL" not in text
+
+
+def test_sbatch_emits_account():
+    text = _format_sbatch_directives(SlurmDirectives(account="proj1"))
+    assert "--account=proj1" in text
+
+
+def test_generated_scripts_do_not_exec():
+    script = generate_sbatch_script(_spec(ntasks=4, cpus_per_task=2))
+    assert "\nexec " not in script
+    assert "EXIT_CODE=$?" in script
+
+
+def test_days_walltime_not_parsed_as_seconds(monkeypatch):
+    monkeypatch.setattr("forge.submit.slurm.get_job_memory_limit_mb", lambda: None)
+    spec = _spec(time="2-00:00:00", ntasks=1, cpus_per_task=1)
+    spec.preemption_grace_sec = 60
+    warnings = _check_scheduler_limits(spec)
+    assert not any("Preemption grace period >=" in x for x in warnings)

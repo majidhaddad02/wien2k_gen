@@ -155,13 +155,20 @@ def _check_scheduler_limits(spec: SlurmJobSpec) -> list[str]:  # noqa: C901
                 )
 
     if directives.time:
-        parts = directives.time.replace("-", ":").split(":")
+        raw_time = directives.time.strip()
+        days = 0
+        clock = raw_time
+        if "-" in raw_time:
+            day_part, clock = raw_time.split("-", 1)
+            days = int(day_part)
+        parts = clock.split(":")
         if len(parts) == 3:
             walltime_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
         elif len(parts) == 2:
-            walltime_sec = int(parts[0]) * 60 + int(parts[1])
+            walltime_sec = int(parts[0]) * 3600 + int(parts[1]) * 60
         else:
-            walltime_sec = int(parts[0])
+            walltime_sec = int(parts[0]) * 60
+        walltime_sec += days * 86400
 
         if spec.preemption_grace_sec >= walltime_sec:
             warnings_list.append("Preemption grace period >= walltime. Adjust preemption_grace_sec or walltime.")
@@ -197,6 +204,7 @@ def _format_sbatch_directives(directives: SlurmDirectives) -> str:
         ("output",        directives.output or "slurm-%j.out",             "--output={value}"),
         ("error",         directives.error or "slurm-%j.err",              "--error={value}"),
         ("export",        directives.export or "ALL",                      "--export={value}"),
+        ("account",       directives.account or "",                        "--account={value}"),
     ]
 
     for _key, val, fmt in sbatch_map:
@@ -377,7 +385,7 @@ def _generate_sbatch_body(spec: SlurmJobSpec) -> str:
     lines.append("")
 
     lines.append("# Execute calculation")
-    lines.append(f'exec {spec.exec_command} "$@"')
+    lines.append(f'{spec.exec_command} "$@"')
     lines.append("EXIT_CODE=$?")
     lines.append("exit $EXIT_CODE")
 
