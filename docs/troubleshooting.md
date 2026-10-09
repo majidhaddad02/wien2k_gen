@@ -1,15 +1,18 @@
 # Troubleshooting Guide
 
-## Diagnostic Tool
+FORGE's first response to a failed job is `forge diagnostics` plus `forge generate --dry-run`: they show whether the problem is WIENROOT, MPI, hostnames, or the `.machines` file — before you spend another queue allocation.
 
-Run the built-in diagnostic first whenever you encounter an issue:
+Tab-complete diagnostic flags from `completions/forge.bash` / `completions/forge.zsh`.
 
 ```bash
 forge diagnostics
-forge diagnostics --json > diag.json
+forge diagnostics --full
+forge diagnostics --export diag.json
+forge --json diagnostics
+forge generate --dry-run
 ```
 
-The diagnostic covers: CPU, memory, NUMA, scheduler, MPI, WIEN2k installation, scratch filesystem, and network interconnect.
+Covers CPU, memory, NUMA, scheduler, MPI, WIEN2k, scratch, and interconnect.
 
 ---
 
@@ -19,13 +22,13 @@ The diagnostic covers: CPU, memory, NUMA, scheduler, MPI, WIEN2k installation, s
 
 **Symptom:** `ConfigurationError: WIENROOT not set and cannot auto-detect WIEN2k`
 
-**Solution:**
 ```bash
 export WIENROOT=/path/to/WIEN2k
 forge generate
 ```
 
-Or set permanently in `~/.config/forge/config.json`:
+Or in `~/.config/forge/config.json`:
+
 ```json
 {"wienroot": "/opt/WIEN2k_24.1"}
 ```
@@ -34,252 +37,221 @@ Or set permanently in `~/.config/forge/config.json`:
 
 ### 2. "mpirun not found"
 
-**Symptom:** `subprocess.CalledProcessError: mpirun: command not found`
-
-**Solution:**
 ```bash
-which mpirun              # check if MPI is installed
-module load openmpi/4.1   # or Intel MPI, MPICH, MVAPICH
+which mpirun
+module load openmpi/4.1
 forge generate
 ```
 
-If using a module system, load the MPI module before running forge.
+Load the MPI module **before** FORGE so `WIEN_MPIRUN` in `parallel_options` is correct.
 
 ---
 
 ### 3. Hyper-Threading Warning
 
-**Symptom:**
-```
-Warning: Hyper-Threading active. DFT codes perform best on physical cores only.
-Use --hint=nomultithread (Slurm) or OMP_PLACES=cores (OpenMP) to avoid oversubscription.
-```
+DFT saturates on physical cores. FORGE warns when HT is on.
 
-**Solution:**
+SLURM:
 
-For SLURM:
 ```bash
 #SBATCH --hint=nomultithread
 #SBATCH --threads-per-core=1
 ```
 
-For non-SLURM:
+Otherwise:
+
 ```bash
 export OMP_PLACES=cores
 export OMP_PROC_BIND=close
 ```
 
+```bash
+forge generate --reserve-os-cores 4
+```
+
 ---
 
-### 4. NUMA Warning — Unbalanced Memory Access
+### 4. NUMA Warning
 
-**Symptom:**
-```
-Warning: NUMA system (2 nodes). Use numactl or SLURM --cpu-bind=core for memory binding.
-```
-
-**Solution:**
-
-For SLURM:
 ```bash
 #SBATCH --cpu-bind=cores
 ```
 
-For manual execution:
 ```bash
 numactl --cpunodebind=0 --membind=0 mpirun -np 16 run_lapw -p
+forge hardware --recommend --case Fe
 ```
 
 ---
 
 ### 5. Memory Near System Limit
 
-**Symptom:**
-```
-Warning: Estimated memory (48.2 GB) near system limit (64.0 GB). Risk of OOM.
-```
-
-**Solution:**
-- Reduce `--omp` threads (fewer threads = less memory per rank)
-- Switch to pure MPI mode: `--mode mpi`
+- Reduce `--omp`
+- Switch to `--mode mpi`
 - Request more memory: `forge submit --mem 128G`
+- Cap with `forge generate --memory-limit 64`
 
 ---
 
 ### 6. Scratch on Network Filesystem
 
-**Symptom:**
-```
-Warning: SCRATCH on nfs may cause I/O bottleneck. Use local NVMe if possible.
-```
-
-**Solution:**
-- Set `SCRATCH=/tmp` or `SCRATCH=/dev/shm` (RAM disk)
-- Set `TMPDIR=/local_scratch`
-- Use `export SCRATCH=/local_scratch`
-
-For SLURM:
 ```bash
-#SBATCH --gres=scratch:100G    # request local scratch
-export SCRATCH=$SLURM_SCRATCH
+export SCRATCH=/tmp
+export TMPDIR=/local_scratch
 ```
 
 ---
 
 ### 7. K-Point Saturation
 
-**Symptom:**
-```
-Warning: Using 32 cores exceeds k-point count (4). Speedup capped at 4×.
-Consider reducing cores or increasing k-point mesh.
+More ranks than irreducible k-points.
+
+```bash
+forge generate --cores 4 --mode kpoint
+forge generate --mode hybrid --omp 4
 ```
 
-**Solution:**
-- Increase k-point mesh: re-run `init_lapw` with higher `-numk`
-- Or reduce core count: `forge generate --cores 4`
-- Or accept the warning — the run will still work, just won't use extra cores
+`extrafine: 1` appears only when `nkpt % n_ranks != 0`. It does not create extra parallelism.
 
 ---
 
 ### 8. ELPA Not Found
 
-**Symptom:**
-```
-Warning: ELPA not found; MPI fine-grain will be slow. Consider hybrid mode.
-```
+NMAT > 8000 without ELPA is slow in mpi/fine_grain. Install ELPA, recompile WIEN2k (`siteconfig`), or:
 
-**Solution:**
-
-Install ELPA and recompile WIEN2k:
 ```bash
-# Download and install ELPA
-./configure --enable-openmp --with-mpi
-make -j install
-
-# Recompile WIEN2k with ELPA
-cd $WIENROOT
-./siteconfig  # set ELPA_LIBS path
-make
+forge generate --mode hybrid --omp 4
 ```
 
 ---
 
 ### 9. Duplicate Host Warning
 
-**Symptom:**
-```
-Warning: Duplicate hostnames detected in node list
-```
+FORGE deduplicates. If it persists:
 
-**Cause:** SLURM or PBS returned a nodelist with duplicate entries (e.g., from hostname aliases).
-
-**Solution:** The tool automatically deduplicates hostnames. If the warning persists, verify:
 ```bash
-echo $SLURM_JOB_NODELIST    # should show unique hosts
-hostname                     # should match scheduler's view
+echo $SLURM_JOB_NODELIST
+hostname
 ```
+
+Generate **inside** the allocation (`docs/job-submission.md` model 2), not on the login node.
 
 ---
 
-### 10. .machines Validation Failed
+### 10. `.machines` Validation Failed
 
-**Symptom:**
-```
-ValidationError: .machines syntax error at line 5
-```
-
-**Solution:**
-- Check the generated `.machines` file manually:
 ```bash
 cat .machines
-```
-- Compare with backup:
-```bash
 ls -la .machines.bak.*
+forge generate --overwrite --dry-run
+forge generate --manual
 ```
-- If the tool generated an invalid file, run diagnostics and file a GitHub issue with the diagnostic output.
+
+Physical cores per node are `max(lapw0, lapw1, lapw2)`, not the sum. Remainder ranks are not an OpenMP error.
 
 ---
 
-### 11. SGE/GridEngine — No PE_HOSTFILE
+### 11. SGE — No `PE_HOSTFILE`
 
-**Symptom:** SGE detected but `PE_HOSTFILE` is missing from environment.
-
-**Solution:** Ensure the parallel environment is configured:
 ```bash
-qconf -sp mpi          # verify PE exists
-qsub -pe mpi 64 job.sh # request PE with slot count
+qconf -sp mpi
+qsub -pe mpi 64 job.sh
+forge generate --scheduler sge
 ```
 
 ---
 
-### 12. Module/Package Not Found
+### 12. `ModuleNotFoundError: No module named 'forge'`
 
-**Symptom:** `ModuleNotFoundError: No module named 'forge'`
+There is no PyPI package. Install from this tree:
 
-**Solution:**
 ```bash
-pip install forge
-# or if installed from source:
+./install.sh --yes
+# or, in a venv:
 pip install -e .
+export PATH="$HOME/.local/bin:$PATH"
+forge --version
 ```
 
-On HPC clusters, you may need:
-```bash
-pip install --user forge
-export PATH=$HOME/.local/bin:$PATH
-```
+Air-gapped: `./install.sh --offline --yes`. See `docs/installation.md`.
 
 ---
 
-### 13. Permission Denied Writing .machines
+### 13. Permission Denied Writing `.machines`
 
-**Symptom:** `PermissionError: [Errno 13] Permission denied: '.machines'`
-
-**Solution:**
 ```bash
-chmod u+w .machines           # if file exists
+chmod u+w .machines
 forge generate --overwrite
-```
-
-Check if the case directory is writable:
-```bash
 ls -la .
 ```
 
 ---
 
-## Debug Mode
+### 14. `forge submit` and missing `.machines`
 
-Enable detailed logging:
+```bash
+forge submit --auto-generate --partition compute --time 08:00:00
+forge submit --no-auto-generate --partition compute
+```
+
+`--auto-generate` and `--no-auto-generate` are mutually exclusive.
+
+---
+
+### 15. Wrong clone / install URL
+
+The repository is `https://github.com/majidhaddad02/wien2k_gen.git`, not `.../forge`.
+
+---
+
+### 16. `generate --target energy` rejected
+
+`forge generate --target` is `time|memory|balanced|cost`. Energy is an **advise** goal:
+
+```bash
+forge generate --target time
+forge advise --case Fe --target energy
+```
+
+---
+
+### 17. `advise --verbose` unknown
+
+`advise` has no `--verbose`. Use the global flag:
+
+```bash
+forge -v advise --case Fe --cores 128
+```
+
+---
+
+### 18. Batch script `exec` skips EXIT_CODE
+
+Do not `exec run_lapw` at the end of a scheduler script. FORGE's generated scripts do not `exec`, so EXIT_CODE and epilog hooks still run.
+
+---
+
+## Debug Mode
 
 ```bash
 export LOG_LEVEL=DEBUG
-forge generate
+forge -vv generate --dry-run
+forge --log-file /tmp/forge.log generate --dry-run
 ```
-
-This outputs step-by-step information about:
-- Scheduler detection attempts
-- Hardware topology parsing
-- Problem size extraction (per-file parsing with values)
-- Mode scoring and selection
-- `.machines` generation logic
-- Validation results
 
 ---
 
 ## Getting Help
 
-If you cannot resolve an issue:
-
-1. Run `forge diagnostics --json > diag.json`
-2. Include the case-specific information (number of atoms, k-points, NMAT)
-3. Paste the output of `forge generate --dry-run`
-4. File an issue at: https://github.com/majidhaddad02/forge/issues
+1. `forge diagnostics --full --export diag.json`
+2. Include atoms, k-points, NMAT
+3. Paste `forge generate --dry-run`
+4. File an issue at https://github.com/majidhaddad02/wien2k_gen/issues
 
 ## Related Documents
 
-- `docs/machines-guide.md` — hostname, core-count, and mode mistakes in `.machines`
-- `docs/job-submission.md` — scheduler flags, generate-inside-allocation vs login-node files
-- `docs/preprocessing-convergence.md` — charge sloshing, mixing, RKmax/k-mesh before a long job
+- `docs/machines-guide.md` — hostname, core-count, extrafine, kpar
+- `docs/job-submission.md` — generate-inside-allocation vs login-node files
+- `docs/preprocessing-convergence.md` — mixing, RKmax, k-mesh
+- `docs/installation.md` — `install.sh`, offline, Docker
 - `docs/workflow.md` — full path from `init_lapw` to submit

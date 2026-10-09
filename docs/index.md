@@ -1,8 +1,10 @@
 # FORGE (forge) — Documentation v0.1.0
 
-Parallel configuration file generator, HPC job dispatcher, and SCF convergence optimizer for WIEN2k. Features automatic hardware topology detection, NUMA-aware resource allocation, Amdahl's Law saturation analysis, Roofline performance modeling, multi-scheduler integration (SLURM, PBS, LSF, SGE), Bayesian hyperparameter optimization, GNN-based k-point prediction, and GPU offloading detection.
+FORGE generates a hardware-aware `.machines` file, submits WIEN2k jobs to SLURM/PBS/LSF/SGE, and diagnoses SCF failures so you do not hand-tune ranks, OpenMP, or queue resources. It detects topology, picks a parallel mode from NMAT and k-points, and writes files WIEN2k actually sources.
 
-> **Important:** WIEN2k is copyrighted by P. Blaha, K. Schwarz, and collaborators at TU Wien. A valid license is required. Visit [wien2k.at](http://www.wien2k.at/).
+A valid WIEN2k license is required. FORGE only writes configuration; it does not replace WIEN2k. See [wien2k.at](http://www.wien2k.at/).
+
+Tab-complete every flag from `completions/` (`forge.bash`, `forge.zsh`, plus `forge_sbatch.*` and `forge_wizard.*`). After `./install.sh`, open a new shell or `source ~/.local/opt/forge/env.sh`.
 
 ---
 
@@ -11,31 +13,33 @@ Parallel configuration file generator, HPC job dispatcher, and SCF convergence o
 | Document | Description |
 |----------|-------------|
 | [Workflow](workflow.md) | End-to-end map from `init_lapw` to a finished job |
-| [`.machines` Guide](machines-guide.md) | How to generate, read, and use `.machines`; why FORGE beats hand-written files |
-| [Job Submission](job-submission.md) | Four usage models (`forge submit`, generate-inside-job, `forge_sbatch`, wizard/local) |
-| [Preprocessing Convergence](preprocessing-convergence.md) | RKmax, k-mesh, GMAX, RMT, mixing scans with worked examples |
-| [Installation](installation.md) | System requirements, pip install, from source, air-gapped HPC |
-| [User Guide](user-guide.md) | CLI commands, wizard, interactive TUI, mixing strategies, convergence tools |
-| [API Reference](api-reference.md) | Python module reference for scripting and automation |
-| [Examples](examples.md) | Real-world `.machines` output for different scenarios |
-| [Parallel Modes](parallel-modes.md) | kpoint, hybrid, mpi, fine-grain — when to use each |
-| [ML Dataset](ml_dataset.md) | GNN training data pipeline from Materials Project |
-| [Troubleshooting](troubleshooting.md) | Common errors, diagnostics, debugging |
-| [Contributing](contributing.md) | Development setup and contribution notes |
+| [Installation](installation.md) | `install.sh`, source, Docker — not PyPI |
+| [User Guide](user-guide.md) | Every `forge` command and flag with examples |
+| [`.machines` Guide](machines-guide.md) | Generate, read, and validate `.machines` |
+| [Job Submission](job-submission.md) | `forge submit`, generate-inside-job, `forge_sbatch`, wizard |
+| [Parallel Modes](parallel-modes.md) | kpoint, hybrid, mpi, fine_grain |
+| [Preprocessing Convergence](preprocessing-convergence.md) | RKmax, k-mesh, GMAX, RMT, mixing |
+| [Troubleshooting](troubleshooting.md) | Common errors, diagnostics, debug |
+| [API Reference](api-reference.md) | Python module reference |
+| [ML Dataset](ml_dataset.md) | GNN / Bayesian / history pipeline |
+| [File Tree](file-tree.md) | Complete repository file diagram |
+| [Contributing](contributing.md) | Development setup |
 
 ---
 
 ## Quick Overview
 
 ```bash
-pip install forge
-forge generate                    # auto-detect everything
-forge generate --mode hybrid      # force hybrid mode
-forge generate --reserve-os-cores 4  # leave 4 cores for OS
+git clone https://github.com/majidhaddad02/wien2k_gen.git
+cd wien2k_gen
+./install.sh --yes
+forge generate
+forge generate --mode hybrid --omp 4
+forge generate --reserve-os-cores 4
 forge submit --partition compute --time 48:00:00
-forge advise --case Fe            # performance bottleneck analysis
-forge diagnose --log case.scf     # SCF convergence diagnostics
-forge_wizard                          # interactive wizard
+forge advise --case Fe
+forge diagnose --log case.scf
+forge_wizard
 ```
 
 ---
@@ -44,65 +48,26 @@ forge_wizard                          # interactive wizard
 
 | What | How |
 |------|-----|
-| **Scheduler** | SLURM, PBS/Torque, LSF, SGE/GridEngine, or local |
-| **Hardware** | Physical/logical cores, sockets, NUMA nodes, HT status |
-| **CPU** | Architecture (Intel Xeon/AMD EPYC/ARM), generation (SapphireRapids, Genoa...), frequency |
-| **Memory** | Total RAM, per-core, job limits from scheduler, bandwidth (sysfs counters + STREAM) |
-| **Network** | InfiniBand (mlx5/psm2), OmniPath, Ethernet with speed |
-| **MPI** | OpenMPI, Intel MPI, MPICH, MVAPICH with binding hints |
-| **GPU** | NVIDIA (nvidia-smi), AMD (rocm-smi), Intel (sycl-ls), generic (/dev/dri) |
-| **WIEN2k** | Version (19/21/23/24), spin polarization, SOC, LDA+U, hybrid, EECE, GPU compilation flags |
-| **Input files** | `.struct` (atoms, volume, RMT), `.scf` (NMAT, energy, band gap), `.in1` (nbands, GMAX), `.inm` (U, J) |
-| **System type** | Metal / semiconductor / insulator from band gap in `.scf` |
-| **SCF convergence** | Charge sloshing root cause, QTL-B errors, divergence type, SCF cycle timing |
+| Scheduler | SLURM, PBS/Torque, LSF, SGE/GridEngine, or local |
+| Hardware | Physical/logical cores, sockets, NUMA, HT |
+| CPU | Architecture and generation, frequency |
+| Memory | Total RAM, per-core, job limits, bandwidth |
+| Network | InfiniBand, OmniPath, Ethernet |
+| MPI | OpenMPI, Intel MPI, MPICH, MVAPICH |
+| GPU | NVIDIA, AMD, Intel, generic `/dev/dri` |
+| WIEN2k | Version 19/21/23/24, spin, SOC, LDA+U, hybrid, EECE, GPU flags |
+| Input files | `.struct`, `.scf`, `.in1`, `.inm`, `.klist`, `.inso`, `.inorb`, `.inst` |
+| System type | Metal / semiconductor / insulator from band gap |
+| SCF | Charge sloshing, QTL-B, divergence type |
 
 ---
 
-## Feature Categories
+## License and Citation
 
-### HPC Resource Management
-- Automatic hardware detection with NUMA topology
-- Memory bandwidth profiling from hardware counters
-- Amdahl's Law saturation analysis
-- Roofline model compute/memory-bound identification
-- SLURM/PBS/LSF job submission with auto-detected parameters
-
-### Parallelization Strategies
-- k-point, hybrid, MPI, and fine-grain parallel modes
-- ELPA eigensolver recommendation (threshold 8000 — WIEN2k benchmarks)
-- FFD k-point distribution for load balancing
-- NUMA-aware k-point allocation
-- GPU offloading detection with hybrid CPU+GPU `.machines` generation
-
-### SCF Convergence Optimization
-- Smart Kerker q0 based on system type (Winkelmann et al. 2020, PRB 102, 195138)
-- Restarted Pulay mixing for large systems (Pratapa & Suryanarayana 2015)
-- Automatic checkpointing (heuristic, see Daly 2006 FGCS 22(3) for optimal formula)
-- Charge sloshing root cause diagnosis with targeted remediation
-- QTL-B error analysis with specific fix recommendations
-
-### ML & AI Assistance
-- Bayesian optimization with Matérn ν=2.5 kernel (Snoek et al. 2012)
-- q-batch Expected Improvement via Monte Carlo joint posterior (Ginsbourger et al. 2010)
-- GNN-based k-point prediction (CGCNN architecture)
-- Physics-informed parameter priors
-- History-driven warm-start from execution database
-
-### Structure Validation
-- RMT sphere overlap detection and automated optimization
-- Nearest-neighbor distance calculation (3×3×3 supercell)
-- setrmt algorithm: optimal RMT from structure (Blaha JCP 2020)
-
----
-
-## License & Citation
-
-MIT License. See [LICENSE.md](../LICENSE.md).
-
-If you use forge in your research:
+MIT License. See `LICENSE.md`.
 
 - **WIEN2k:** Blaha, P. et al. (2020). *J. Chem. Phys.* 152, 074101.
-- **Amdahl's Law:** Amdahl, G. M. (1967). *AFIPS Conference Proceedings*, 30, 483-485.
+- **Amdahl's Law:** Amdahl, G. M. (1967). *AFIPS*, 30, 483-485.
 - **Roofline:** Williams, S. et al. (2009). *CACM*, 52(4), 65-76.
 - **Bayesian Opt:** Snoek, J. et al. (2012). *NIPS*, 25, 2951-2959.
-- **This tool:** See [CITATION.cff](../CITATION.cff)
+- **This tool:** See `CITATION.cff`

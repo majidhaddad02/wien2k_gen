@@ -1,5 +1,9 @@
 # Machine Learning Subsystems
 
+FORGE's ML stack (history RF, CGCNN k-grid, Bayesian RKMAX/mixing) suggests cutoffs and grids from prior runs so you do not start every new compound from a guess.
+
+Tab-complete `optimize`, `predict`, `history`, and `screen` from `completions/forge.bash` / `completions/forge.zsh`.
+
 ## Table of Contents
 
 1. [Overview](#overview)

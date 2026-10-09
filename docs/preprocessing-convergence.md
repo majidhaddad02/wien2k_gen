@@ -1,6 +1,10 @@
 # Preprocessing Parameter Convergence
 
-Do not start a 48-hour parallel SCF until the **cheap parameters** are converged. This guide covers the preprocessing knobs that dominate WIEN2k accuracy and stability:
+FORGE's `converge` and `diagnose` commands scan RKmax / k-mesh and explain charge sloshing **before** you spend a 48-hour parallel allocation on unconverged cutoffs.
+
+Tab-complete `forge converge` and `forge diagnose` from `completions/forge.bash` / `completions/forge.zsh`.
+
+Do not start a production SCF until the cheap parameters are converged. This guide covers the preprocessing knobs that dominate WIEN2k accuracy and stability:
 
 | Parameter | File | What it controls | Typical first guess |
 |-----------|------|------------------|---------------------|
@@ -310,7 +314,7 @@ A parameter scan is meaningless if each point diverges.
 
 ```bash
 forge diagnose --log Case.scf
-forge diagnose --case Case
+forge diagnose Case
 ```
 
 You get cycle count, final energy, charge distance, charge-ratio trend, and a root cause.
@@ -417,7 +421,7 @@ cd examples/02_cu_metal
 init_lapw -b -vxc 13 -ecut -6 -rkmax 7.0 -numk 2000
 forge generate --max-cores 16
 run_lapw -p -i 25
-forge diagnose --case Cu
+forge diagnose Cu
 # apply Kerker / MP if requested
 
 forge converge --case Cu --mode rkmax --rkmax "7,8,9,10" --tolerance 0.0005
@@ -450,7 +454,7 @@ forge submit --partition compute --time 48:00:00 --job-name fe-sp-so --mem 192G
 
 ```bash
 # >50 atoms, few k-points
-forge diagnose --case LaFeO3
+forge diagnose LaFeO3
 # expect Restarted Pulay recommendation
 
 forge converge --case LaFeO3 --mode rkmax --rkmax "6,7,8" --tolerance 0.001
