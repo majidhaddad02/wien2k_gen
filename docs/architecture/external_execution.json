@@ -1,0 +1,713 @@
+[
+  {
+    "module": "forge.backends.cp2k",
+    "path": "src/forge/backends/cp2k.py",
+    "lineno": 335,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(binary)",
+    "caller": "forge.backends.cp2k:CP2KBackend._detect_cp2k_binary"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 60,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,compute_cap,uuid,pci.bus_id,index', '--format=csv,noheader'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'}",
+    "caller": "forge.backends.gpu_backend:_detect_nvidia_gpus"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 108,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['rocm-smi', '--showproductname', '--showmeminfo', 'vram', '--csv'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'})",
+    "caller": "forge.backends.gpu_backend:_detect_amd_gpus"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 236,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', 'nvlink', '--capabilities'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'})",
+    "caller": "forge.backends.gpu_backend:detect_nvlink_active"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 253,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', 'topo', '-m'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'})",
+    "caller": "forge.backends.gpu_backend:detect_nvlink_active"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 283,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['rocm-smi', '--showtopology'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'})",
+    "caller": "forge.backends.gpu_backend:detect_infinity_fabric_active"
+  },
+  {
+    "module": "forge.backends.gpu_backend",
+    "path": "src/forge/backends/gpu_backend.py",
+    "lineno": 299,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['rocm-smi', '--showlinkinfo'], capture_output=True, text=True, timeout=10, env={**os.environ, 'LC_ALL': 'C'})",
+    "caller": "forge.backends.gpu_backend:detect_infinity_fabric_active"
+  },
+  {
+    "module": "forge.backends.quantum_espresso.executor",
+    "path": "src/forge/backends/quantum_espresso/executor.py",
+    "lineno": 201,
+    "mechanism": "subprocess.Popen",
+    "callee": "subprocess.Popen",
+    "args_preview": "subprocess.Popen(shlex.split(command), shell=False, env=env, stdout=stdout_fh, stderr=stderr_fh, start_new_session=True, cwd=os.getcwd())",
+    "caller": "forge.backends.quantum_espresso.executor:execute_qe_calculation"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 166,
+    "mechanism": "subprocess.Popen",
+    "callee": "subprocess.Popen",
+    "args_preview": "subprocess.Popen(cmd, cwd=work_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_local"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 228,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['scancel', str(job_id)], check=False)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_slurm"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 232,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['squeue', '-j', str(job_id), '-h', '-o', '%T'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_slurm"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 285,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qdel', str(job_id)], check=False)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_pbs"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 288,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qstat', '-f', str(job_id)], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_pbs"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 337,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bkill', str(job_id)], check=False)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_lsf"
+  },
+  {
+    "module": "forge.benchmark.real",
+    "path": "src/forge/benchmark/real.py",
+    "lineno": 340,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bjobs', '-o', 'stat', '-noheader', str(job_id)], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.benchmark.real:RealBenchmarkRunner._execute_lsf"
+  },
+  {
+    "module": "forge.cli_commands._utils",
+    "path": "src/forge/cli_commands/_utils.py",
+    "lineno": 36,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(fallback)",
+    "caller": "forge.cli_commands._utils:open_editor_for_manual_review"
+  },
+  {
+    "module": "forge.cli_commands._utils",
+    "path": "src/forge/cli_commands/_utils.py",
+    "lineno": 49,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run([editor, str(filepath)], check=False)",
+    "caller": "forge.cli_commands._utils:open_editor_for_manual_review"
+  },
+  {
+    "module": "forge.cli_sbatch",
+    "path": "src/forge/cli_sbatch.py",
+    "lineno": 279,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sbatch', str(script_path)], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.cli_sbatch:handle_submit"
+  },
+  {
+    "module": "forge.core.case_parser",
+    "path": "src/forge/core/case_parser.py",
+    "lineno": 900,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(binary)",
+    "caller": "forge.core.case_parser:detect_wien2k_version"
+  },
+  {
+    "module": "forge.core.energy",
+    "path": "src/forge/core/energy.py",
+    "lineno": 59,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['which', 'nvidia-smi'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.core.energy:_detect_nvidia_smi"
+  },
+  {
+    "module": "forge.core.energy",
+    "path": "src/forge/core/energy.py",
+    "lineno": 65,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', '--query-gpu=power.draw', '--format=csv,noheader'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.energy:_detect_nvidia_smi"
+  },
+  {
+    "module": "forge.core.energy",
+    "path": "src/forge/core/energy.py",
+    "lineno": 217,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', '--query-gpu=power.draw', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.energy:get_nvidia_power_watts"
+  },
+  {
+    "module": "forge.core.hardware.cpu",
+    "path": "src/forge/core/hardware/cpu.py",
+    "lineno": 25,
+    "mechanism": "subprocess.check_output",
+    "callee": "subprocess.check_output",
+    "args_preview": "subprocess.check_output(cmd, text=True, timeout=timeout, stderr=subprocess.DEVNULL, env=env)",
+    "caller": "forge.core.hardware.cpu:CpuDetectionMixin._run_cmd_safe"
+  },
+  {
+    "module": "forge.core.locator",
+    "path": "src/forge/core/locator.py",
+    "lineno": 34,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(binary)",
+    "caller": "forge.core.locator:find_wienroot"
+  },
+  {
+    "module": "forge.core.perf_counters",
+    "path": "src/forge/core/perf_counters.py",
+    "lineno": 74,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['which', executable], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=5)",
+    "caller": "forge.core.perf_counters:_which"
+  },
+  {
+    "module": "forge.core.perf_counters",
+    "path": "src/forge/core/perf_counters.py",
+    "lineno": 105,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['likwid-perfctr', '-C', '0', '-g', 'MEM', '-m', '-O'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=15)",
+    "caller": "forge.core.perf_counters:_check_counter_access"
+  },
+  {
+    "module": "forge.core.perf_counters",
+    "path": "src/forge/core/perf_counters.py",
+    "lineno": 142,
+    "mechanism": "subprocess.check_output",
+    "callee": "subprocess.check_output",
+    "args_preview": "subprocess.check_output(cmd, text=True, timeout=timeout, stderr=subprocess.DEVNULL, env=env)",
+    "caller": "forge.core.perf_counters:_run_cmd_safe"
+  },
+  {
+    "module": "forge.core.pipeline",
+    "path": "src/forge/core/pipeline.py",
+    "lineno": 146,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(binary)",
+    "caller": "forge.core.pipeline:detect_wien2k_version"
+  },
+  {
+    "module": "forge.core.pipeline",
+    "path": "src/forge/core/pipeline.py",
+    "lineno": 149,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run([exe, '-v'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.pipeline:detect_wien2k_version"
+  },
+  {
+    "module": "forge.core.scheduler",
+    "path": "src/forge/core/scheduler.py",
+    "lineno": 590,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(cmd)",
+    "caller": "forge.core.scheduler:_detect_scheduler"
+  },
+  {
+    "module": "forge.core.scheduler",
+    "path": "src/forge/core/scheduler.py",
+    "lineno": 593,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(cmd)",
+    "caller": "forge.core.scheduler:_detect_scheduler"
+  },
+  {
+    "module": "forge.core.scheduler",
+    "path": "src/forge/core/scheduler.py",
+    "lineno": 596,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(cmd)",
+    "caller": "forge.core.scheduler:_detect_scheduler"
+  },
+  {
+    "module": "forge.core.terminal_monitor",
+    "path": "src/forge/core/terminal_monitor.py",
+    "lineno": 84,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['squeue', '--me', '--noheader', '--format=%i %j %T %M %l %D %c'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.terminal_monitor:detect_active_jobs"
+  },
+  {
+    "module": "forge.core.terminal_monitor",
+    "path": "src/forge/core/terminal_monitor.py",
+    "lineno": 103,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qstat', '-u', os.environ.get('USER', '')], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.terminal_monitor:detect_active_jobs"
+  },
+  {
+    "module": "forge.core.terminal_monitor",
+    "path": "src/forge/core/terminal_monitor.py",
+    "lineno": 293,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sstat', '--format=TresUsageInAve', '--noheader', '-j', state.job.job_id], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.core.terminal_monitor:watch_job"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 305,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(cmd_list, check=True, capture_output=True, text=True)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._submit_node"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 308,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sbatch', '--parsable', str(script_path)], capture_output=True, text=True, check=True, timeout=30)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._submit_node"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 314,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qsub', str(script_path)], capture_output=True, text=True, check=True, timeout=30)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._submit_node"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 321,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bash', str(script_path)], capture_output=True, text=True, check=True, timeout=30)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._submit_node"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 333,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['squeue', '--job', job_id, '--noheader', '--format=%T'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._poll_job"
+  },
+  {
+    "module": "forge.core.workflow_executor",
+    "path": "src/forge/core/workflow_executor.py",
+    "lineno": 346,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qstat', '-f', job_id], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.core.workflow_executor:WorkflowExecutor._poll_job"
+  },
+  {
+    "module": "forge.optimizer.bayesian_tuner",
+    "path": "src/forge/optimizer/bayesian_tuner.py",
+    "lineno": 184,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(cmd, shell=False, capture_output=True, text=True, timeout=120, cwd=cwd)",
+    "caller": "forge.optimizer.bayesian_tuner:BayesianParameterTuner._objective_from_run"
+  },
+  {
+    "module": "forge.optimizer.bayesian_tuner",
+    "path": "src/forge/optimizer/bayesian_tuner.py",
+    "lineno": 194,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['cp', f.name, f'{self.case_name}.in1'], check=False)",
+    "caller": "forge.optimizer.bayesian_tuner:BayesianParameterTuner._objective_from_run"
+  },
+  {
+    "module": "forge.optimizer.bayesian_tuner",
+    "path": "src/forge/optimizer/bayesian_tuner.py",
+    "lineno": 199,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['cp', f2.name, f'{self.case_name}.inm'], check=False)",
+    "caller": "forge.optimizer.bayesian_tuner:BayesianParameterTuner._objective_from_run"
+  },
+  {
+    "module": "forge.optimizer.bayesian_tuner",
+    "path": "src/forge/optimizer/bayesian_tuner.py",
+    "lineno": 202,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['run_lapw', '-p', '-ec', '0.0001', '-cc', '0.0001', '-NI'], capture_output=True, text=True, timeout=600)",
+    "caller": "forge.optimizer.bayesian_tuner:BayesianParameterTuner._objective_from_run"
+  },
+  {
+    "module": "forge.optimizer.convergence",
+    "path": "src/forge/optimizer/convergence.py",
+    "lineno": 117,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(cmd_list, cwd=str(cwd), capture_output=True, text=True, timeout=timeout or 3600)",
+    "caller": "forge.optimizer.convergence:_run_wien2k_command"
+  },
+  {
+    "module": "forge.optimizer.convergence",
+    "path": "src/forge/optimizer/convergence.py",
+    "lineno": 195,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(cmd)",
+    "caller": "forge.optimizer.convergence:_find_wien2k_commands"
+  },
+  {
+    "module": "forge.optimizer.gpu_detector",
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "lineno": 75,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['nvidia-smi', '--query-gpu=name,memory.total,compute_cap', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.optimizer.gpu_detector:detect_gpu_hardware"
+  },
+  {
+    "module": "forge.optimizer.gpu_detector",
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "lineno": 100,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['rocm-smi', '--showproductname', '--showmeminfo', 'vram'], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.optimizer.gpu_detector:detect_gpu_hardware"
+  },
+  {
+    "module": "forge.optimizer.gpu_detector",
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "lineno": 126,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sycl-ls'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.optimizer.gpu_detector:detect_gpu_hardware"
+  },
+  {
+    "module": "forge.optimizer.gpu_detector",
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "lineno": 475,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run([f'{case_name}lapw1', '-p'], env=env_cpu, capture_output=True, text=True, timeout=300)",
+    "caller": "forge.optimizer.gpu_detector:run_gpu_benchmark"
+  },
+  {
+    "module": "forge.optimizer.gpu_detector",
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "lineno": 491,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run([f'{case_name}lapw1gpu', '-p'], env=env_gpu, capture_output=True, text=True, timeout=300)",
+    "caller": "forge.optimizer.gpu_detector:run_gpu_benchmark"
+  },
+  {
+    "module": "forge.optimizer.parallel",
+    "path": "src/forge/optimizer/parallel.py",
+    "lineno": 515,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['numactl', '--hardware'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.optimizer.parallel:detect_numa_topology"
+  },
+  {
+    "module": "forge.optimizer.profiler",
+    "path": "src/forge/optimizer/profiler.py",
+    "lineno": 163,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['run_lapw', '-v'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.optimizer.profiler:compute_profile_cache_key"
+  },
+  {
+    "module": "forge.submit.lsf",
+    "path": "src/forge/submit/lsf.py",
+    "lineno": 494,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bsub'], input=script_content, capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.lsf:LSFSubmitProvider.submit"
+  },
+  {
+    "module": "forge.submit.lsf",
+    "path": "src/forge/submit/lsf.py",
+    "lineno": 531,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bkill', str(job_id)], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.lsf:LSFSubmitProvider.cancel"
+  },
+  {
+    "module": "forge.submit.lsf",
+    "path": "src/forge/submit/lsf.py",
+    "lineno": 572,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['bjobs', '-o', 'jobid stat queue exit_code', '-noheader', str(job_id)], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.lsf:LSFSubmitProvider.status"
+  },
+  {
+    "module": "forge.submit.pbs",
+    "path": "src/forge/submit/pbs.py",
+    "lineno": 416,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qsub', str(result['script_path'])], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.pbs:PBSSubmitProvider.submit"
+  },
+  {
+    "module": "forge.submit.pbs",
+    "path": "src/forge/submit/pbs.py",
+    "lineno": 451,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qdel', str(job_id)], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.pbs:PBSSubmitProvider.cancel"
+  },
+  {
+    "module": "forge.submit.pbs",
+    "path": "src/forge/submit/pbs.py",
+    "lineno": 503,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['qstat', '-f', str(job_id)], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.pbs:PBSSubmitProvider.status"
+  },
+  {
+    "module": "forge.submit.slurm",
+    "path": "src/forge/submit/slurm.py",
+    "lineno": 483,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sbatch', str(result['script_path'])], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.submit.slurm:submit_slurm_job"
+  },
+  {
+    "module": "forge.submit.slurm",
+    "path": "src/forge/submit/slurm.py",
+    "lineno": 496,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['squeue', '-j', str(result['job_id']), '-O', 'START_TIME', '-h'], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.submit.slurm:submit_slurm_job"
+  },
+  {
+    "module": "forge.utils.diagnostic",
+    "path": "src/forge/utils/diagnostic.py",
+    "lineno": 79,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(cmd[0])",
+    "caller": "forge.utils.diagnostic:_run_cmd"
+  },
+  {
+    "module": "forge.utils.diagnostic",
+    "path": "src/forge/utils/diagnostic.py",
+    "lineno": 83,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stderr=stderr_pipe)",
+    "caller": "forge.utils.diagnostic:_run_cmd"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 96,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['df', '-T', str(path)], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.utils.scratch:_detect_filesystem_type"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 142,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['stat', '-f', '-c', '%T', str(path)], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.utils.scratch:_detect_lustre"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 179,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which('lfs')",
+    "caller": "forge.utils.scratch:configure_lustre_striping"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 183,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['lfs', 'setstripe', '-c', str(stripe_count), '-s', f'{stripe_size_mb}M', path], capture_output=True, text=True, timeout=10)",
+    "caller": "forge.utils.scratch:configure_lustre_striping"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 258,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which('sbcast')",
+    "caller": "forge.utils.scratch:_stage_slurm_sbcast"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 263,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['tar', '-czf', str(tar_path), '-C', str(files[0].parent), *[f.name for f in files]], capture_output=True, text=True, timeout=30)",
+    "caller": "forge.utils.scratch:_stage_slurm_sbcast"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 272,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['sbcast', '-f', str(tar_path), dest_tar], capture_output=True, text=True, timeout=60)",
+    "caller": "forge.utils.scratch:_stage_slurm_sbcast"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 280,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['tar', '-xzf', dest_tar, '-C', dest_dir], capture_output=True, text=True, timeout=30)",
+    "caller": "forge.utils.scratch:_stage_slurm_sbcast"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 311,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['rsync', '-a', '--inplace', '--partial', '--info=progress2', '--no-compress', *src_list, str(dest) + '/'], capture_output=True, text=True, timeout=60)",
+    "caller": "forge.utils.scratch:_stage_rsync"
+  },
+  {
+    "module": "forge.utils.scratch",
+    "path": "src/forge/utils/scratch.py",
+    "lineno": 415,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which('sbcast')",
+    "caller": "forge.utils.scratch:setup_scratch"
+  },
+  {
+    "module": "forge.utils.subprocess_utils",
+    "path": "src/forge/utils/subprocess_utils.py",
+    "lineno": 178,
+    "mechanism": "subprocess.Popen",
+    "callee": "subprocess.Popen",
+    "args_preview": "subprocess.Popen(cmd_list, stdout=subprocess.PIPE if capture_output else None, stderr=subprocess.PIPE if capture_output else None, cwd=str(cwd) if cwd else None, env=exec_env, start_new_session=start_",
+    "caller": "forge.utils.subprocess_utils:run_command"
+  },
+  {
+    "module": "forge.wizard",
+    "path": "src/forge/wizard.py",
+    "lineno": 107,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(['df', '-T', str(p)], capture_output=True, text=True, timeout=5)",
+    "caller": "forge.wizard:check_scratch_health"
+  },
+  {
+    "module": "forge.wizard",
+    "path": "src/forge/wizard.py",
+    "lineno": 132,
+    "mechanism": "shutil.which",
+    "callee": "shutil.which",
+    "args_preview": "shutil.which(fallback)",
+    "caller": "forge.wizard:_open_editor_for_manual_review"
+  },
+  {
+    "module": "forge.wizard",
+    "path": "src/forge/wizard.py",
+    "lineno": 141,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run([editor, str(filepath)], check=False)",
+    "caller": "forge.wizard:_open_editor_for_manual_review"
+  },
+  {
+    "module": "forge.wizard_sbatch",
+    "path": "src/forge/wizard_sbatch.py",
+    "lineno": 385,
+    "mechanism": "subprocess.run",
+    "callee": "subprocess.run",
+    "args_preview": "subprocess.run(cmd, **kwargs)",
+    "caller": "forge.wizard_sbatch:ReviewStep._submit_job"
+  }
+]

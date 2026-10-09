@@ -1,0 +1,1538 @@
+[
+  {
+    "path": ".dockerignore",
+    "size_bytes": 204,
+    "suffix": "",
+    "category": "configuration"
+  },
+  {
+    "path": ".github/workflows/ci.yml",
+    "size_bytes": 1557,
+    "suffix": ".yml",
+    "category": "ci"
+  },
+  {
+    "path": ".github/workflows/reframe_benchmark.yml",
+    "size_bytes": 2517,
+    "suffix": ".yml",
+    "category": "ci"
+  },
+  {
+    "path": ".gitignore",
+    "size_bytes": 521,
+    "suffix": "",
+    "category": "configuration"
+  },
+  {
+    "path": ".pre-commit-config.yaml",
+    "size_bytes": 407,
+    "suffix": ".yaml",
+    "category": "configuration"
+  },
+  {
+    "path": "CITATION.cff",
+    "size_bytes": 3100,
+    "suffix": ".cff",
+    "category": "configuration"
+  },
+  {
+    "path": "Dockerfile",
+    "size_bytes": 2116,
+    "suffix": "",
+    "category": "configuration"
+  },
+  {
+    "path": "LICENSE.md",
+    "size_bytes": 1140,
+    "suffix": ".md",
+    "category": "other"
+  },
+  {
+    "path": "Makefile",
+    "size_bytes": 7948,
+    "suffix": "",
+    "category": "configuration"
+  },
+  {
+    "path": "README.md",
+    "size_bytes": 9818,
+    "suffix": ".md",
+    "category": "other"
+  },
+  {
+    "path": "Singularity.def",
+    "size_bytes": 14291,
+    "suffix": ".def",
+    "category": "configuration"
+  },
+  {
+    "path": "completions/forge.bash",
+    "size_bytes": 8223,
+    "suffix": ".bash",
+    "category": "other"
+  },
+  {
+    "path": "completions/forge.zsh",
+    "size_bytes": 9873,
+    "suffix": ".zsh",
+    "category": "other"
+  },
+  {
+    "path": "completions/forge_sbatch.bash",
+    "size_bytes": 3571,
+    "suffix": ".bash",
+    "category": "other"
+  },
+  {
+    "path": "completions/forge_sbatch.zsh",
+    "size_bytes": 3268,
+    "suffix": ".zsh",
+    "category": "other"
+  },
+  {
+    "path": "completions/forge_wizard.bash",
+    "size_bytes": 248,
+    "suffix": ".bash",
+    "category": "other"
+  },
+  {
+    "path": "completions/forge_wizard.zsh",
+    "size_bytes": 124,
+    "suffix": ".zsh",
+    "category": "other"
+  },
+  {
+    "path": "docker-compose.yml",
+    "size_bytes": 635,
+    "suffix": ".yml",
+    "category": "configuration"
+  },
+  {
+    "path": "docs/api-reference.md",
+    "size_bytes": 22669,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/api.rst",
+    "size_bytes": 94,
+    "suffix": ".rst",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/README.md",
+    "size_bytes": 2690,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/analysis_meta.json",
+    "size_bytes": 442,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/architecture_overview.md",
+    "size_bytes": 2717,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/architecture_overview.mmd",
+    "size_bytes": 1754,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/architecture_overview.svg",
+    "size_bytes": 2374,
+    "suffix": ".svg",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/call_graph.json",
+    "size_bytes": 3755094,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/call_graph_focused.mmd",
+    "size_bytes": 10740,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/ci_pipeline.mmd",
+    "size_bytes": 677,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/cli_command_map.csv",
+    "size_bytes": 2041,
+    "suffix": ".csv",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/cli_command_map.json",
+    "size_bytes": 7078,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/cli_command_map.md",
+    "size_bytes": 2831,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/cli_execution_flow.mmd",
+    "size_bytes": 749,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/dependency_report.md",
+    "size_bytes": 10693,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/execution_lifecycle.mmd",
+    "size_bytes": 1189,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/external_execution.json",
+    "size_bytes": 28129,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/file_inventory.csv",
+    "size_bytes": 13006,
+    "suffix": ".csv",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/file_inventory.json",
+    "size_bytes": 32611,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/file_tree.md",
+    "size_bytes": 11521,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/findings.md",
+    "size_bytes": 6945,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/limitations.md",
+    "size_bytes": 1245,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/module_catalog.md",
+    "size_bytes": 23150,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/module_dependencies.dot",
+    "size_bytes": 28622,
+    "suffix": ".dot",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/module_dependencies.json",
+    "size_bytes": 122618,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/module_dependencies.mmd",
+    "size_bytes": 4169,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/modules.json",
+    "size_bytes": 6254369,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/qe_execution.mmd",
+    "size_bytes": 638,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/render_status.json",
+    "size_bytes": 265,
+    "suffix": ".json",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/scheduler_execution.mmd",
+    "size_bytes": 627,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/test_architecture.mmd",
+    "size_bytes": 677,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/test_module_mapping.csv",
+    "size_bytes": 3547,
+    "suffix": ".csv",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/testing_report.md",
+    "size_bytes": 4215,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/wien2k_execution.mmd",
+    "size_bytes": 777,
+    "suffix": ".mmd",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/architecture/workflow_analysis.md",
+    "size_bytes": 3816,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/conf.py",
+    "size_bytes": 1473,
+    "suffix": ".py",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/contributing.md",
+    "size_bytes": 3816,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/examples.md",
+    "size_bytes": 2213,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/file-tree.md",
+    "size_bytes": 20330,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/index.md",
+    "size_bytes": 3078,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/index.rst",
+    "size_bytes": 203,
+    "suffix": ".rst",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/installation.md",
+    "size_bytes": 7988,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/job-submission.md",
+    "size_bytes": 5895,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/machines-guide.md",
+    "size_bytes": 7174,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/ml_dataset.md",
+    "size_bytes": 29155,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/parallel-modes.md",
+    "size_bytes": 3121,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/preprocessing-convergence.md",
+    "size_bytes": 17228,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/troubleshooting.md",
+    "size_bytes": 4890,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/user-guide.md",
+    "size_bytes": 16396,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "docs/workflow.md",
+    "size_bytes": 3417,
+    "suffix": ".md",
+    "category": "documentation"
+  },
+  {
+    "path": "download_and_train.py",
+    "size_bytes": 1811,
+    "suffix": ".py",
+    "category": "script"
+  },
+  {
+    "path": "environment.yml",
+    "size_bytes": 791,
+    "suffix": ".yml",
+    "category": "configuration"
+  },
+  {
+    "path": "examples/01_si_semiconductor/Si.in1",
+    "size_bytes": 276,
+    "suffix": ".in1",
+    "category": "example"
+  },
+  {
+    "path": "examples/01_si_semiconductor/Si.in2",
+    "size_bytes": 168,
+    "suffix": ".in2",
+    "category": "example"
+  },
+  {
+    "path": "examples/01_si_semiconductor/Si.struct",
+    "size_bytes": 1360,
+    "suffix": ".struct",
+    "category": "example"
+  },
+  {
+    "path": "examples/01_si_semiconductor/wien2k_gen.yaml",
+    "size_bytes": 3656,
+    "suffix": ".yaml",
+    "category": "example"
+  },
+  {
+    "path": "examples/02_cu_metal/Cu.in1",
+    "size_bytes": 424,
+    "suffix": ".in1",
+    "category": "example"
+  },
+  {
+    "path": "examples/02_cu_metal/Cu.in2",
+    "size_bytes": 168,
+    "suffix": ".in2",
+    "category": "example"
+  },
+  {
+    "path": "examples/02_cu_metal/Cu.struct",
+    "size_bytes": 1345,
+    "suffix": ".struct",
+    "category": "example"
+  },
+  {
+    "path": "examples/02_cu_metal/wien2k_gen.yaml",
+    "size_bytes": 2189,
+    "suffix": ".yaml",
+    "category": "example"
+  },
+  {
+    "path": "examples/03_fe_magnetic/Fe.in1",
+    "size_bytes": 461,
+    "suffix": ".in1",
+    "category": "example"
+  },
+  {
+    "path": "examples/03_fe_magnetic/Fe.in2",
+    "size_bytes": 168,
+    "suffix": ".in2",
+    "category": "example"
+  },
+  {
+    "path": "examples/03_fe_magnetic/Fe.inst",
+    "size_bytes": 213,
+    "suffix": ".inst",
+    "category": "example"
+  },
+  {
+    "path": "examples/03_fe_magnetic/Fe.struct",
+    "size_bytes": 1362,
+    "suffix": ".struct",
+    "category": "example"
+  },
+  {
+    "path": "examples/03_fe_magnetic/wien2k_gen.yaml",
+    "size_bytes": 3196,
+    "suffix": ".yaml",
+    "category": "example"
+  },
+  {
+    "path": "examples/README.md",
+    "size_bytes": 2573,
+    "suffix": ".md",
+    "category": "example"
+  },
+  {
+    "path": "install.sh",
+    "size_bytes": 32550,
+    "suffix": ".sh",
+    "category": "other"
+  },
+  {
+    "path": "offline_packages/requirements-offline.txt",
+    "size_bytes": 623,
+    "suffix": ".txt",
+    "category": "data"
+  },
+  {
+    "path": "parallel_options",
+    "size_bytes": 1984,
+    "suffix": "",
+    "category": "other"
+  },
+  {
+    "path": "pyproject.toml",
+    "size_bytes": 6285,
+    "suffix": ".toml",
+    "category": "configuration"
+  },
+  {
+    "path": "src/forge/__init__.py",
+    "size_bytes": 7549,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/__main__.py",
+    "size_bytes": 129,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backend_manager.py",
+    "size_bytes": 1771,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/__init__.py",
+    "size_bytes": 12379,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/base.py",
+    "size_bytes": 13087,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/cp2k.py",
+    "size_bytes": 28130,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/elpa_selector.py",
+    "size_bytes": 9453,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/gpu_backend.py",
+    "size_bytes": 22659,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/quantum_espresso/__init__.py",
+    "size_bytes": 1671,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/quantum_espresso/backend.py",
+    "size_bytes": 23293,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/quantum_espresso/config_generator.py",
+    "size_bytes": 9860,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/quantum_espresso/executor.py",
+    "size_bytes": 10157,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/quantum_espresso/parser.py",
+    "size_bytes": 11238,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/vasp.py",
+    "size_bytes": 18512,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/wien2k/__init__.py",
+    "size_bytes": 303,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/wien2k/core.py",
+    "size_bytes": 52910,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/backends/wien2k/parsers.py",
+    "size_bytes": 26907,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/benchmark/__init__.py",
+    "size_bytes": 2403,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/benchmark/real.py",
+    "size_bytes": 20147,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/benchmark/report.py",
+    "size_bytes": 19313,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/benchmark/synthetic.py",
+    "size_bytes": 19085,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli.py",
+    "size_bytes": 6443,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/__init__.py",
+    "size_bytes": 1052,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/_utils.py",
+    "size_bytes": 1870,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/advise.py",
+    "size_bytes": 10102,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/analyze.py",
+    "size_bytes": 1695,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/analyze_bands.py",
+    "size_bytes": 2901,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/base.py",
+    "size_bytes": 966,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/benchmark.py",
+    "size_bytes": 2986,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/calibrate.py",
+    "size_bytes": 2306,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/converge.py",
+    "size_bytes": 2697,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/diagnose.py",
+    "size_bytes": 8038,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/diagnostics.py",
+    "size_bytes": 1835,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/generate.py",
+    "size_bytes": 7800,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/hardware.py",
+    "size_bytes": 3840,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/history.py",
+    "size_bytes": 4595,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/monitor.py",
+    "size_bytes": 1130,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/optimize.py",
+    "size_bytes": 3430,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/predict.py",
+    "size_bytes": 2806,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/run.py",
+    "size_bytes": 2004,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/screen.py",
+    "size_bytes": 3131,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/submit.py",
+    "size_bytes": 13821,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/tui.py",
+    "size_bytes": 685,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_commands/workflow.py",
+    "size_bytes": 2004,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/cli_sbatch.py",
+    "size_bytes": 16471,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/config.py",
+    "size_bytes": 12030,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/__init__.py",
+    "size_bytes": 5245,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/builder.py",
+    "size_bytes": 19731,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/case_parser.py",
+    "size_bytes": 54071,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/constants.py",
+    "size_bytes": 1275,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/electronic_structure.py",
+    "size_bytes": 22860,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/energy.py",
+    "size_bytes": 17698,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/__init__.py",
+    "size_bytes": 1704,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/cpu.py",
+    "size_bytes": 16832,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/detection.py",
+    "size_bytes": 385,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/system.py",
+    "size_bytes": 22837,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/types.py",
+    "size_bytes": 6933,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/hardware/wrapper.py",
+    "size_bytes": 4599,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/locator.py",
+    "size_bytes": 2220,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/materials_project.py",
+    "size_bytes": 15461,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/perf_counters.py",
+    "size_bytes": 42822,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/pipeline.py",
+    "size_bytes": 17340,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/scheduler.py",
+    "size_bytes": 23985,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/terminal_monitor.py",
+    "size_bytes": 12452,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/topology.py",
+    "size_bytes": 44456,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/workflow.py",
+    "size_bytes": 29377,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/core/workflow_executor.py",
+    "size_bytes": 27341,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/exceptions.py",
+    "size_bytes": 13377,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/logging_config.py",
+    "size_bytes": 10315,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ml/__init__.py",
+    "size_bytes": 320,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ml/data_pipeline.py",
+    "size_bytes": 17373,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ml/gnn_kpoint_predictor.py",
+    "size_bytes": 39033,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ml/gnn_kpoint_v1.npz",
+    "size_bytes": 330694,
+    "suffix": ".npz",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/__init__.py",
+    "size_bytes": 2797,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/advisor.py",
+    "size_bytes": 49339,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/__init__.py",
+    "size_bytes": 1697,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/acquisition.py",
+    "size_bytes": 4803,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/bohb.py",
+    "size_bytes": 18805,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/constraints.py",
+    "size_bytes": 2526,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/core.py",
+    "size_bytes": 46942,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/dpp.py",
+    "size_bytes": 6558,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/elements.py",
+    "size_bytes": 6184,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/gp.py",
+    "size_bytes": 7020,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/kernels.py",
+    "size_bytes": 5063,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian/sampling.py",
+    "size_bytes": 2945,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/bayesian_tuner.py",
+    "size_bytes": 16725,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/convergence.py",
+    "size_bytes": 32963,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/gpu_detector.py",
+    "size_bytes": 18167,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/history.py",
+    "size_bytes": 32883,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/ml_predict.py",
+    "size_bytes": 21440,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/monitor/__init__.py",
+    "size_bytes": 1505,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/monitor/checkpoint.py",
+    "size_bytes": 9985,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/monitor/convergence.py",
+    "size_bytes": 26670,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/monitor/engine.py",
+    "size_bytes": 20965,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/monitor/types.py",
+    "size_bytes": 6116,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/parallel.py",
+    "size_bytes": 31384,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/optimizer/profiler.py",
+    "size_bytes": 26900,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/submit/__init__.py",
+    "size_bytes": 3615,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/submit/lsf.py",
+    "size_bytes": 24349,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/submit/pbs.py",
+    "size_bytes": 21234,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/submit/slurm.py",
+    "size_bytes": 20769,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/types.py",
+    "size_bytes": 14190,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ui/__init__.py",
+    "size_bytes": 906,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ui/analysis.py",
+    "size_bytes": 24178,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/ui/rich_ui.py",
+    "size_bytes": 19298,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/__init__.py",
+    "size_bytes": 5134,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/atomic_write.py",
+    "size_bytes": 5141,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/diagnostic.py",
+    "size_bytes": 16507,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/export.py",
+    "size_bytes": 17563,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/filelock.py",
+    "size_bytes": 12062,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/parallel_options.py",
+    "size_bytes": 13564,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/scratch.py",
+    "size_bytes": 18535,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/subprocess_utils.py",
+    "size_bytes": 15330,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/utils/validation.py",
+    "size_bytes": 15682,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/wizard.py",
+    "size_bytes": 21068,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "src/forge/wizard_sbatch.py",
+    "size_bytes": 17159,
+    "suffix": ".py",
+    "category": "production"
+  },
+  {
+    "path": "tests/__init__.py",
+    "size_bytes": 418,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/codebase_map/test_extractor.py",
+    "size_bytes": 5700,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/conftest.py",
+    "size_bytes": 3315,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/fixtures/case_minimal.struct",
+    "size_bytes": 141,
+    "suffix": ".struct",
+    "category": "test"
+  },
+  {
+    "path": "tests/fixtures/hardware_avx512_ib.json",
+    "size_bytes": 393,
+    "suffix": ".json",
+    "category": "test"
+  },
+  {
+    "path": "tests/fixtures/scf_converged.scf",
+    "size_bytes": 280,
+    "suffix": ".scf",
+    "category": "test"
+  },
+  {
+    "path": "tests/fixtures/scf_not_converged.scf",
+    "size_bytes": 439,
+    "suffix": ".scf",
+    "category": "test"
+  },
+  {
+    "path": "tests/fixtures/topology_slurm.json",
+    "size_bytes": 239,
+    "suffix": ".json",
+    "category": "test"
+  },
+  {
+    "path": "tests/integration_test.py",
+    "size_bytes": 7606,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/reframe/reframe_config.py",
+    "size_bytes": 3764,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/reframe/wien2k_gen_test.py",
+    "size_bytes": 8186,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_advisor.py",
+    "size_bytes": 26271,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_analysis.py",
+    "size_bytes": 10153,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_auto_detect.py",
+    "size_bytes": 3801,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_bayesian.py",
+    "size_bytes": 16191,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_bayesian_core.py",
+    "size_bytes": 3696,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_bohb_dpp.py",
+    "size_bytes": 8571,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_builder.py",
+    "size_bytes": 2495,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_case_parser.py",
+    "size_bytes": 16800,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_completions.py",
+    "size_bytes": 2061,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_config.py",
+    "size_bytes": 3100,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_convergence_opt.py",
+    "size_bytes": 32143,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_diagnose.py",
+    "size_bytes": 6252,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_elpa_selector.py",
+    "size_bytes": 3230,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_gnn_kpoint_predictor.py",
+    "size_bytes": 6559,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_hardware.py",
+    "size_bytes": 13163,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_integration.py",
+    "size_bytes": 6161,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_new_features.py",
+    "size_bytes": 5350,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_parallel.py",
+    "size_bytes": 27779,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_parallel_options.py",
+    "size_bytes": 3160,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_perf_counters.py",
+    "size_bytes": 12949,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_robustness.py",
+    "size_bytes": 9294,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_scheduler.py",
+    "size_bytes": 6111,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_slurm.py",
+    "size_bytes": 3881,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_submit.py",
+    "size_bytes": 14095,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_topology.py",
+    "size_bytes": 13764,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_types.py",
+    "size_bytes": 4447,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_utils.py",
+    "size_bytes": 5965,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_wien2k_backend.py",
+    "size_bytes": 77976,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_wien2k_flags.py",
+    "size_bytes": 3468,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tests/test_wizard.py",
+    "size_bytes": 2689,
+    "suffix": ".py",
+    "category": "test"
+  },
+  {
+    "path": "tools/codebase_map/README.md",
+    "size_bytes": 1969,
+    "suffix": ".md",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/__init__.py",
+    "size_bytes": 85,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/analyze.py",
+    "size_bytes": 19856,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/config.json",
+    "size_bytes": 446,
+    "suffix": ".json",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/extractor.py",
+    "size_bytes": 19864,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/gen_graphs.py",
+    "size_bytes": 15797,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/gen_inventory.py",
+    "size_bytes": 2914,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/gen_markdown.py",
+    "size_bytes": 27767,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/reports.py",
+    "size_bytes": 2156,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/stdlib_modules.py",
+    "size_bytes": 4096,
+    "suffix": ".py",
+    "category": "tool"
+  },
+  {
+    "path": "tools/codebase_map/textutil.py",
+    "size_bytes": 575,
+    "suffix": ".py",
+    "category": "tool"
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "git": {
+    "commit": "c3db6e711acfbab1abe84b29f98d909374d0ab9b",
+    "dirty": "dirty",
+    "subject": "docs: rebuild CLI guides to match flags, drop PyPI, add file tree"
+  },
+  "n_cycles": 3,
+  "n_inventory_rows": 256,
+  "n_production_import_edges": 421,
+  "n_production_modules": 115,
+  "n_python_files": 162,
+  "n_test_modules": 36,
+  "python": "3.11.2",
+  "root": "/workspace/wien2k_gen",
+  "timestamp_utc": "2026-10-09T13:54:34Z"
+}

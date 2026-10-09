@@ -1,0 +1,31 @@
+sequenceDiagram
+    title "General generate pipeline from core.pipeline.run_pipeline"
+    participant User
+    participant CLI as cli_commands.generate.handle
+    participant Sched as core.scheduler.detect
+    participant Pipe as core.pipeline.run_pipeline
+    participant Backend as get_current_backend
+    participant Adv as optimizer.advisor
+    participant Build as core.builder.build_auto
+    participant Disk as .machines / config file
+
+    User->>CLI: forge generate
+    CLI->>Sched: detect(max_cores)
+    Sched-->>CLI: Topology
+    CLI->>Pipe: run_pipeline(topo, user_suggestion)
+    Pipe->>Backend: detect_problem_size()
+    Backend-->>Pipe: ProblemSize
+    Pipe->>Adv: suggest_optimal_resources(topo)
+    Adv-->>Pipe: ResourceSuggestion
+    Pipe->>Pipe: preflight_check
+    alt dry_run
+        Pipe->>Backend: generate_input(topo, suggestion)
+        Backend-->>Pipe: config string
+    else write
+        Pipe->>Build: build_auto(topo, suggestion)
+        Build->>Backend: generate_input
+        Build->>Disk: atomic_write
+        Pipe->>Pipe: validate_machines or backend.validate_config
+    end
+    Pipe-->>CLI: PipelineResult
+    CLI-->>User: path / preview / errors

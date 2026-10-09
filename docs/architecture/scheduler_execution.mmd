@@ -1,0 +1,20 @@
+sequenceDiagram
+    title "Scheduler-mediated submit from cli_commands.submit.handle"
+    participant User
+    participant Sub as submit.handle
+    participant Det as resolve_scheduler / detect
+    participant SL as submit.slurm
+    participant PBS as submit.pbs.PBSSubmitProvider
+    participant LSF as submit.lsf.LSFSubmitProvider
+
+    User->>Sub: forge submit --scheduler auto
+    Sub->>Det: resolve_scheduler
+    alt slurm
+        Sub->>SL: submit_slurm_job
+    else pbs
+        Sub->>PBS: provider.submit
+    else lsf
+        Sub->>LSF: provider.submit
+    else unknown
+        Sub-->>User: success false
+    end

@@ -1,0 +1,114 @@
+flowchart LR
+  subgraph legend ["Legend"]
+    L1["Solid arrow: verified internal import"]
+  end
+
+  forge["forge"]
+  forge_main["forge.__main__"]
+  forge_backend_manager["forge.backend_manager"]
+  forge_backends["forge.backends"]
+  forge_benchmark["forge.benchmark"]
+  forge_cli["forge.cli"]
+  forge_cli_commands["forge.cli_commands"]
+  forge_cli_sbatch["forge.cli_sbatch"]
+  forge_config["forge.config"]
+  forge_core["forge.core"]
+  forge_exceptions["forge.exceptions"]
+  forge_logging_config["forge.logging_config"]
+  forge_ml["forge.ml"]
+  forge_optimizer["forge.optimizer"]
+  forge_submit["forge.submit"]
+  forge_types["forge.types"]
+  forge_ui["forge.ui"]
+  forge_utils["forge.utils"]
+  forge_wizard["forge.wizard"]
+  forge_wizard_sbatch["forge.wizard_sbatch"]
+  forge -->|1| forge_backend_manager
+  forge -->|1| forge_config
+  forge -->|4| forge_core
+  forge -->|3| forge_optimizer
+  forge -->|1| forge_types
+  forge -->|2| forge_utils
+  forge -->|1| forge_wizard
+  forge -->|1| forge_wizard_sbatch
+  forge_main -->|1| forge_cli
+  forge_backend_manager -->|1| forge_backends
+  forge_backend_manager -->|1| forge_types
+  forge_backends -->|18| forge_core
+  forge_backends -->|1| forge_exceptions
+  forge_backends -->|12| forge_logging_config
+  forge_backends -->|1| forge_optimizer
+  forge_backends -->|3| forge_types
+  forge_backends -->|4| forge_utils
+  forge_benchmark -->|5| forge_core
+  forge_benchmark -->|3| forge_logging_config
+  forge_benchmark -->|3| forge_submit
+  forge_benchmark -->|1| forge_ui
+  forge_benchmark -->|1| forge_utils
+  forge_cli -->|1| forge_backend_manager
+  forge_cli -->|3| forge_cli_commands
+  forge_cli -->|1| forge_config
+  forge_cli -->|1| forge_exceptions
+  forge_cli -->|1| forge_logging_config
+  forge_cli -->|1| forge_types
+  forge_cli -->|1| forge_ui
+  forge_cli_commands -->|2| forge_backend_manager
+  forge_cli_commands -->|1| forge_backends
+  forge_cli_commands -->|2| forge_benchmark
+  forge_cli_commands -->|20| forge_config
+  forge_cli_commands -->|22| forge_core
+  forge_cli_commands -->|2| forge_logging_config
+  forge_cli_commands -->|8| forge_optimizer
+  forge_cli_commands -->|2| forge_submit
+  forge_cli_commands -->|1| forge_types
+  forge_cli_commands -->|1| forge_ui
+  forge_cli_commands -->|2| forge_utils
+  forge_cli_sbatch -->|1| forge_backend_manager
+  forge_cli_sbatch -->|1| forge_config
+  forge_cli_sbatch -->|1| forge_core
+  forge_cli_sbatch -->|1| forge_exceptions
+  forge_cli_sbatch -->|1| forge_logging_config
+  forge_cli_sbatch -->|1| forge_submit
+  forge_cli_sbatch -->|1| forge_utils
+  forge_config -->|1| forge_core
+  forge_config -->|1| forge_types
+  forge_core -->|2| forge_backend_manager
+  forge_core -->|1| forge_config
+  forge_core -->|1| forge_exceptions
+  forge_core -->|17| forge_logging_config
+  forge_core -->|3| forge_optimizer
+  forge_core -->|2| forge_types
+  forge_core -->|5| forge_utils
+  forge_exceptions -->|1| forge_logging_config
+  forge_logging_config -->|1| forge_config
+  forge_logging_config -->|1| forge_exceptions
+  forge_ml -->|2| forge_logging_config
+  forge_ml -->|1| forge_optimizer
+  forge_optimizer -->|3| forge_backend_manager
+  forge_optimizer -->|2| forge_backends
+  forge_optimizer -->|17| forge_core
+  forge_optimizer -->|12| forge_logging_config
+  forge_optimizer -->|3| forge_utils
+  forge_submit -->|4| forge_core
+  forge_submit -->|3| forge_logging_config
+  forge_submit -->|1| forge_utils
+  forge_types -->|1| forge_core
+  forge_ui -->|5| forge_core
+  forge_ui -->|2| forge_logging_config
+  forge_ui -->|2| forge_optimizer
+  forge_ui -->|1| forge_submit
+  forge_ui -->|1| forge_utils
+  forge_utils -->|4| forge_core
+  forge_utils -->|8| forge_logging_config
+  forge_wizard -->|1| forge_backend_manager
+  forge_wizard -->|4| forge_core
+  forge_wizard -->|1| forge_exceptions
+  forge_wizard -->|1| forge_logging_config
+  forge_wizard -->|1| forge_optimizer
+  forge_wizard -->|1| forge_types
+  forge_wizard -->|1| forge_utils
+  forge_wizard_sbatch -->|1| forge_backend_manager
+  forge_wizard_sbatch -->|1| forge_core
+  forge_wizard_sbatch -->|1| forge_logging_config
+  forge_wizard_sbatch -->|2| forge_submit
+  forge_wizard_sbatch -->|1| forge_utils

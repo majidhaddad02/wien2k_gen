@@ -1,0 +1,32 @@
+{
+  "exclude_dir_names": [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "node_modules",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+    ".tox"
+  ],
+  "exclude_suffixes": [
+    ".pyc",
+    ".pyo",
+    ".so",
+    ".whl",
+    ".pack",
+    ".idx"
+  ],
+  "summarize_dirs": [
+    "offline_packages/packaging_offline"
+  ],
+  "production_roots": [
+    "src"
+  ],
+  "test_roots": [
+    "tests"
+  ]
+}

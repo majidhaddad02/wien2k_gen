@@ -1,0 +1,18 @@
+flowchart TD
+  subgraph ci_yml [".github/workflows/ci.yml"]
+    A["push/PR to master"] --> B["matrix Python 3.9-3.12"]
+    B --> C["pip install -e .[dev,hpc]"]
+    C --> D["ruff check src/ tests/"]
+    C --> E["mypy src/"]
+    C --> F["pytest --cov=forge --cov-fail-under=15"]
+    C --> G["python -c import forge"]
+    F --> H["upload coverage.xml"]
+  end
+  subgraph rf_yml [".github/workflows/reframe_benchmark.yml"]
+    P["push/PR master main develop"] --> Q["matrix Python 3.10-3.12"]
+    Q --> R["pip install -e .[dev] and reframe-hpc"]
+    R --> S["reframe -C tests/reframe --tag smoke"]
+    R --> T["reframe --tag benchmark"]
+    S --> U["upload logs"]
+    T --> U
+  end

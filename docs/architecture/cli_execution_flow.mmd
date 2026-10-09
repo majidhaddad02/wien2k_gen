@@ -1,0 +1,23 @@
+flowchart TD
+  U["User: forge <command>"] --> EP["forge.cli.main"]
+  EP --> CFG["load_config / setup_logging"]
+  EP --> P["create_parser"]
+  P --> RA["cli_commands.register_all"]
+  EP --> GH["base.get_handler"]
+  GH --> DISP["handler(args, cfg)"]
+
+
+  subgraph representative ["Representative downstream - verified"]
+    G["generate.handle"] --> GP["run_pipeline"]
+    S["submit.handle"] --> SS["submit_slurm_job / SUBMIT_PROVIDERS"]
+    R["run.handle"] --> RW["run_workflow_from_yaml"]
+    A["advise.handle"] --> AA["CaseFileParser + detect topology"]
+    B["benchmark.handle"] --> BB["benchmark.real / synthetic"]
+    D["diagnose.handle"] --> DD["parse_scf_output"]
+  end
+  DISP --> G
+  DISP --> S
+  DISP --> R
+  DISP --> A
+  DISP --> B
+  DISP --> D

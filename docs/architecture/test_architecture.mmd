@@ -1,0 +1,26 @@
+flowchart TB
+  subgraph unit ["Unit tests under tests/"]
+    T1["test_advisor.py"]
+    T2["test_builder.py"]
+    T3["test_scheduler.py"]
+    T4["test_wien2k_backend.py"]
+    T5["test_hardware.py"]
+    T6["test_bayesian*.py"]
+    T7["test_gnn_kpoint_predictor.py"]
+  end
+  subgraph integ ["Integration / hardware markers"]
+    I1["test_integration.py"]
+    I2["integration_test.py"]
+    I3["test_robustness.py"]
+  end
+  subgraph rf ["ReFrame"]
+    R1["tests/reframe/wien2k_gen_test.py"]
+    R2["tests/reframe/reframe_config.py"]
+  end
+  subgraph fx ["Fixtures"]
+    F1["tests/fixtures/*.struct *.scf *.json"]
+    F2["tests/conftest.py"]
+  end
+  F2 --> unit
+  F1 --> unit
+  F2 --> integ

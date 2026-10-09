@@ -1,0 +1,74 @@
+flowchart TB
+  subgraph entry ["Entry points - verified packaging"]
+    CLI["forge.cli:main"]
+    MAIN["python -m forge -> forge.__main__"]
+    SBATCH["forge.cli_sbatch:run_sbatch_cli"]
+    WIZ["forge.wizard:run_wizard"]
+  end
+  subgraph cli ["CLI dispatch - verified"]
+    PARSE["create_parser / argparse"]
+    REG["cli_commands.register_all"]
+    HAND["base.get_handler -> handle()"]
+  end
+  subgraph core ["Core orchestration - verified"]
+    PIPE["core.pipeline.run_pipeline"]
+    BUILD["core.builder.build_auto"]
+    TOPO["core.scheduler.detect"]
+    HW["core.hardware"]
+    WF["core.workflow / workflow_executor"]
+  end
+  subgraph be ["Backends - verified registry"]
+    BM["backend_manager shim"]
+    BR["backends._load_backends"]
+    W2K["Wien2kBackend"]
+    QE["QuantumEspressoBackend"]
+    VASP["VaspBackend"]
+    CP2K["CP2KBackend"]
+  end
+  subgraph opt ["Optimizer - verified"]
+    ADV["optimizer.advisor.suggest_optimal_resources"]
+    BAY["optimizer.bayesian"]
+    ML["ml.gnn_kpoint_predictor"]
+  end
+  subgraph sub ["Schedulers - verified"]
+    SL["submit.slurm"]
+    PBS["submit.pbs"]
+    LSF["submit.lsf"]
+  end
+  subgraph ext ["External programs - subprocess sites"]
+    DFT["WIEN2k run_lapw / QE pw.x / VASP / CP2K"]
+    SCH["sbatch squeue qsub bsub"]
+  end
+  CLI --> PARSE
+  MAIN --> CLI
+  PARSE --> REG
+  REG --> HAND
+  HAND --> PIPE
+  HAND --> WF
+  HAND --> ADV
+  PIPE --> TOPO
+  PIPE --> ADV
+  PIPE --> BUILD
+  PIPE -.-> BM
+  BUILD -.-> BM
+  BM --> BR
+  BR --> W2K
+  BR --> QE
+  BR --> VASP
+  BR --> CP2K
+  TOPO --> HW
+  HAND --> SL
+  HAND --> PBS
+  HAND --> LSF
+  SL --> SCH
+  PBS --> SCH
+  LSF --> SCH
+  W2K --> DFT
+  QE --> DFT
+  ADV --> ML
+  ADV --> BAY
+  SBATCH --> SL
+  WIZ --> BUILD
+  WIZ --> ADV
+
+  classDef dashed stroke-dasharray: 5 5

@@ -1,0 +1,22 @@
+sequenceDiagram
+    title "WIEN2k generate and submit verified static path"
+    participant User
+    participant Gen as generate.handle
+    participant Pipe as run_pipeline
+    participant W2K as Wien2kBackend
+    participant Sub as submit.handle
+    participant SL as submit.slurm.submit_slurm_job
+    participant OS as sbatch subprocess
+
+    User->>Gen: forge generate
+    Gen->>Pipe: run_pipeline
+    Pipe->>W2K: detect_problem_size / generate_input
+    Note over W2K: writes .machines via builder
+    User->>Sub: forge submit
+    Sub->>Sub: resolve_scheduler / parse .machines
+    alt scheduler slurm
+        Sub->>SL: submit_slurm_job(spec)
+        SL->>OS: subprocess.run sbatch
+    else scheduler pbs or lsf
+        Sub->>Sub: SUBMIT_PROVIDERS[scheduler].submit
+    end

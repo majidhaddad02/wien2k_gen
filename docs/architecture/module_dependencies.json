@@ -1,0 +1,4702 @@
+{
+  "meta": {
+    "timestamp_utc": "2026-10-09T13:54:34Z",
+    "git": {
+      "commit": "c3db6e711acfbab1abe84b29f98d909374d0ab9b",
+      "subject": "docs: rebuild CLI guides to match flags, drop PyPI, add file tree",
+      "dirty": "dirty"
+    },
+    "root": "/workspace/wien2k_gen",
+    "python": "3.11.2",
+    "n_python_files": 162,
+    "n_inventory_rows": 256,
+    "n_production_modules": 115,
+    "n_test_modules": 36,
+    "n_production_import_edges": 421,
+    "n_cycles": 3
+  },
+  "production_edges": [
+    {
+      "from": "forge",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 70,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.config",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 106,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.core.builder",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 56,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.core.scheduler",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.core.terminal_monitor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 101,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.core.topology",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.optimizer.advisor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 42,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.optimizer.bayesian",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 149,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.optimizer.history",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 146,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.types",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 114,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.utils.parallel_options",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 90,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.utils.scratch",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 84,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.wizard",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 95,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge",
+      "to": "forge.wizard_sbatch",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 98,
+      "path": "src/forge/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.__main__",
+      "to": "forge.cli",
+      "context": "top_level",
+      "kind": "absolute",
+      "lineno": 4,
+      "path": "src/forge/__main__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backend_manager",
+      "to": "forge.backends",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/backend_manager.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backend_manager",
+      "to": "forge.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/backend_manager.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.backends.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/backends/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.backends.wien2k",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 114,
+      "path": "src/forge/backends/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.exceptions",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/backends/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/backends/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/backends/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.base",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/backends/base.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.base",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/backends/base.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.cp2k",
+      "to": "forge.backends.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/backends/cp2k.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.cp2k",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/backends/cp2k.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.cp2k",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/backends/cp2k.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.cp2k",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/backends/cp2k.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.elpa_selector",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/backends/elpa_selector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.elpa_selector",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 269,
+      "path": "src/forge/backends/elpa_selector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.elpa_selector",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/backends/elpa_selector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.elpa_selector",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/backends/elpa_selector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.gpu_backend",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/backends/gpu_backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.gpu_backend",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/backends/gpu_backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso",
+      "to": "forge.backends.quantum_espresso.backend",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 19,
+      "path": "src/forge/backends/quantum_espresso/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso",
+      "to": "forge.backends.quantum_espresso.config_generator",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/backends/quantum_espresso/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso",
+      "to": "forge.backends.quantum_espresso.executor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/backends/quantum_espresso/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso",
+      "to": "forge.backends.quantum_espresso.parser",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/backends/quantum_espresso/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.backends.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.backends.quantum_espresso.config_generator",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.backend",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/backends/quantum_espresso/backend.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.config_generator",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "absolute",
+      "lineno": 23,
+      "path": "src/forge/backends/quantum_espresso/config_generator.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.executor",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/backends/quantum_espresso/executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.executor",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/backends/quantum_espresso/executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.executor",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/backends/quantum_espresso/executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.parser",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 19,
+      "path": "src/forge/backends/quantum_espresso/parser.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.quantum_espresso.parser",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/backends/quantum_espresso/parser.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.vasp",
+      "to": "forge.backends.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/backends/vasp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.vasp",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/backends/vasp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.vasp",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/backends/vasp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.vasp",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/backends/vasp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.vasp",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/backends/vasp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k",
+      "to": "forge.backends.wien2k.core",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 3,
+      "path": "src/forge/backends/wien2k/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k",
+      "to": "forge.backends.wien2k.parsers",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 4,
+      "path": "src/forge/backends/wien2k/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.backends.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.backends.elpa_selector",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 68,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.backends.wien2k.parsers",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.core.case_parser",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 451,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "absolute",
+      "lineno": 12,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 1100,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.optimizer.advisor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 278,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.types",
+      "context": "type_checking",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/backends/wien2k/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.parsers",
+      "to": "forge.core.case_parser",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/backends/wien2k/parsers.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.parsers",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/backends/wien2k/parsers.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.backends.wien2k.parsers",
+      "to": "forge.types",
+      "context": "type_checking",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/backends/wien2k/parsers.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.benchmark.real",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/benchmark/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.benchmark.report",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/benchmark/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.benchmark.synthetic",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 40,
+      "path": "src/forge/benchmark/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.core.pipeline",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 31,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.submit.lsf",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.submit.pbs",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.submit.slurm",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 39,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.ui.analysis",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 40,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.real",
+      "to": "forge.utils.scratch",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 41,
+      "path": "src/forge/benchmark/real.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.report",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 19,
+      "path": "src/forge/benchmark/report.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.synthetic",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/benchmark/synthetic.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.synthetic",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 31,
+      "path": "src/forge/benchmark/synthetic.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.benchmark.synthetic",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/benchmark/synthetic.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.backend_manager",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.cli_commands",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.exceptions",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.ui.rich_ui",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/cli.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.cli_commands",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/cli_commands/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/cli_commands/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands._utils",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 59,
+      "path": "src/forge/cli_commands/_utils.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands._utils",
+      "to": "forge.core.scheduler",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/cli_commands/_utils.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.core.case_parser",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 219,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.core.hardware",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 220,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.core.perf_counters",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 231,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.core.scheduler",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 258,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.advise",
+      "to": "forge.optimizer.advisor",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/cli_commands/advise.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/analyze.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/analyze.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/analyze.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze",
+      "to": "forge.ui.analysis",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/analyze.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze_bands",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/analyze_bands.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze_bands",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/analyze_bands.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze_bands",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/analyze_bands.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.analyze_bands",
+      "to": "forge.core.electronic_structure",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/cli_commands/analyze_bands.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.base",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 15,
+      "path": "src/forge/cli_commands/base.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.benchmark.real",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 50,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.benchmark.synthetic",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.benchmark",
+      "to": "forge.core.scheduler",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/cli_commands/benchmark.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.calibrate",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/calibrate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.calibrate",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/calibrate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.calibrate",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/calibrate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.calibrate",
+      "to": "forge.core.perf_counters",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/cli_commands/calibrate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.converge",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/converge.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.converge",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/converge.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.converge",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/converge.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.converge",
+      "to": "forge.optimizer.convergence",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/cli_commands/converge.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.core.case_parser",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 44,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.optimizer.convergence",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 129,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnose",
+      "to": "forge.optimizer.monitor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 81,
+      "path": "src/forge/cli_commands/diagnose.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnostics",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/diagnostics.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnostics",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/diagnostics.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnostics",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/diagnostics.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.diagnostics",
+      "to": "forge.utils.diagnostic",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/diagnostics.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.backends.gpu_backend",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 105,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.core.hardware",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 76,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.core.perf_counters",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 81,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.core.pipeline",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 77,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.core.scheduler",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 78,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.generate",
+      "to": "forge.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/generate.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.core.case_parser",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 69,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.core.hardware",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.core.hardware.wrapper",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.core.topology",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.hardware",
+      "to": "forge.optimizer.parallel",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/cli_commands/hardware.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.history",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/history.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.history",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/history.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.history",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/history.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.history",
+      "to": "forge.optimizer.history",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/cli_commands/history.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.monitor",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.monitor",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.monitor",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 6,
+      "path": "src/forge/cli_commands/monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.monitor",
+      "to": "forge.core.terminal_monitor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 7,
+      "path": "src/forge/cli_commands/monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.optimize",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/optimize.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.optimize",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/optimize.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.optimize",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/optimize.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.optimize",
+      "to": "forge.optimizer.bayesian_tuner",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/cli_commands/optimize.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.predict",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.predict",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.predict",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.predict",
+      "to": "forge.optimizer.ml_predict",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/cli_commands/predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.run",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/run.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.run",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/run.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.run",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/run.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.run",
+      "to": "forge.core.workflow_executor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/cli_commands/run.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.screen",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/screen.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.screen",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/screen.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.screen",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/screen.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.screen",
+      "to": "forge.core.materials_project",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/cli_commands/screen.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 75,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 15,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.core.pipeline",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 105,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.submit",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 250,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.submit.slurm",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 251,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.submit",
+      "to": "forge.utils.validation",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/cli_commands/submit.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.tui",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 7,
+      "path": "src/forge/cli_commands/tui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.tui",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/tui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.tui",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 6,
+      "path": "src/forge/cli_commands/tui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.workflow",
+      "to": "forge.cli_commands._utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/cli_commands/workflow.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.workflow",
+      "to": "forge.cli_commands.base",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/cli_commands/workflow.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_commands.workflow",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/cli_commands/workflow.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 161,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.exceptions",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 39,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.submit.slurm",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 40,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 45,
+      "path": "src/forge/cli_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 224,
+      "path": "src/forge/config.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.types",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 257,
+      "path": "src/forge/config.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.builder",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 15,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.case_parser",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.energy",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.perf_counters",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 60,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.pipeline",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 68,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 79,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 86,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.core.workflow",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 99,
+      "path": "src/forge/core/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.backend_manager",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.optimizer.advisor",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.types",
+      "context": "conditional",
+      "kind": "relative",
+      "lineno": 45,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.builder",
+      "to": "forge.utils.validation",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/core/builder.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.case_parser",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/core/case_parser.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.case_parser",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/core/case_parser.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.electronic_structure",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 18,
+      "path": "src/forge/core/electronic_structure.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.electronic_structure",
+      "to": "forge.exceptions",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 19,
+      "path": "src/forge/core/electronic_structure.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.electronic_structure",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/core/electronic_structure.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.energy",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/core/energy.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.detection",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 3,
+      "path": "src/forge/core/hardware/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 4,
+      "path": "src/forge/core/hardware/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.wrapper",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/core/hardware/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.cpu",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 10,
+      "path": "src/forge/core/hardware/cpu.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.cpu",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 3,
+      "path": "src/forge/core/hardware/detection.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.system",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 4,
+      "path": "src/forge/core/hardware/detection.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 5,
+      "path": "src/forge/core/hardware/detection.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/core/hardware/system.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 462,
+      "path": "src/forge/core/hardware/system.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/core/hardware/system.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.types",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/core/hardware/types.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.core.hardware.detection",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 7,
+      "path": "src/forge/core/hardware/wrapper.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/core/hardware/wrapper.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 6,
+      "path": "src/forge/core/hardware/wrapper.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.locator",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/core/locator.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.materials_project",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/core/materials_project.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.perf_counters",
+      "to": "forge.core.hardware",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 904,
+      "path": "src/forge/core/perf_counters.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.perf_counters",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/core/perf_counters.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 93,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.core.builder",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 80,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 81,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 87,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 75,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.optimizer.advisor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 293,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.types",
+      "context": "conditional",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.utils.export",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 76,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.pipeline",
+      "to": "forge.utils.validation",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 77,
+      "path": "src/forge/core/pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.scheduler",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/core/scheduler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.scheduler",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/core/scheduler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.scheduler",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/core/scheduler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.scheduler",
+      "to": "forge.utils.filelock",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 31,
+      "path": "src/forge/core/scheduler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.terminal_monitor",
+      "to": "forge.core.case_parser",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 143,
+      "path": "src/forge/core/terminal_monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.terminal_monitor",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/core/terminal_monitor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.topology",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/core/topology.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 31,
+      "path": "src/forge/core/workflow.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.core.case_parser",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 373,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.core.scheduler",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 97,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.core.workflow",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.optimizer.monitor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 511,
+      "path": "src/forge/core/workflow_executor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.exceptions",
+      "to": "forge.logging_config",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 340,
+      "path": "src/forge/exceptions.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.config",
+      "context": "type_checking",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/logging_config.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.exceptions",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 70,
+      "path": "src/forge/logging_config.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml",
+      "to": "forge.ml.data_pipeline",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 3,
+      "path": "src/forge/ml/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml",
+      "to": "forge.ml.gnn_kpoint_predictor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 4,
+      "path": "src/forge/ml/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml.data_pipeline",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 46,
+      "path": "src/forge/ml/data_pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml.data_pipeline",
+      "to": "forge.ml.gnn_kpoint_predictor",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 284,
+      "path": "src/forge/ml/data_pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml.data_pipeline",
+      "to": "forge.optimizer.bayesian.core",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 283,
+      "path": "src/forge/ml/data_pipeline.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ml.gnn_kpoint_predictor",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/ml/gnn_kpoint_predictor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.advisor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/optimizer/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.bayesian",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/optimizer/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.history",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/optimizer/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.monitor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/optimizer/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.profiler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 52,
+      "path": "src/forge/optimizer/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 43,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.backends.base",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 83,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.core.energy",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 76,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 18,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.core.perf_counters",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 53,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/optimizer/advisor.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.acquisition",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 3,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.bohb",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.constraints",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.core",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.dpp",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.elements",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.gp",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.kernels",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.sampling",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.acquisition",
+      "to": "forge.optimizer.bayesian.kernels",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 43,
+      "path": "src/forge/optimizer/bayesian/acquisition.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.bohb",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/optimizer/bayesian/bohb.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.bohb",
+      "to": "forge.optimizer.bayesian.sampling",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/optimizer/bayesian/bohb.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.backends.wien2k.parsers",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 115,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.core.workflow_executor",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 116,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.acquisition",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 15,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.bohb",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 20,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.constraints",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 21,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.elements",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.gp",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.kernels",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.bayesian.sampling",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.optimizer.history",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.dpp",
+      "to": "forge.optimizer.bayesian.kernels",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 198,
+      "path": "src/forge/optimizer/bayesian/dpp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian.gp",
+      "to": "forge.optimizer.bayesian.kernels",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/optimizer/bayesian/gp.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian_tuner",
+      "to": "forge.core.case_parser",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/optimizer/bayesian_tuner.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian_tuner",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/optimizer/bayesian_tuner.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.bayesian_tuner",
+      "to": "forge.optimizer.bayesian",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/optimizer/bayesian_tuner.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.convergence",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/optimizer/convergence.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.gpu_detector",
+      "to": "forge.core.locator",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 165,
+      "path": "src/forge/optimizer/gpu_detector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.gpu_detector",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/optimizer/gpu_detector.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.history",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/optimizer/history.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.ml_predict",
+      "to": "forge.core.case_parser",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 541,
+      "path": "src/forge/optimizer/ml_predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.ml_predict",
+      "to": "forge.core.hardware",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 501,
+      "path": "src/forge/optimizer/ml_predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.ml_predict",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/optimizer/ml_predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.ml_predict",
+      "to": "forge.optimizer.history",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 205,
+      "path": "src/forge/optimizer/ml_predict.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor",
+      "to": "forge.optimizer.monitor.checkpoint",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 5,
+      "path": "src/forge/optimizer/monitor/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor",
+      "to": "forge.optimizer.monitor.convergence",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/optimizer/monitor/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor",
+      "to": "forge.optimizer.monitor.engine",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/optimizer/monitor/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor",
+      "to": "forge.optimizer.monitor.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/optimizer/monitor/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.checkpoint",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 8,
+      "path": "src/forge/optimizer/monitor/checkpoint.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.convergence",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 11,
+      "path": "src/forge/optimizer/monitor/convergence.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.convergence",
+      "to": "forge.optimizer.monitor.types",
+      "context": "type_checking",
+      "kind": "relative",
+      "lineno": 9,
+      "path": "src/forge/optimizer/monitor/convergence.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 12,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 13,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.optimizer",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 323,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.optimizer.advisor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 193,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.optimizer.monitor.convergence",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 15,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.optimizer.monitor.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.monitor.types",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 164,
+      "path": "src/forge/optimizer/monitor/types.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.parallel",
+      "to": "forge.core.hardware",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 65,
+      "path": "src/forge/optimizer/parallel.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.parallel",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/optimizer/parallel.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.parallel",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/optimizer/parallel.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 49,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.core.builder",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 40,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 53,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 61,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.optimizer.advisor",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 571,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 62,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.optimizer.profiler",
+      "to": "forge.utils.filelock",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 63,
+      "path": "src/forge/optimizer/profiler.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.submit.lsf",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/submit/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.submit.pbs",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/submit/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.submit.slurm",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 46,
+      "path": "src/forge/submit/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.lsf",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/submit/lsf.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.lsf",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/submit/lsf.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.pbs",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/submit/pbs.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.pbs",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/submit/pbs.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.pbs",
+      "to": "forge.submit.lsf",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/submit/pbs.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.slurm",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/submit/slurm.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.slurm",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/submit/slurm.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.slurm",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 29,
+      "path": "src/forge/submit/slurm.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.submit.slurm",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 30,
+      "path": "src/forge/submit/slurm.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.types",
+      "to": "forge.core.hardware",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 276,
+      "path": "src/forge/types.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.ui.analysis",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 6,
+      "path": "src/forge/ui/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.ui.rich_ui",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 14,
+      "path": "src/forge/ui/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.core.case_parser",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.core.constants",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.core.hardware",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 547,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.optimizer.convergence",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 559,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.analysis",
+      "to": "forge.optimizer.monitor",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 532,
+      "path": "src/forge/ui/analysis.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.rich_ui",
+      "to": "forge.core.pipeline",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 47,
+      "path": "src/forge/ui/rich_ui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.rich_ui",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 50,
+      "path": "src/forge/ui/rich_ui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.rich_ui",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 51,
+      "path": "src/forge/ui/rich_ui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.rich_ui",
+      "to": "forge.submit.slurm",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 52,
+      "path": "src/forge/ui/rich_ui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.ui.rich_ui",
+      "to": "forge.utils.diagnostic",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 53,
+      "path": "src/forge/ui/rich_ui.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 22,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.diagnostic",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 31,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.export",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 41,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.filelock",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 51,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.parallel_options",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 62,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.scratch",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 74,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.subprocess_utils",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 85,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.utils.validation",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 97,
+      "path": "src/forge/utils/__init__.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.atomic_write",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/utils/atomic_write.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.diagnostic",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 230,
+      "path": "src/forge/utils/diagnostic.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.diagnostic",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/utils/diagnostic.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.export",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 60,
+      "path": "src/forge/utils/export.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.export",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 61,
+      "path": "src/forge/utils/export.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.filelock",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/utils/filelock.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.parallel_options",
+      "to": "forge.core.hardware",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/utils/parallel_options.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.parallel_options",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 26,
+      "path": "src/forge/utils/parallel_options.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.parallel_options",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 27,
+      "path": "src/forge/utils/parallel_options.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.parallel_options",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 28,
+      "path": "src/forge/utils/parallel_options.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.scratch",
+      "to": "forge.core.topology",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 23,
+      "path": "src/forge/utils/scratch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.scratch",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/utils/scratch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.subprocess_utils",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 24,
+      "path": "src/forge/utils/subprocess_utils.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.utils.validation",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 25,
+      "path": "src/forge/utils/validation.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.backend_manager",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 32,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.core.builder",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.core.case_parser",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 427,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.core.locator",
+      "context": "function",
+      "kind": "relative",
+      "lineno": 54,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 34,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.exceptions",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.optimizer.advisor",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 38,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.types",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 39,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 40,
+      "path": "src/forge/wizard.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "kind": "relative",
+      "lineno": 51,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.core.scheduler",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 33,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 35,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.submit",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 36,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.submit.slurm",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 37,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.utils.atomic_write",
+      "context": "top_level",
+      "kind": "relative",
+      "lineno": 42,
+      "path": "src/forge/wizard_sbatch.py",
+      "confidence": "verified"
+    }
+  ],
+  "package_deps": [
+    {
+      "from": "forge",
+      "to": "forge.backend_manager",
+      "count": 1
+    },
+    {
+      "from": "forge",
+      "to": "forge.config",
+      "count": 1
+    },
+    {
+      "from": "forge",
+      "to": "forge.core",
+      "count": 4
+    },
+    {
+      "from": "forge",
+      "to": "forge.optimizer",
+      "count": 3
+    },
+    {
+      "from": "forge",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge",
+      "to": "forge.utils",
+      "count": 2
+    },
+    {
+      "from": "forge",
+      "to": "forge.wizard",
+      "count": 1
+    },
+    {
+      "from": "forge",
+      "to": "forge.wizard_sbatch",
+      "count": 1
+    },
+    {
+      "from": "forge.__main__",
+      "to": "forge.cli",
+      "count": 1
+    },
+    {
+      "from": "forge.backend_manager",
+      "to": "forge.backends",
+      "count": 1
+    },
+    {
+      "from": "forge.backend_manager",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.core",
+      "count": 18
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.logging_config",
+      "count": 12
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.optimizer",
+      "count": 1
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.types",
+      "count": 3
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.utils",
+      "count": 4
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.core",
+      "count": 5
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.logging_config",
+      "count": 3
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.submit",
+      "count": 3
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.ui",
+      "count": 1
+    },
+    {
+      "from": "forge.benchmark",
+      "to": "forge.utils",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.backend_manager",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.cli_commands",
+      "count": 3
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.config",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.logging_config",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge.cli",
+      "to": "forge.ui",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.backend_manager",
+      "count": 2
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.backends",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.benchmark",
+      "count": 2
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.config",
+      "count": 20
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.core",
+      "count": 22
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.logging_config",
+      "count": 2
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.optimizer",
+      "count": 8
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.submit",
+      "count": 2
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.ui",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_commands",
+      "to": "forge.utils",
+      "count": 2
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.backend_manager",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.config",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.core",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.logging_config",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.submit",
+      "count": 1
+    },
+    {
+      "from": "forge.cli_sbatch",
+      "to": "forge.utils",
+      "count": 1
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.core",
+      "count": 1
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.backend_manager",
+      "count": 2
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.config",
+      "count": 1
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.logging_config",
+      "count": 17
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.optimizer",
+      "count": 3
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.types",
+      "count": 2
+    },
+    {
+      "from": "forge.core",
+      "to": "forge.utils",
+      "count": 5
+    },
+    {
+      "from": "forge.exceptions",
+      "to": "forge.logging_config",
+      "count": 1
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.config",
+      "count": 1
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.ml",
+      "to": "forge.logging_config",
+      "count": 2
+    },
+    {
+      "from": "forge.ml",
+      "to": "forge.optimizer",
+      "count": 1
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.backend_manager",
+      "count": 3
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.backends",
+      "count": 2
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.core",
+      "count": 17
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.logging_config",
+      "count": 12
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.utils",
+      "count": 3
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.core",
+      "count": 4
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.logging_config",
+      "count": 3
+    },
+    {
+      "from": "forge.submit",
+      "to": "forge.utils",
+      "count": 1
+    },
+    {
+      "from": "forge.types",
+      "to": "forge.core",
+      "count": 1
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.core",
+      "count": 5
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.logging_config",
+      "count": 2
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.optimizer",
+      "count": 2
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.submit",
+      "count": 1
+    },
+    {
+      "from": "forge.ui",
+      "to": "forge.utils",
+      "count": 1
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.core",
+      "count": 4
+    },
+    {
+      "from": "forge.utils",
+      "to": "forge.logging_config",
+      "count": 8
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.backend_manager",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.core",
+      "count": 4
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.exceptions",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.logging_config",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.optimizer",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.types",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard",
+      "to": "forge.utils",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.backend_manager",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.core",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.logging_config",
+      "count": 1
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.submit",
+      "count": 2
+    },
+    {
+      "from": "forge.wizard_sbatch",
+      "to": "forge.utils",
+      "count": 1
+    }
+  ],
+  "cycles": [
+    [
+      "forge.config",
+      "forge.core.hardware",
+      "forge.core.hardware.cpu",
+      "forge.core.hardware.detection",
+      "forge.core.hardware.system",
+      "forge.core.hardware.types",
+      "forge.core.hardware.wrapper",
+      "forge.core.locator",
+      "forge.exceptions",
+      "forge.logging_config",
+      "forge.types"
+    ],
+    [
+      "forge.backend_manager",
+      "forge.backends",
+      "forge.backends.wien2k",
+      "forge.backends.wien2k.core",
+      "forge.optimizer.advisor"
+    ],
+    [
+      "forge.core.workflow_executor",
+      "forge.optimizer",
+      "forge.optimizer.bayesian",
+      "forge.optimizer.bayesian.core",
+      "forge.optimizer.monitor",
+      "forge.optimizer.monitor.engine"
+    ]
+  ],
+  "cycle_edges": [
+    {
+      "from": "forge.backend_manager",
+      "to": "forge.backends",
+      "context": "top_level",
+      "path": "src/forge/backend_manager.py",
+      "lineno": 10
+    },
+    {
+      "from": "forge.backends",
+      "to": "forge.backends.wien2k",
+      "context": "conditional_function",
+      "path": "src/forge/backends/__init__.py",
+      "lineno": 114
+    },
+    {
+      "from": "forge.backends.wien2k",
+      "to": "forge.backends.wien2k.core",
+      "context": "top_level",
+      "path": "src/forge/backends/wien2k/__init__.py",
+      "lineno": 3
+    },
+    {
+      "from": "forge.backends.wien2k.core",
+      "to": "forge.optimizer.advisor",
+      "context": "conditional_function",
+      "path": "src/forge/backends/wien2k/core.py",
+      "lineno": 278
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.core.locator",
+      "context": "function",
+      "path": "src/forge/config.py",
+      "lineno": 224
+    },
+    {
+      "from": "forge.config",
+      "to": "forge.types",
+      "context": "function",
+      "path": "src/forge/config.py",
+      "lineno": 257
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.detection",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/__init__.py",
+      "lineno": 3
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/__init__.py",
+      "lineno": 4
+    },
+    {
+      "from": "forge.core.hardware",
+      "to": "forge.core.hardware.wrapper",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/__init__.py",
+      "lineno": 9
+    },
+    {
+      "from": "forge.core.hardware.cpu",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/cpu.py",
+      "lineno": 10
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.cpu",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/detection.py",
+      "lineno": 3
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.system",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/detection.py",
+      "lineno": 4
+    },
+    {
+      "from": "forge.core.hardware.detection",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/detection.py",
+      "lineno": 5
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/system.py",
+      "lineno": 11
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/system.py",
+      "lineno": 12
+    },
+    {
+      "from": "forge.core.hardware.system",
+      "to": "forge.core.locator",
+      "context": "function",
+      "path": "src/forge/core/hardware/system.py",
+      "lineno": 462
+    },
+    {
+      "from": "forge.core.hardware.types",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/types.py",
+      "lineno": 8
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/wrapper.py",
+      "lineno": 6
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.core.hardware.detection",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/wrapper.py",
+      "lineno": 7
+    },
+    {
+      "from": "forge.core.hardware.wrapper",
+      "to": "forge.core.hardware.types",
+      "context": "top_level",
+      "path": "src/forge/core/hardware/wrapper.py",
+      "lineno": 8
+    },
+    {
+      "from": "forge.core.locator",
+      "to": "forge.logging_config",
+      "context": "top_level",
+      "path": "src/forge/core/locator.py",
+      "lineno": 12
+    },
+    {
+      "from": "forge.core.workflow_executor",
+      "to": "forge.optimizer.monitor",
+      "context": "conditional_function",
+      "path": "src/forge/core/workflow_executor.py",
+      "lineno": 511
+    },
+    {
+      "from": "forge.exceptions",
+      "to": "forge.logging_config",
+      "context": "function",
+      "path": "src/forge/exceptions.py",
+      "lineno": 340
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.exceptions",
+      "context": "function",
+      "path": "src/forge/logging_config.py",
+      "lineno": 70
+    },
+    {
+      "from": "forge.logging_config",
+      "to": "forge.config",
+      "context": "function",
+      "path": "src/forge/logging_config.py",
+      "lineno": 230
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.bayesian",
+      "context": "top_level",
+      "path": "src/forge/optimizer/__init__.py",
+      "lineno": 23
+    },
+    {
+      "from": "forge.optimizer",
+      "to": "forge.optimizer.monitor",
+      "context": "top_level",
+      "path": "src/forge/optimizer/__init__.py",
+      "lineno": 36
+    },
+    {
+      "from": "forge.optimizer.advisor",
+      "to": "forge.backend_manager",
+      "context": "conditional_function",
+      "path": "src/forge/optimizer/advisor.py",
+      "lineno": 43
+    },
+    {
+      "from": "forge.optimizer.bayesian",
+      "to": "forge.optimizer.bayesian.core",
+      "context": "top_level",
+      "path": "src/forge/optimizer/bayesian/__init__.py",
+      "lineno": 14
+    },
+    {
+      "from": "forge.optimizer.bayesian.core",
+      "to": "forge.core.workflow_executor",
+      "context": "function",
+      "path": "src/forge/optimizer/bayesian/core.py",
+      "lineno": 116
+    },
+    {
+      "from": "forge.optimizer.monitor",
+      "to": "forge.optimizer.monitor.engine",
+      "context": "top_level",
+      "path": "src/forge/optimizer/monitor/__init__.py",
+      "lineno": 22
+    },
+    {
+      "from": "forge.optimizer.monitor.engine",
+      "to": "forge.optimizer",
+      "context": "conditional_function",
+      "path": "src/forge/optimizer/monitor/engine.py",
+      "lineno": 323
+    },
+    {
+      "from": "forge.types",
+      "to": "forge.core.hardware",
+      "context": "conditional_function",
+      "path": "src/forge/types.py",
+      "lineno": 276
+    }
+  ],
+  "isolated": [],
+  "isolated_packages": [],
+  "hubs_in": [
+    [
+      "forge.logging_config",
+      66
+    ],
+    [
+      "forge.core.topology",
+      27
+    ],
+    [
+      "forge.config",
+      25
+    ],
+    [
+      "forge.core.hardware",
+      21
+    ],
+    [
+      "forge.cli_commands.base",
+      21
+    ],
+    [
+      "forge.cli_commands._utils",
+      20
+    ],
+    [
+      "forge.utils.atomic_write",
+      14
+    ],
+    [
+      "forge.core.scheduler",
+      12
+    ],
+    [
+      "forge.backend_manager",
+      12
+    ],
+    [
+      "forge.core.case_parser",
+      12
+    ],
+    [
+      "forge.types",
+      10
+    ],
+    [
+      "forge.optimizer.advisor",
+      9
+    ],
+    [
+      "forge.core.locator",
+      7
+    ],
+    [
+      "forge.core.constants",
+      7
+    ],
+    [
+      "forge.exceptions",
+      6
+    ]
+  ],
+  "hubs_out": [
+    [
+      "forge",
+      14
+    ],
+    [
+      "forge.optimizer.bayesian.core",
+      12
+    ],
+    [
+      "forge.backends.wien2k.core",
+      10
+    ],
+    [
+      "forge.core",
+      10
+    ],
+    [
+      "forge.wizard",
+      10
+    ],
+    [
+      "forge.benchmark.real",
+      9
+    ],
+    [
+      "forge.cli",
+      9
+    ],
+    [
+      "forge.cli_commands.advise",
+      9
+    ],
+    [
+      "forge.cli_commands.generate",
+      9
+    ],
+    [
+      "forge.cli_commands.submit",
+      9
+    ],
+    [
+      "forge.core.pipeline",
+      9
+    ],
+    [
+      "forge.optimizer.bayesian",
+      9
+    ],
+    [
+      "forge.cli_commands.hardware",
+      8
+    ],
+    [
+      "forge.core.builder",
+      8
+    ],
+    [
+      "forge.optimizer.profiler",
+      8
+    ]
+  ],
+  "third_party": {
+    "rich": 57,
+    "numpy": 17,
+    "matplotlib": 3,
+    "yaml": 3,
+    "sklearn": 2,
+    "requests": 1,
+    "tqdm": 1,
+    "filelock": 1,
+    "tomli_w": 1,
+    "h5py": 1
+  },
+  "stdlib": {
+    "typing": 95,
+    "pathlib": 68,
+    "os": 44,
+    "dataclasses": 38,
+    "re": 35,
+    "time": 34,
+    "subprocess": 31,
+    "__future__": 30,
+    "json": 29,
+    "shutil": 27,
+    "math": 26,
+    "argparse": 21,
+    "contextlib": 19,
+    "datetime": 11,
+    "threading": 10,
+    "signal": 10,
+    "sys": 9,
+    "logging": 7,
+    "enum": 7,
+    "hashlib": 5,
+    "shlex": 4,
+    "collections": 4,
+    "tempfile": 4,
+    "abc": 3,
+    "sqlite3": 3,
+    "functools": 2,
+    "urllib": 2,
+    "array": 2,
+    "uuid": 2,
+    "csv": 2,
+    "asyncio": 2,
+    "platform": 2,
+    "importlib": 1,
+    "random": 1,
+    "warnings": 1,
+    "socket": 1,
+    "traceback": 1,
+    "pickle": 1,
+    "heapq": 1,
+    "statistics": 1,
+    "io": 1,
+    "errno": 1,
+    "fcntl": 1
+  }
+}

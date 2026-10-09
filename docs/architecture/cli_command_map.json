@@ -1,0 +1,252 @@
+[
+  {
+    "command": "advise",
+    "module": "forge.cli_commands.advise",
+    "path": "src/forge/cli_commands/advise.py",
+    "handler": "forge.cli_commands.advise.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.case_parser",
+      "forge.core.hardware",
+      "forge.core.perf_counters",
+      "forge.core.scheduler",
+      "forge.logging_config",
+      "forge.optimizer.advisor"
+    ]
+  },
+  {
+    "command": "analyze",
+    "module": "forge.cli_commands.analyze",
+    "path": "src/forge/cli_commands/analyze.py",
+    "handler": "forge.cli_commands.analyze.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.ui.analysis"
+    ]
+  },
+  {
+    "command": "analyze-bands",
+    "module": "forge.cli_commands.analyze_bands",
+    "path": "src/forge/cli_commands/analyze_bands.py",
+    "handler": "forge.cli_commands.analyze_bands.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.electronic_structure"
+    ]
+  },
+  {
+    "command": "benchmark",
+    "module": "forge.cli_commands.benchmark",
+    "path": "src/forge/cli_commands/benchmark.py",
+    "handler": "forge.cli_commands.benchmark.handle",
+    "internal_imports": [
+      "forge.benchmark.real",
+      "forge.benchmark.synthetic",
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.scheduler"
+    ]
+  },
+  {
+    "command": "calibrate",
+    "module": "forge.cli_commands.calibrate",
+    "path": "src/forge/cli_commands/calibrate.py",
+    "handler": "forge.cli_commands.calibrate.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.perf_counters"
+    ]
+  },
+  {
+    "command": "converge",
+    "module": "forge.cli_commands.converge",
+    "path": "src/forge/cli_commands/converge.py",
+    "handler": "forge.cli_commands.converge.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.optimizer.convergence"
+    ]
+  },
+  {
+    "command": "diagnose",
+    "module": "forge.cli_commands.diagnose",
+    "path": "src/forge/cli_commands/diagnose.py",
+    "handler": "forge.cli_commands.diagnose.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.case_parser",
+      "forge.logging_config",
+      "forge.optimizer.convergence",
+      "forge.optimizer.monitor"
+    ]
+  },
+  {
+    "command": "diagnostics",
+    "module": "forge.cli_commands.diagnostics",
+    "path": "src/forge/cli_commands/diagnostics.py",
+    "handler": "forge.cli_commands.diagnostics.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.utils.diagnostic"
+    ]
+  },
+  {
+    "command": "generate",
+    "module": "forge.cli_commands.generate",
+    "path": "src/forge/cli_commands/generate.py",
+    "handler": "forge.cli_commands.generate.handle",
+    "internal_imports": [
+      "forge.backends.gpu_backend",
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.hardware",
+      "forge.core.perf_counters",
+      "forge.core.pipeline",
+      "forge.core.scheduler",
+      "forge.types"
+    ]
+  },
+  {
+    "command": "hardware",
+    "module": "forge.cli_commands.hardware",
+    "path": "src/forge/cli_commands/hardware.py",
+    "handler": "forge.cli_commands.hardware.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.case_parser",
+      "forge.core.hardware",
+      "forge.core.hardware.wrapper",
+      "forge.core.topology",
+      "forge.optimizer.parallel"
+    ]
+  },
+  {
+    "command": "history",
+    "module": "forge.cli_commands.history",
+    "path": "src/forge/cli_commands/history.py",
+    "handler": "forge.cli_commands.history.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.optimizer.history"
+    ]
+  },
+  {
+    "command": "monitor",
+    "module": "forge.cli_commands.monitor",
+    "path": "src/forge/cli_commands/monitor.py",
+    "handler": "forge.cli_commands.monitor.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.terminal_monitor"
+    ]
+  },
+  {
+    "command": "optimize",
+    "module": "forge.cli_commands.optimize",
+    "path": "src/forge/cli_commands/optimize.py",
+    "handler": "forge.cli_commands.optimize.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.optimizer.bayesian_tuner"
+    ]
+  },
+  {
+    "command": "predict",
+    "module": "forge.cli_commands.predict",
+    "path": "src/forge/cli_commands/predict.py",
+    "handler": "forge.cli_commands.predict.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.optimizer.ml_predict"
+    ]
+  },
+  {
+    "command": "run",
+    "module": "forge.cli_commands.run",
+    "path": "src/forge/cli_commands/run.py",
+    "handler": "forge.cli_commands.run.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.workflow_executor"
+    ]
+  },
+  {
+    "command": "screen",
+    "module": "forge.cli_commands.screen",
+    "path": "src/forge/cli_commands/screen.py",
+    "handler": "forge.cli_commands.screen.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.materials_project"
+    ]
+  },
+  {
+    "command": "submit",
+    "module": "forge.cli_commands.submit",
+    "path": "src/forge/cli_commands/submit.py",
+    "handler": "forge.cli_commands.submit.handle",
+    "internal_imports": [
+      "forge.backend_manager",
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config",
+      "forge.core.pipeline",
+      "forge.core.scheduler",
+      "forge.submit",
+      "forge.submit.slurm",
+      "forge.utils.validation"
+    ]
+  },
+  {
+    "command": "tui",
+    "module": "forge.cli_commands.tui",
+    "path": "src/forge/cli_commands/tui.py",
+    "handler": "forge.cli_commands.tui.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config"
+    ]
+  },
+  {
+    "command": "workflow",
+    "module": "forge.cli_commands.workflow",
+    "path": "src/forge/cli_commands/workflow.py",
+    "handler": "forge.cli_commands.workflow.handle",
+    "internal_imports": [
+      "forge.cli_commands._utils",
+      "forge.cli_commands.base",
+      "forge.config"
+    ]
+  }
+]

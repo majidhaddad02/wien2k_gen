@@ -1,0 +1,16 @@
+sequenceDiagram
+    title "Quantum ESPRESSO path verified modules selection is dynamic"
+    participant User
+    participant CLI
+    participant BM as backends.auto_detect / set_backend
+    participant QE as QuantumEspressoBackend
+    participant Exec as quantum_espresso.executor
+    participant OS as subprocess.Popen
+
+    User->>CLI: forge --backend qe generate
+    CLI->>BM: BackendCode.QUANTUM_ESPRESSO
+    BM->>QE: get_backend
+    QE->>QE: detect_problem_size from .in / .pw.in
+    QE->>QE: generate_input / run_qe_optimized.sh
+    Note over Exec: executor.py contains subprocess.Popen
+    Exec->>OS: launch pw.x or related binary

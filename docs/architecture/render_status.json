@@ -1,0 +1,16 @@
+{
+  "markdown_and_diagram_sources": true,
+  "module_dependencies_svg": {
+    "rendered": false,
+    "reason": "graphviz 'dot' not found on PATH"
+  },
+  "architecture_overview_svg": {
+    "rendered": true,
+    "tool": "stdlib_svg_fallback",
+    "output": "/workspace/wien2k_gen/docs/architecture/architecture_overview.svg",
+    "mermaid_cli": {
+      "rendered": false,
+      "reason": "mermaid-cli 'mmdc' not found on PATH"
+    }
+  }
+}
